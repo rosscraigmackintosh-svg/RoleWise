@@ -1,0 +1,1232 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   ROLEWISE DESIGN SYSTEM — tokens.css
+   Color primitives sourced from Untitled UI PRO v7.0 (Gray Modern palette).
+   Single source of truth for all CSS custom properties.
+   Imported by styles.css via @import at the top of the file.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COLOR PRIMITIVES — Base
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --color-white:       #ffffff;
+  --color-black:       #000000;
+  --color-transparent: transparent;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COLOR PRIMITIVES — Gray Modern  (primary UI gray)
+     Source: Untitled UI PRO v7.0 › Colors/Gray modern
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --gray-modern-25:  #fcfcfd;
+  --gray-modern-50:  #f8fafc;
+  --gray-modern-100: #eef2f6;
+  --gray-modern-200: #e3e8ef;
+  --gray-modern-300: #cdd5df;
+  --gray-modern-400: #9aa4b2;
+  --gray-modern-500: #697586;
+  --gray-modern-600: #4b5565;
+  --gray-modern-700: #364152;
+  --gray-modern-800: #202939;
+  --gray-modern-900: #121926;
+  --gray-modern-950: #0d121c;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COLOR PRIMITIVES — Gray (light mode)  (neutral UI gray)
+     Source: Untitled UI PRO v7.0 › Colors/Gray (light mode)
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --gray-25:  #fdfdfd;
+  --gray-50:  #fafafa;
+  --gray-100: #f5f5f5;
+  --gray-200: #e9eaeb;
+  --gray-300: #d5d7da;
+  --gray-400: #a4a7ae;
+  --gray-500: #717680;
+  --gray-600: #535862;
+  --gray-700: #414651;
+  --gray-800: #252b37;
+  --gray-900: #181d27;
+  --gray-950: #0a0d12;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COLOR PRIMITIVES — Brand (Purple)
+     Source: Untitled UI PRO v7.0 › Colors/Brand
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --brand-25:  #fcfaff;
+  --brand-50:  #f9f5ff;
+  --brand-100: #f4ebff;
+  --brand-200: #e9d7fe;
+  --brand-300: #d6bbfb;
+  --brand-400: #b692f6;
+  --brand-500: #9e77ed;
+  --brand-600: #7f56d9;
+  --brand-700: #6941c6;
+  --brand-800: #53389e;
+  --brand-900: #42307d;
+  --brand-950: #2c1c5f;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COLOR PRIMITIVES — Success (Green)
+     Source: Untitled UI PRO v7.0 › Colors/Success
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --success-25:  #f6fef9;
+  --success-50:  #ecfdf3;
+  --success-100: #dcfae6;
+  --success-300: #75e0a7;
+  --success-400: #47cd89;
+  --success-500: #17b26a;
+  --success-600: #079455;
+  --success-700: #067647;
+  --success-800: #085d3a;
+  --success-900: #074d31;
+  --success-950: #053321;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COLOR PRIMITIVES — Error (Red)
+     Source: Untitled UI PRO v7.0 › Colors/Error
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --error-25:  #fffbfa;
+  --error-50:  #fef3f2;
+  --error-100: #fee4e2;
+  --error-200: #fecdca;
+  --error-300: #fda29b;
+  --error-400: #f97066;
+  --error-500: #f04438;
+  --error-600: #d92d20;
+  --error-700: #b42318;
+  --error-800: #912018;
+  --error-900: #7a271a;
+  --error-950: #55160c;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COLOR PRIMITIVES — Warning (Orange/Amber)
+     Source: Untitled UI PRO v7.0 › Colors/Warning
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --warning-25:  #fffcf5;
+  --warning-50:  #fffaeb;
+  --warning-100: #fef0c7;
+  --warning-200: #fedf89;
+  --warning-300: #fec84b;
+  --warning-400: #fdb022;
+  --warning-500: #f79009;
+  --warning-600: #dc6803;
+  --warning-700: #b54708;
+  --warning-800: #93370d;
+  --warning-900: #7a2e0e;
+  --warning-950: #4e1d09;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SEMANTIC TOKENS — Backgrounds
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --bg:         var(--gray-modern-25);   /* #fcfcfd  Page / panel wash        */
+  --bg-subtle:  var(--gray-modern-50);   /* #f8fafc  Subtle inset areas        */
+  --surface:    var(--color-white);      /* #ffffff  Elevated surfaces         */
+  --bg-card:    var(--color-white);      /* #ffffff  Legacy alias              */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SEMANTIC TOKENS — Borders
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --border:       var(--gray-modern-300);   /* #cdd5df  Default border         */
+  --border-light: var(--gray-modern-200);   /* #e3e8ef  Subtle border          */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SEMANTIC TOKENS — Text
+     Source: Untitled UI PRO v7.0 › Colors/Text
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --text:          var(--gray-900);        /* #181d27  Primary body text       */
+  --text-secondary: var(--gray-700);       /* #414651  Secondary text          */
+  --text-muted:    var(--gray-600);        /* #535862  Tertiary / labels       */
+  --text-light:    var(--gray-modern-500); /* #697586  Placeholder / disabled  */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SEMANTIC TOKENS — Brand / Accent
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --accent:        var(--brand-600);   /* #7f56d9  Primary action colour       */
+  --accent-soft:   var(--brand-100);   /* #f4ebff  Soft accent fill            */
+  --accent-soft-2: var(--brand-200);   /* #e9d7fe  Stronger soft accent fill   */
+  --focus-ring:    var(--brand-600);   /* #7f56d9  Focus outline               */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SEMANTIC TOKENS — Status
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Success */
+  --success:        var(--success-700);   /* #067647 */
+  --success-bg:     var(--success-50);    /* #ecfdf3 */
+  --success-border: var(--success-300);   /* #75e0a7 */
+
+  /* Error */
+  --error:          var(--error-700);     /* #b42318 */
+  --error-bg:       var(--error-50);      /* #fef3f2 */
+  --error-border:   var(--error-200);     /* #fecdca */
+
+  /* Warning */
+  --warning:        var(--warning-700);   /* #b54708 */
+  --warning-bg:     var(--warning-50);    /* #fffaeb */
+  --warning-border: var(--warning-300);   /* #fec84b */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Cards
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --card-bg:     var(--color-white);        /* #ffffff           */
+  --card-border: var(--gray-modern-200);    /* #e3e8ef           */
+  --card-radius: var(--radius-lg);
+  --card-shadow: var(--shadow-md);
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     TYPOGRAPHY — Font stacks
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --font:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-head: 'Inter Tight', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     TYPOGRAPHY — Scale
+     Source: Untitled UI PRO v7.0 › Font size
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --text-xs:        10.5px;   /* custom small */
+  --text-sm:        12px;
+  --text-base:      13px;
+  --text-md:        14px;     /* Untitled UI: text-sm (14px) */
+  --text-lg:        15px;
+  --text-xl:        18px;     /* Untitled UI: text-lg (18px) */
+  --text-2xl:       22px;
+  --text-3xl:       26px;
+
+  /* Line heights */
+  --leading-tight:   1.3;
+  --leading-snug:    1.4;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.6;
+
+  /* Letter spacing (labels) */
+  --label-tracking-sm: 0.05em;
+  --label-tracking-md: 0.07em;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SPACING — 4px base unit
+     Source: Untitled UI PRO v7.0 › Spacing
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --spacing-xxs:  2px;    /* spacing-xxs  */
+  --spacing-xs:   4px;    /* spacing-xs   */
+  --spacing-sm:   6px;    /* spacing-sm   */
+  --spacing-md:   8px;    /* spacing-md   */
+  --spacing-lg:   12px;   /* spacing-lg   */
+  --spacing-xl:   16px;   /* spacing-xl   */
+  --spacing-2xl:  20px;   /* spacing-2xl  */
+  --spacing-3xl:  24px;   /* spacing-3xl  */
+  --spacing-4xl:  32px;   /* spacing-4xl  */
+  --spacing-6xl:  48px;   /* spacing-6xl  */
+  --spacing-7xl:  64px;   /* spacing-7xl  */
+  --spacing-8xl:  80px;   /* spacing-8xl  */
+  --spacing-10xl: 128px;  /* spacing-10xl */
+
+  /* Legacy aliases (used throughout styles.css) */
+  --space-1:  var(--spacing-xs);    /* 4px  */
+  --space-2:  var(--spacing-md);    /* 8px  */
+  --space-3:  var(--spacing-lg);    /* 12px */
+  --space-4:  var(--spacing-xl);    /* 16px */
+  --space-5:  var(--spacing-2xl);   /* 20px */
+  --space-6:  var(--spacing-3xl);   /* 24px */
+  --space-7:  28px;
+  --space-8:  var(--spacing-4xl);   /* 32px */
+  --space-9:  36px;
+  --space-10: 40px;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     BORDER RADIUS
+     Source: Untitled UI PRO v7.0 › Radius
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --radius:      6px;    /* Legacy alias → maps to radius-sm  */
+  --radius-none: 0px;    /* Untitled UI: radius-none          */
+  --radius-xxs:  2px;    /* Untitled UI: radius-xxs           */
+  --radius-xs:   4px;    /* Untitled UI: radius-xs            */
+  --radius-sm:   6px;    /* Badges, tags, small chips         */
+  --radius-md:   8px;    /* Inputs, buttons                   */
+  --radius-lg:   10px;   /* Cards, panels                     */
+  --radius-xl:   12px;   /* Untitled UI: radius-xl            */
+  --radius-2xl:  16px;   /* Untitled UI: radius-2xl           */
+  --radius-3xl:  20px;   /* Untitled UI: radius-3xl           */
+  --radius-4xl:  24px;   /* Untitled UI: radius-4xl           */
+  --radius-full: 9999px; /* Pills, avatars                    */
+  --radius-pill: 9999px; /* Legacy alias → maps to radius-full*/
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SHADOWS
+     Source: Untitled UI PRO v7.0 › Foundations › Effect styles › Shadows
+     Base shadow colour: rgba(10, 13, 18, …)
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --shadow-xs:  0px 1px 2px 0px rgba(10, 13, 18, 0.05);
+
+  --shadow-sm:  0px 1px 3px 0px rgba(10, 13, 18, 0.10),
+                0px 1px 2px -1px rgba(10, 13, 18, 0.10);
+
+  --shadow-md:  0px 4px 6px -1px rgba(10, 13, 18, 0.10),
+                0px 2px 4px -2px rgba(10, 13, 18, 0.06);
+
+  --shadow-lg:  0px 12px 16px -4px rgba(10, 13, 18, 0.08),
+                0px 4px  6px  -2px rgba(10, 13, 18, 0.03),
+                0px 2px  2px  -1px rgba(10, 13, 18, 0.04);
+
+  --shadow-xl:  0px 20px 24px -4px   rgba(10, 13, 18, 0.08),
+                0px 8px  8px  -4px   rgba(10, 13, 18, 0.03),
+                0px 3px  3px  -1.5px rgba(10, 13, 18, 0.04);
+
+  --shadow-2xl: 0px 24px 48px -12px rgba(10, 13, 18, 0.18),
+                0px 4px  4px  -2px  rgba(10, 13, 18, 0.04);
+
+  --shadow-3xl: 0px 32px 64px -12px  rgba(10, 13, 18, 0.14),
+                0px 5px  5px  -2.5px rgba(10, 13, 18, 0.04);
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT PADDING PRESETS
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --pad-badge:    1px 7px;
+  --pad-tag:      2px 8px;
+  --pad-btn-sm:   5px 10px;
+  --pad-btn:      8px 16px;
+  --pad-input:    7px 10px;
+  --pad-input-lg: 8px 10px;
+  --pad-cell:     9px 12px;
+  --pad-panel:    18px 20px;
+  --pad-card:     12px 14px;
+  --pad-card-lg:  14px 16px;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COLOR PRIMITIVES — Success supplement
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --success-200: #abefc6;   /* Added for badge borders */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Buttons
+     Source: Untitled UI PRO v7.0 › Components/Buttons & Links
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Backgrounds */
+  --btn-bg-primary:         var(--brand-600);    /* #7f56d9  Primary fill            */
+  --btn-bg-primary-hover:   var(--brand-700);    /* #6941c6  Primary hover           */
+  --btn-bg-secondary:       var(--color-white);  /* #ffffff  Secondary fill          */
+  --btn-bg-secondary-hover: var(--gray-50);      /* #fafafa  Secondary hover         */
+  --btn-bg-disabled:        var(--gray-100);     /* #f5f5f5  All disabled fills      */
+
+  /* Borders */
+  --btn-border-primary:     rgba(255, 255, 255, 0.12);  /* Inner white overlay      */
+  --btn-border-secondary:   var(--gray-300);            /* #d5d7da                  */
+  --btn-border-disabled:    var(--gray-200);            /* #e9eaeb                  */
+
+  /* Text */
+  --btn-text-primary:       var(--color-white);  /* #ffffff                          */
+  --btn-text-secondary:     var(--gray-700);     /* #414651                          */
+  --btn-text-tertiary:      var(--gray-600);     /* #535862                          */
+  --btn-text-link-color:    var(--brand-700);    /* #6941c6  Link color variant      */
+  --btn-text-link-gray:     var(--gray-700);     /* #414651  Link gray variant       */
+  --btn-text-disabled:      var(--gray-400);     /* #a4a7ae                          */
+
+  /* Skeuomorphic shadow — shared by Primary & Secondary default/hover */
+  --btn-shadow:
+    0px 1px 2px 0px rgba(10, 13, 18, 0.05),
+    inset 0px 0px 0px 1px rgba(10, 13, 18, 0.18),
+    inset 0px -2px 0px 0px rgba(10, 13, 18, 0.05);
+
+  /* Border radius (matches cards) */
+  --btn-radius:             var(--radius-lg);    /* 8px                              */
+
+  /* Size — padding (vertical × horizontal)                                          */
+  --btn-pad-sm:             8px 12px;    /* sm — height target 36px                 */
+  --btn-pad-md:             10px 14px;   /* md — height target 40px  (default)      */
+  --btn-pad-lg:             10px 16px;   /* lg — height target 44px                 */
+  --btn-pad-xl:             12px 18px;   /* xl — height target 48px                 */
+
+  /* Typography */
+  --btn-font-size:          var(--text-md);     /* 14px                             */
+  --btn-font-weight:        600;                /* Semibold                         */
+  --btn-line-height:        1.43;               /* ~20px at 14px base               */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Destructive Buttons
+     Source: Untitled UI PRO v7.0 › Components/Buttons destructive
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --btn-bg-destructive:               var(--error-600);    /* #d92d20  Primary fill       */
+  --btn-bg-destructive-hover:         var(--error-700);    /* #b42318  Primary hover      */
+  --btn-border-destructive-secondary: var(--error-300);    /* #fda29b  Secondary border   */
+  --btn-text-destructive-secondary:   var(--error-600);    /* #d92d20  Secondary text     */
+  /* Primary text & border reuse --btn-text-primary (#fff) & --btn-border-primary (rgba white 0.12) */
+  /* Disabled reuses --btn-bg-disabled, --btn-border-disabled, --btn-text-disabled */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Close / X Button
+     Source: Untitled UI PRO v7.0 › Components/Buttons/Button close X
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --btn-close-bg-hover:          var(--gray-50);               /* #fafafa    light bg hover       */
+  --btn-close-bg-dark-hover:     rgba(255, 255, 255, 0.20);    /*            dark bg hover        */
+  --btn-close-icon-dark-opacity: 0.70;                         /*            default dark icon    */
+  --btn-close-size-sm:           36px;
+  --btn-close-size-md:           40px;
+  --btn-close-size-lg:           44px;
+  /* Uses --btn-radius (8px) and --focus-ring for focus ring */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Utility Icon Button
+     Source: Untitled UI PRO v7.0 › Components/Buttons/Button utility
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --btn-util-radius: 6px;     /* Untitled UI radius-sm (6px, not our legacy 3px)  */
+  --btn-util-pad:    6px;     /* spacing-sm — applies to all four sides           */
+  --btn-util-size-xs: 28px;   /* xs: 16px icon + 6px pad × 2                     */
+  --btn-util-size-sm: 32px;   /* sm: 20px icon + 6px pad × 2                     */
+  /* Secondary: white bg, --btn-border-secondary border, --btn-shadow             */
+  /* Tertiary: transparent, no border                                              */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Badges (Pill color)
+     Source: Untitled UI PRO v7.0 › Components/Badges/Badge group
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Gray */
+  --badge-gray-bg:      var(--gray-50);      /* #fafafa  default / var(--gray-100) hover */
+  --badge-gray-border:  var(--gray-200);     /* #e9eaeb                                  */
+  --badge-gray-text:    var(--gray-700);     /* #414651                                  */
+
+  /* Brand (Purple) */
+  --badge-brand-bg:     var(--brand-50);     /* #f9f5ff  default / brand-100 hover       */
+  --badge-brand-border: var(--brand-200);    /* #e9d7fe                                  */
+  --badge-brand-text:   var(--brand-700);    /* #6941c6                                  */
+
+  /* Error (Red) */
+  --badge-error-bg:     var(--error-50);     /* #fef3f2  default / error-100 hover       */
+  --badge-error-border: var(--error-200);    /* #fecdca                                  */
+  --badge-error-text:   var(--error-600);    /* #d92d20                                  */
+
+  /* Warning (Amber) */
+  --badge-warning-bg:     var(--warning-50);  /* #fffaeb  default / warning-100 hover   */
+  --badge-warning-border: var(--warning-200); /* #fedf89                                */
+  --badge-warning-text:   var(--warning-700); /* #b54708                                */
+
+  /* Success (Green) */
+  --badge-success-bg:     var(--success-50);  /* #ecfdf3  default / success-100 hover   */
+  --badge-success-border: var(--success-200); /* #abefc6                                */
+  --badge-success-text:   var(--success-700); /* #067647                                */
+
+  /* Badge dimensions */
+  --badge-radius:         var(--radius-pill); /* rounded-full / 9999px                  */
+  --badge-font-weight:    500;                /* Medium                                 */
+  --badge-pad-md:         2px 8px;            /* md — text-xs (12px)                   */
+  --badge-pad-lg:         2px 10px;           /* lg — text-sm (14px)                   */
+  --badge-font-size-md:   var(--text-sm);     /* 12px (Untitled UI text-xs)            */
+  --badge-font-size-lg:   var(--text-md);     /* 14px (Untitled UI text-sm)            */
+  --badge-line-height-md: 1.5;               /* 18px line height                       */
+  --badge-line-height-lg: 1.43;              /* 20px line height                       */
+
+  /* Badge group inner chip */
+  --badge-inner-pad-md:  2px 8px;
+  --badge-inner-pad-lg:  2px 10px;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Tag
+     Source: Untitled UI PRO v7.0 › Components/Tags
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --tag-bg:            var(--color-white);   /* #ffffff                          */
+  --tag-border:        var(--gray-300);      /* #d5d7da  Default border          */
+  --tag-text:          var(--gray-700);      /* #414651  Default text            */
+  --tag-radius:        6px;                  /* Untitled UI radius-sm (6px)      */
+  --tag-font-weight:   500;                  /* Medium                           */
+
+  /* Sizes */
+  --tag-pad-sm:        3px 8px;             /* sm — 12px text                   */
+  --tag-pad-md:        3px 8px;             /* md — 12px text (same as sm)      */
+  --tag-pad-lg:        4px 10px;            /* lg — 14px text                   */
+
+  --tag-font-size-sm:  var(--text-sm);      /* 12px                             */
+  --tag-font-size-md:  var(--text-sm);      /* 12px                             */
+  --tag-font-size-lg:  var(--text-md);      /* 14px                             */
+
+  /* Close button inside tag */
+  --tag-close-size:    14px;               /* Small X icon button               */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Input Field
+     Source: Untitled UI PRO v7.0 › Components/Form/Input field
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Backgrounds */
+  --input-bg:               var(--color-white);      /* #ffffff  default         */
+  --input-bg-disabled:      var(--gray-50);          /* #fafafa  disabled        */
+
+  /* Borders */
+  --input-border:           var(--gray-300);         /* #d5d7da  default         */
+  --input-border-focus:     var(--brand-500);        /* #9e77ed  focused         */
+  --input-border-error:     var(--error-300);        /* #fda29b  destructive     */
+  --input-border-error-focus: var(--error-500);      /* #f04438  dest. focused   */
+
+  /* Text */
+  --input-text:             var(--gray-900);         /* #181d27  filled value    */
+  --input-placeholder:      var(--gray-500);         /* #717680  placeholder     */
+  --input-text-disabled:    var(--gray-400);         /* #a4a7ae  disabled        */
+
+  /* Shape */
+  --input-radius:           var(--radius-lg);        /* 8px                      */
+  --input-pad:              10px 14px;               /* py-10px px-14px          */
+  --input-font-size:        16px;                    /* Untitled UI text-md      */
+  --input-font-weight:      400;                     /* Regular                  */
+
+  /* Label above input */
+  --label-font-size:        var(--text-md);          /* 14px                     */
+  --label-font-weight:      500;                     /* Medium                   */
+  --label-color:            var(--gray-700);         /* #414651                  */
+  --label-margin-bottom:    6px;
+
+  /* Hint / helper text below input */
+  --hint-font-size:         var(--text-md);          /* 14px                     */
+  --hint-color:             var(--gray-600);         /* #535862                  */
+  --hint-color-error:       var(--error-600);        /* #d92d20                  */
+  --hint-margin-top:        6px;
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Textarea
+     Source: Untitled UI PRO v7.0 › Components/Form/Textarea
+     Same color/border system as Input; differs only in padding & min-height.
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --textarea-pad:        12px 14px;         /* p-12px all sides                 */
+  --textarea-min-height: 128px;             /* Reasonable default               */
+  --textarea-resize:     vertical;          /* Allow vertical resize only       */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Toggle / Switch
+     Source: Untitled UI PRO v7.0 › Components/Toggle
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Track backgrounds */
+  --toggle-bg-off:          var(--gray-200);    /* #e9eaeb  unchecked            */
+  --toggle-bg-on:           var(--brand-600);   /* #7f56d9  checked (brand)      */
+  --toggle-bg-disabled:     var(--gray-100);    /* #f5f5f5  disabled             */
+
+  /* Track dimensions — Default */
+  --toggle-width-md:        44px;
+  --toggle-height-md:       24px;
+
+  /* Track dimensions — Slim */
+  --toggle-width-slim:      40px;
+  --toggle-height-slim:     20px;
+
+  /* Track padding (space between track edge and thumb) */
+  --toggle-pad:             2px;
+
+  /* Thumb (circle) */
+  --toggle-thumb-bg:        var(--color-white);
+  --toggle-thumb-size-md:   20px;   /* md track − 2×pad                        */
+  --toggle-thumb-size-slim: 16px;   /* slim track − 2×pad                      */
+  --toggle-thumb-shadow:    var(--shadow-sm);
+
+  /* Focus ring — same pattern as buttons */
+  --toggle-focus-ring:
+    0 0 0 2px var(--color-white),
+    0 0 0 4px var(--brand-500);
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Checkbox / Radio
+     Source: Untitled UI PRO v7.0 › Components/Checkbox base & Radio group item
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Control sizes */
+  --check-size-sm: 16px;    /* sm — spacing-md (16px) */
+  --check-size-md: 20px;    /* md — spacing-2xl (20px) */
+
+  /* Border radius */
+  --check-radius-sm: 4px;   /* Checkbox sm — spacing-xs */
+  --check-radius-md: 6px;   /* Checkbox md — radius-sm */
+  /* Radio always uses --radius-pill (9999px) */
+
+  /* Colors */
+  --check-bg-checked:        var(--brand-600);   /* #7f56d9 checked fill        */
+  --check-bg-disabled:       var(--gray-50);     /* #fafafa disabled fill       */
+  --check-border:            var(--gray-300);    /* #d5d7da default border      */
+  --check-border-disabled:   var(--gray-300);    /* #d5d7da disabled border     */
+  --check-icon-color:        var(--color-white); /* #ffffff icon on checked bg  */
+  --check-icon-disabled:     var(--gray-300);    /* #d5d7da icon on disabled bg */
+
+  /* Gap between control and label text */
+  --check-gap-sm: 8px;      /* sm — spacing-md */
+  --check-gap-md: 12px;     /* md — spacing-lg */
+
+  /* Focus ring (same as toggle) */
+  --check-focus-ring:
+    0 0 0 2px var(--color-white),
+    0 0 0 4px var(--brand-500);
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Radio Group Item  (selectable card row)
+     Source: Untitled UI PRO v7.0 › Components/Radio group item
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --rgi-bg:               var(--color-white);    /* #ffffff default              */
+  --rgi-border:           var(--gray-200);       /* #e9eaeb unselected border    */
+  --rgi-border-selected:  var(--brand-500);      /* #9e77ed selected border      */
+  --rgi-border-w:         1px;                   /* unselected border width      */
+  --rgi-border-w-sel:     2px;                   /* selected border width        */
+  --rgi-radius:           var(--radius-xl);      /* 12px                         */
+  --rgi-padding:          var(--spacing-xl);     /* 16px                         */
+  --rgi-gap:              var(--spacing-lg);     /* 12px between input & text    */
+  --rgi-gap-text:         var(--spacing-xxs);    /* 2px between title & desc     */
+
+  /* Text inside item */
+  --rgi-font-size:        16px;                  /* text-md                      */
+  --rgi-line-height:      24px;                  /* line-height/text-md          */
+  --rgi-title-weight:     500;                   /* medium                       */
+  --rgi-title-color:      var(--gray-700);       /* #414651                      */
+  --rgi-subtitle-color:   var(--gray-600);       /* #535862                      */
+  --rgi-desc-color:       var(--gray-600);       /* #535862                      */
+  --rgi-gap-title:        var(--spacing-sm);     /* 6px between title & subtext  */
+
+  /* Radio group stack */
+  --rg-gap: var(--spacing-lg);                   /* 12px between items           */
+
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT TOKENS — Avatar
+     Source: Untitled UI PRO v7.0 › Components/Avatar
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Sizes */
+  --avatar-xs:  24px;
+  --avatar-sm:  32px;
+  --avatar-md:  40px;
+  --avatar-lg:  48px;
+  --avatar-xl:  56px;
+  --avatar-2xl: 64px;
+
+  /* Photo avatar — subtle border over the image */
+  --avatar-border-photo: rgba(0, 0, 0, 0.08);
+
+  /* Placeholder / initials avatar */
+  --avatar-placeholder-bg:     var(--gray-100);    /* #f5f5f5 */
+  --avatar-placeholder-border: var(--gray-200);    /* #e9eaeb */
+  --avatar-initials-color:     var(--gray-500);    /* #717680 */
+  --avatar-initials-weight:    600;                /* semibold */
+
+  /* Online status indicator */
+  --avatar-online-bg:          var(--success-500); /* #17b26a */
+  --avatar-online-border:      var(--color-white);
+  --avatar-online-xs:   6px;
+  --avatar-online-sm:   8px;
+  --avatar-online-md:  10px;
+  --avatar-online-lg:  12px;
+  --avatar-online-xl:  14px;
+  --avatar-online-2xl: 16px;
+
+  /* Company icon badge */
+  --avatar-company-xs:   10px;
+  --avatar-company-sm:   12px;
+  --avatar-company-md:   14px;
+  --avatar-company-lg:   16px;
+  --avatar-company-xl:   18px;
+  --avatar-company-2xl:  20px;
+
+}
+/* Appended tokens below — do not edit the closing brace above, new tokens are appended via this block */
+:root {
+
+  /* ── Modal ── */
+  --modal-max-w:            400px;
+  --modal-radius:           var(--radius-2xl);
+  --modal-shadow:           0px 20px 24px -4px rgba(10,13,18,0.08), 0px 8px 8px -4px rgba(10,13,18,0.03), 0px 3px 3px -1.5px rgba(10,13,18,0.04);
+  --modal-overlay-bg:       rgba(10, 13, 18, 0.70);
+  --modal-icon-success:     #dcfae6;
+  --modal-icon-warning:     #fef0c7;
+  --modal-icon-error:       #fee4e2;
+  --modal-icon-brand:       #f9f5ff;
+
+  /* ── Horizontal Tabs ── */
+  --tab-gap:                4px;
+  --tab-h-sm:               36px;
+  --tab-h-md:               44px;
+  --tab-radius:             var(--radius-sm);
+  --tab-font-size:          var(--text-sm);
+  --tab-font-weight:        600;
+  --tab-color:              var(--gray-500);
+  --tab-color-active-brand: var(--brand-700);
+  --tab-bg-active-brand:    var(--brand-50);
+  --tab-badge-bg-active:    var(--brand-50);
+  --tab-badge-border-active: #e9d7fe;
+  --tab-badge-color-active: var(--brand-700);
+
+  /* ── Loading Indicator ── */
+  --loading-size-sm:        32px;
+  --loading-size-md:        48px;
+  --loading-size-lg:        56px;
+  --loading-size-xl:        64px;
+  --loading-track:          var(--gray-200);
+  --loading-fill:           var(--brand-600);
+
+  /* ── Message ── */
+  --msg-bubble-bg:          var(--gray-50);
+  --msg-bubble-border:      var(--gray-200);
+  --msg-sent-bg:            var(--brand-600);
+
+}
+:root {
+
+  /* ── Alert ── */
+  --alert-radius:         var(--radius-xl);     /* 12px */
+  --alert-border:         var(--gray-300);
+  --alert-pad:            16px;
+  --alert-gap:            var(--spacing-xl);    /* 16px */
+  --alert-icon-success:   #079455;
+  --alert-icon-warning:   #dc6803;
+  --alert-icon-error:     #d92d20;
+  --alert-icon-brand:     var(--brand-600);
+  --alert-bg-success:     #dcfae6;
+  --alert-bg-warning:     #fef0c7;
+  --alert-bg-error:       #fee4e2;
+  --alert-bg-brand:       #f9f5ff;
+  --alert-title-weight:   600;
+  --alert-title-color:    var(--gray-700);
+  --alert-desc-color:     var(--gray-600);
+
+  /* ── File Upload ── */
+  --upload-radius:        var(--radius-xl);
+  --upload-border:        var(--gray-200);
+  --upload-pad:           16px 24px;
+  --upload-icon-radius:   var(--radius-md);
+  --upload-cta-color:     var(--brand-700);
+  --upload-hint-color:    var(--gray-500);
+
+  /* ── Pagination ── */
+  --page-btn-size:        40px;
+  --page-btn-radius:      var(--radius-md);
+  --page-btn-color:       var(--gray-500);
+  --page-btn-color-active: var(--gray-700);
+  --page-btn-bg-active:   var(--gray-50);
+
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SEMANTIC COLOR TOKENS — Light mode (default)
+   Source: Untitled UI PRO v7.0 › Figma Variables › Colors  (light mode)
+   These reference primitives above and define how color is used in the UI.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+
+  /* ── Text ── */
+  --color-text-primary: #181d27;
+  --color-text-primary-on-brand: #ffffff;
+  --color-text-secondary: #414651;
+  --color-text-secondary-hover: #252b37;
+  --color-text-secondary-on-brand: #e9d7fe;
+  --color-text-tertiary: #535862;
+  --color-text-tertiary-hover: #414651;
+  --color-text-tertiary-on-brand: #e9d7fe;
+  --color-text-quaternary: #717680;
+  --color-text-quaternary-on-brand: #d6bbfb;
+  --color-text-white: #ffffff;
+  --color-text-disabled: #717680;
+  --color-text-placeholder: #717680;
+  --color-text-placeholder-subtle: #d5d7da;
+  --color-text-brand-primary: #42307d;
+  --color-text-brand-secondary: #6941c6;
+  --color-text-brand-tertiary: #7f56d9;
+  --color-text-brand-tertiary-alt: #7f56d9;
+  --color-text-error-primary: #d92d20;
+  --color-text-error-primary-hover: #b42318;
+  --color-text-warning-primary: #dc6803;
+  --color-text-success-primary: #079455;
+
+  /* ── Border ── */
+  --color-border-primary: #d5d7da;
+  --color-border-secondary: #e9eaeb;
+  --color-border-secondary-alt: rgba(0,0,0,0.08);
+  --color-border-tertiary: #f5f5f5;
+  --color-border-disabled: #d5d7da;
+  --color-border-disabled-subtle: #e9eaeb;
+  --color-border-brand: #9e77ed;
+  --color-border-brand-alt: #7f56d9;
+  --color-border-error: #f04438;
+  --color-border-error-subtle: #fda29b;
+
+  /* ── Foreground ── */
+  --color-fg-primary: #181d27;
+  --color-fg-secondary: #414651;
+  --color-fg-secondary-hover: #252b37;
+  --color-fg-tertiary: #535862;
+  --color-fg-tertiary-hover: #414651;
+  --color-fg-quaternary: #a4a7ae;
+  --color-fg-quaternary-hover: #717680;
+  --color-fg-white: #ffffff;
+  --color-fg-disabled: #a4a7ae;
+  --color-fg-disabled-subtle: #d5d7da;
+  --color-fg-brand-primary: #7f56d9;
+  --color-fg-brand-secondary: #9e77ed;
+  --color-fg-brand-secondary-hover: #7f56d9;
+  --color-fg-error-primary: #d92d20;
+  --color-fg-error-secondary: #f04438;
+  --color-fg-warning-primary: #dc6803;
+  --color-fg-warning-secondary: #f79009;
+  --color-fg-success-primary: #079455;
+  --color-fg-success-secondary: #17b26a;
+
+  /* ── Background ── */
+  --color-bg-primary: #ffffff;
+  --color-bg-primary-alt: #ffffff;
+  --color-bg-primary-hover: #fafafa;
+  --color-bg-primary-solid: #0a0d12;
+  --color-bg-secondary: #fafafa;
+  --color-bg-secondary-alt: #fafafa;
+  --color-bg-secondary-hover: #f5f5f5;
+  --color-bg-secondary-subtle: #fdfdfd;
+  --color-bg-secondary-solid: #535862;
+  --color-bg-tertiary: #f5f5f5;
+  --color-bg-quaternary: #e9eaeb;
+  --color-bg-active: #fafafa;
+  --color-bg-disabled: #f5f5f5;
+  --color-bg-disabled-subtle: #fafafa;
+  --color-bg-overlay: #0a0d12;
+  --color-bg-brand-primary: #f9f5ff;
+  --color-bg-brand-primary-alt: #f9f5ff;
+  --color-bg-brand-secondary: #f4ebff;
+  --color-bg-brand-solid: #7f56d9;
+  --color-bg-brand-solid-hover: #6941c6;
+  --color-bg-brand-section: #53389e;
+  --color-bg-brand-section-subtle: #6941c6;
+  --color-bg-error-primary: #fef3f2;
+  --color-bg-error-secondary: #fee4e2;
+  --color-bg-error-solid: #d92d20;
+  --color-bg-error-solid-hover: #b42318;
+  --color-bg-warning-primary: #fffaeb;
+  --color-bg-warning-secondary: #fef0c7;
+  --color-bg-warning-solid: #dc6803;
+  --color-bg-success-primary: #ecfdf3;
+  --color-bg-success-secondary: #dcfae6;
+  --color-bg-success-solid: #079455;
+
+  /* ── Effects & Focus Rings ── */
+  --color-focus-rings-focus-ring: #9e77ed;
+  --color-focus-rings-focus-ring-error: #f04438;
+  --color-shadows-shadow-xs: rgba(10,13,18,0.05);
+  --color-shadows-shadow-sm-01: rgba(10,13,18,0.1);
+  --color-shadows-shadow-sm-02: rgba(10,13,18,0.1);
+  --color-shadows-shadow-md-01: rgba(10,13,18,0.1);
+  --color-shadows-shadow-md-02: rgba(10,13,18,0.06);
+  --color-shadows-shadow-lg-01: rgba(10,13,18,0.08);
+  --color-shadows-shadow-lg-02: rgba(10,13,18,0.03);
+  --color-shadows-shadow-lg-03: rgba(10,13,18,0.04);
+  --color-shadows-shadow-xl-01: rgba(10,13,18,0.08);
+  --color-shadows-shadow-xl-02: rgba(10,13,18,0.03);
+  --color-shadows-shadow-xl-03: rgba(10,13,18,0.04);
+  --color-shadows-shadow-2xl-01: rgba(10,13,18,0.18);
+  --color-shadows-shadow-2xl-02: rgba(10,13,18,0.04);
+  --color-shadows-shadow-3xl-01: rgba(10,13,18,0.14);
+  --color-shadows-shadow-3xl-02: rgba(10,13,18,0.04);
+  --color-shadows-shadow-skeumorphic-inner: rgba(10,13,18,0.05);
+  --color-shadows-shadow-skeumorphic-inner-border: rgba(10,13,18,0.18);
+  --color-portfolio-mockups-shadow-main-centre-md: rgba(10,13,18,0.14);
+  --color-portfolio-mockups-shadow-main-centre-lg: rgba(10,13,18,0.18);
+  --color-portfolio-mockups-shadow-overlay-lg: rgba(10,13,18,0.12);
+  --color-portfolio-mockups-shadow-grid-md: rgba(10,13,18,0.08);
+
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SEMANTIC COLOR TOKENS — Dark mode
+   Apply [data-theme="dark"] to <html> or any ancestor to activate.
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme="dark"] {
+
+  /* ── Text ── */
+  --color-text-primary: #f7f7f7;
+  --color-text-primary-on-brand: #f7f7f7;
+  --color-text-secondary: #cecfd2;
+  --color-text-secondary-hover: #ececed;
+  --color-text-secondary-on-brand: #cecfd2;
+  --color-text-tertiary: #94979c;
+  --color-text-tertiary-hover: #cecfd2;
+  --color-text-tertiary-on-brand: #94979c;
+  --color-text-quaternary: #94979c;
+  --color-text-quaternary-on-brand: #94979c;
+  --color-text-white: #ffffff;
+  --color-text-disabled: #85888e;
+  --color-text-placeholder: #85888e;
+  --color-text-placeholder-subtle: #373a41;
+  --color-text-brand-primary: #f7f7f7;
+  --color-text-brand-secondary: #cecfd2;
+  --color-text-brand-tertiary: #94979c;
+  --color-text-brand-tertiary-alt: #f7f7f7;
+  --color-text-error-primary: #f97066;
+  --color-text-error-primary-hover: #fda29b;
+  --color-text-warning-primary: #fdb022;
+  --color-text-success-primary: #47cd89;
+
+  /* ── Border ── */
+  --color-border-primary: #373a41;
+  --color-border-secondary: #22262f;
+  --color-border-secondary-alt: #22262f;
+  --color-border-tertiary: #22262f;
+  --color-border-disabled: #373a41;
+  --color-border-disabled-subtle: #22262f;
+  --color-border-brand: #b692f6;
+  --color-border-brand-alt: #373a41;
+  --color-border-error: #f97066;
+  --color-border-error-subtle: #f04438;
+
+  /* ── Foreground ── */
+  --color-fg-primary: #ffffff;
+  --color-fg-secondary: #cecfd2;
+  --color-fg-secondary-hover: #ececed;
+  --color-fg-tertiary: #94979c;
+  --color-fg-tertiary-hover: #cecfd2;
+  --color-fg-quaternary: #61656c;
+  --color-fg-quaternary-hover: #85888e;
+  --color-fg-white: #ffffff;
+  --color-fg-disabled: #85888e;
+  --color-fg-disabled-subtle: #61656c;
+  --color-fg-brand-primary: #9e77ed;
+  --color-fg-brand-primary-alt: #cecfd2;
+  --color-fg-brand-secondary: #9e77ed;
+  --color-fg-brand-secondary-alt: #61656c;
+  --color-fg-brand-secondary-hover: #85888e;
+  --color-fg-error-primary: #f04438;
+  --color-fg-error-secondary: #f97066;
+  --color-fg-warning-primary: #f79009;
+  --color-fg-warning-secondary: #fdb022;
+  --color-fg-success-primary: #17b26a;
+  --color-fg-success-secondary: #47cd89;
+
+  /* ── Background ── */
+  --color-bg-primary: #0c0e12;
+  --color-bg-primary-hover: #22262f;
+  --color-bg-secondary: #13161b;
+  --color-bg-secondary-hover: #22262f;
+  --color-bg-secondary-subtle: #13161b;
+  --color-bg-secondary-solid: #61656c;
+  --color-bg-tertiary: #22262f;
+  --color-bg-quaternary: #373a41;
+  --color-bg-active: #22262f;
+  --color-bg-disabled: #22262f;
+  --color-bg-disabled-subtle: #13161b;
+  --color-bg-overlay: #22262f;
+  --color-bg-brand-primary: #9e77ed;
+  --color-bg-brand-secondary: #7f56d9;
+  --color-bg-brand-solid: #7f56d9;
+  --color-bg-brand-solid-hover: #9e77ed;
+  --color-bg-error-primary: #55160c;
+  --color-bg-error-secondary: #d92d20;
+  --color-bg-error-solid: #d92d20;
+  --color-bg-error-solid-hover: #f04438;
+  --color-bg-warning-primary: #4e1d09;
+  --color-bg-warning-secondary: #dc6803;
+  --color-bg-warning-solid: #dc6803;
+  --color-bg-success-primary: #053321;
+  --color-bg-success-secondary: #079455;
+  --color-bg-success-solid: #079455;
+
+  /* ── Effects & Focus Rings ── */
+  --color-focus-rings-focus-ring: #9e77ed;
+  --color-focus-rings-focus-ring-error: #f04438;
+  --color-shadows-shadow-xs: rgba(255,255,255,0);
+  --color-shadows-shadow-sm-01: rgba(255,255,255,0);
+  --color-shadows-shadow-sm-02: rgba(255,255,255,0);
+  --color-shadows-shadow-md-01: rgba(255,255,255,0);
+  --color-shadows-shadow-md-02: rgba(255,255,255,0);
+  --color-shadows-shadow-lg-01: rgba(255,255,255,0);
+  --color-shadows-shadow-lg-02: rgba(255,255,255,0);
+  --color-shadows-shadow-lg-03: rgba(255,255,255,0);
+  --color-shadows-shadow-xl-01: rgba(255,255,255,0);
+  --color-shadows-shadow-xl-02: rgba(255,255,255,0);
+  --color-shadows-shadow-xl-03: rgba(255,255,255,0);
+  --color-shadows-shadow-2xl-01: rgba(255,255,255,0);
+  --color-shadows-shadow-2xl-02: rgba(255,255,255,0);
+  --color-shadows-shadow-3xl-01: rgba(255,255,255,0);
+  --color-shadows-shadow-3xl-02: rgba(255,255,255,0);
+  --color-shadows-shadow-skeumorphic-inner: rgba(12,14,18,0.05);
+  --color-shadows-shadow-skeumorphic-inner-border: rgba(12,14,18,0.18);
+  --color-portfolio-mockups-shadow-main-centre-md: rgba(255,255,255,0);
+  --color-portfolio-mockups-shadow-main-centre-lg: rgba(255,255,255,0);
+  --color-portfolio-mockups-shadow-overlay-lg: rgba(255,255,255,0);
+  --color-portfolio-mockups-shadow-grid-md: rgba(255,255,255,0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ADDITIONAL UTILITY PALETTE (Extended Untitled UI PRO colors)
+   Use --utility-* vars when you need semantic badge/tag colours beyond
+   brand, success, warning, error.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+
+  /* ── Utility palette: Gray blue ── */
+  --utility-gray-blue-50: #f8f9fc;
+  --utility-gray-blue-100: #eaecf5;
+  --utility-gray-blue-200: #d5d9eb;
+  --utility-gray-blue-300: #b3b8db;
+  --utility-gray-blue-400: #717bbc;
+  --utility-gray-blue-500: #4e5ba6;
+  --utility-gray-blue-600: #3e4784;
+  --utility-gray-blue-700: #363f72;
+
+  /* ── Utility palette: Green ── */
+  --utility-green-50: #edfcf2;
+  --utility-green-100: #d3f8df;
+  --utility-green-200: #aaf0c4;
+  --utility-green-300: #73e2a3;
+  --utility-green-400: #3ccb7f;
+  --utility-green-500: #16b364;
+  --utility-green-600: #099250;
+  --utility-green-700: #087443;
+
+  /* ── Utility palette: Blue light ── */
+  --utility-blue-light-50: #f0f9ff;
+  --utility-blue-light-100: #e0f2fe;
+  --utility-blue-light-200: #b9e6fe;
+  --utility-blue-light-300: #7cd4fd;
+  --utility-blue-light-400: #36bffa;
+  --utility-blue-light-500: #0ba5ec;
+  --utility-blue-light-600: #0086c9;
+  --utility-blue-light-700: #026aa2;
+
+  /* ── Utility palette: Blue ── */
+  --utility-blue-50: #eff8ff;
+  --utility-blue-100: #d1e9ff;
+  --utility-blue-200: #b2ddff;
+  --utility-blue-300: #84caff;
+  --utility-blue-400: #53b1fd;
+  --utility-blue-500: #2e90fa;
+  --utility-blue-600: #1570ef;
+  --utility-blue-700: #175cd3;
+
+  /* ── Utility palette: Blue dark ── */
+  --utility-blue-dark-50: #eff4ff;
+  --utility-blue-dark-100: #d1e0ff;
+  --utility-blue-dark-200: #b2ccff;
+  --utility-blue-dark-300: #84adff;
+  --utility-blue-dark-400: #528bff;
+  --utility-blue-dark-500: #2970ff;
+  --utility-blue-dark-600: #155eef;
+  --utility-blue-dark-700: #004eeb;
+
+  /* ── Utility palette: Indigo ── */
+  --utility-indigo-50: #eef4ff;
+  --utility-indigo-100: #e0eaff;
+  --utility-indigo-200: #c7d7fe;
+  --utility-indigo-300: #a4bcfd;
+  --utility-indigo-400: #8098f9;
+  --utility-indigo-500: #6172f3;
+  --utility-indigo-600: #444ce7;
+  --utility-indigo-700: #3538cd;
+
+  /* ── Utility palette: Purple ── */
+  --utility-purple-50: #f4f3ff;
+  --utility-purple-100: #ebe9fe;
+  --utility-purple-200: #d9d6fe;
+  --utility-purple-300: #bdb4fe;
+  --utility-purple-400: #9b8afb;
+  --utility-purple-500: #7a5af8;
+  --utility-purple-600: #6938ef;
+  --utility-purple-700: #5925dc;
+
+  /* ── Utility palette: Fuchsia ── */
+  --utility-fuchsia-50: #fdf4ff;
+  --utility-fuchsia-100: #fbe8ff;
+  --utility-fuchsia-200: #f6d0fe;
+  --utility-fuchsia-300: #eeaafd;
+  --utility-fuchsia-400: #e478fa;
+  --utility-fuchsia-500: #d444f1;
+  --utility-fuchsia-600: #ba24d5;
+  --utility-fuchsia-700: #9f1ab1;
+
+  /* ── Utility palette: Pink ── */
+  --utility-pink-50: #fdf2fa;
+  --utility-pink-100: #fce7f6;
+  --utility-pink-200: #fcceee;
+  --utility-pink-300: #faa7e0;
+  --utility-pink-400: #f670c7;
+  --utility-pink-500: #ee46bc;
+  --utility-pink-600: #dd2590;
+  --utility-pink-700: #c11574;
+
+  /* ── Utility palette: Orange dark ── */
+  --utility-orange-dark-50: #fff4ed;
+  --utility-orange-dark-100: #ffe6d5;
+  --utility-orange-dark-200: #ffd6ae;
+  --utility-orange-dark-300: #ff9c66;
+  --utility-orange-dark-400: #ff692e;
+  --utility-orange-dark-500: #ff4405;
+  --utility-orange-dark-600: #e62e05;
+  --utility-orange-dark-700: #bc1b06;
+
+  /* ── Utility palette: Orange ── */
+  --utility-orange-50: #fef6ee;
+  --utility-orange-100: #fdead7;
+  --utility-orange-200: #f9dbaf;
+  --utility-orange-300: #f7b27a;
+  --utility-orange-400: #f38744;
+  --utility-orange-500: #ef6820;
+  --utility-orange-600: #e04f16;
+  --utility-orange-700: #b93815;
+
+  /* ── Utility palette: Yellow ── */
+  --utility-yellow-50: #fefbe8;
+  --utility-yellow-100: #fef7c3;
+  --utility-yellow-200: #feee95;
+  --utility-yellow-300: #fde272;
+  --utility-yellow-400: #fac515;
+  --utility-yellow-500: #eaaa08;
+  --utility-yellow-600: #ca8504;
+  --utility-yellow-700: #a15c07;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ALPHA OVERLAYS & COMPONENT-SPECIFIC COLORS
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+
+  /* ── Alpha overlays ── */
+  --alpha-alpha-white-10: rgba(255,255,255,0.1);
+  --alpha-alpha-white-20: rgba(255,255,255,0.2);
+  --alpha-alpha-white-30: rgba(255,255,255,0.3);
+  --alpha-alpha-white-40: rgba(255,255,255,0.4);
+  --alpha-alpha-white-50: rgba(255,255,255,0.5);
+  --alpha-alpha-white-60: rgba(255,255,255,0.6);
+  --alpha-alpha-white-70: rgba(255,255,255,0.7);
+  --alpha-alpha-white-80: rgba(255,255,255,0.8);
+  --alpha-alpha-white-90: rgba(255,255,255,0.9);
+  --alpha-alpha-white-100: #ffffff;
+  --alpha-alpha-black-10: rgba(0,0,0,0.1);
+  --alpha-alpha-black-20: rgba(0,0,0,0.2);
+  --alpha-alpha-black-30: rgba(0,0,0,0.3);
+  --alpha-alpha-black-40: rgba(0,0,0,0.4);
+  --alpha-alpha-black-50: rgba(0,0,0,0.5);
+  --alpha-alpha-black-60: rgba(0,0,0,0.6);
+  --alpha-alpha-black-70: rgba(0,0,0,0.7);
+  --alpha-alpha-black-80: rgba(0,0,0,0.8);
+  --alpha-alpha-black-90: rgba(0,0,0,0.9);
+  --alpha-alpha-black-100: #000000;
+
+  /* ── Component-specific colors ── */
+  --comp-app-store-badges-app-store-badge-border: #a6a6a6;
+  --comp-avatars-avatar-styles-bg-neutral: #e0e0e0;
+  --comp-buttons-button-primary-icon: #d6bbfb;
+  --comp-buttons-button-primary-icon-hover: #e9d7fe;
+  --comp-buttons-button-destructive-primary-icon: #fda29b;
+  --comp-buttons-button-destructive-primary-icon-hover: #fecdca;
+  --comp-footers-footer-button-fg: #e9d7fe;
+  --comp-footers-footer-button-fg-hover: #ffffff;
+  --comp-icons-icons-icon-fg-brand: #7f56d9;
+  --comp-icons-icons-icon-fg-brand-on-brand: #e9d7fe;
+  --comp-icons-featured-icons-featured-icon-light-fg-brand: #7f56d9;
+  --comp-icons-featured-icons-featured-icon-light-fg-gray: #717680;
+  --comp-icons-featured-icons-featured-icon-light-fg-error: #d92d20;
+  --comp-icons-featured-icons-featured-icon-light-fg-warning: #dc6803;
+  --comp-icons-featured-icons-featured-icon-light-fg-success: #079455;
+  --comp-mockups-screen-mockup-border: #181d27;
+  --comp-sliders-slider-handle-bg: #ffffff;
+  --comp-sliders-slider-handle-border: #7f56d9;
+  --comp-toggles-toggle-button-fg-disabled: #fafafa;
+  --comp-toggles-toggle-border: #d5d7da;
+  --comp-tooltips-tooltip-supporting-text: #d5d7da;
+  --comp-text-editor-text-editor-icon-fg: #a4a7ae;
+  --comp-text-editor-text-editor-icon-fg-active: #717680;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRIMITIVE TOKEN CORRECTIONS & ADDITIONS (from Figma token exports)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* ── Spacing additions ── */
+:root {
+  --spacing-none: 0px;
+  --spacing-5xl:  40px;
+  --spacing-9xl:  96px;
+  --spacing-11xl: 160px;
+}
+
+/* ── Width scale ── */
+:root {
+  --width-xxs:           320px;
+  --width-xs:            384px;
+  --width-sm:            480px;
+  --width-md:            560px;
+  --width-lg:            640px;
+  --width-xl:            768px;
+  --width-2xl:           1024px;
+  --width-3xl:           1280px;
+  --width-4xl:           1440px;
+  --width-5xl:           1600px;
+  --width-6xl:           1920px;
+  --paragraph-max-width: 720px;
+}
+
+/* ── Layout / container ── */
+:root {
+  --container-padding-mobile:  16px;
+  --container-padding-desktop: 32px;
+  --container-max-width:       1280px;
+}
+
+/* ── Display type scale (font-size + line-height) ── */
+:root {
+  --text-display-2xl: 72px;  --lh-display-2xl: 90px;  --ls-display-2xl: -0.02em;
+  --text-display-xl:  60px;  --lh-display-xl:  72px;  --ls-display-xl:  -0.02em;
+  --text-display-lg:  48px;  --lh-display-lg:  60px;  --ls-display-lg:  -0.02em;
+  --text-display-md:  36px;  --lh-display-md:  44px;  --ls-display-md:  -0.02em;
+  --text-display-sm:  30px;  --lh-display-sm:  38px;
+  --text-display-xs:  24px;  --lh-display-xs:  32px;
+}
+
+/* ── Backdrop blur ── */
+:root {
+  --blur-sm: 4px;
+  --blur-md: 8px;
+  --blur-lg: 12px;
+  --blur-xl: 20px;
+}

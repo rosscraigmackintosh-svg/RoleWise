@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoleWise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ─── Add JD modal ──────────────────────────────────── -->
+  <div id="modal-add" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="modal-title">Add JD</span>
+        <button class="btn-icon" id="btn-close-add">&#x2715;</button>
+      </div>
+      <div class="modal-body">
+        <div id="add-error" class="inline-error hidden"></div>
+
+        <div class="field-group">
+          <label class="field-label" for="add-jd">Job description</label>
+          <div id="jd-truncation-warning" class="jd-truncation-warning hidden">
+            <p>This job description may be incomplete. LinkedIn often truncates listings unless you click <strong>"Show more"</strong> before copying.</p>
+            <div class="jd-truncation-actions">
+              <button id="btn-jd-paste-anyway">Paste anyway</button>
+              <button id="btn-jd-recopy">Re-copy full JD</button>
+            </div>
+          </div>
+          <textarea class="field-textarea" id="add-jd" placeholder="Paste the job description here…" style="min-height:180px;"></textarea>
+        </div>
+
+        <div class="modal-row">
+          <div class="field-group">
+            <label class="field-label" for="add-company">Company <span class="opt">(optional)</span></label>
+            <input class="field-input" id="add-company" type="text" placeholder="Stripe" autocomplete="off">
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="add-title">Role title <span class="opt">(optional)</span></label>
+            <input class="field-input" id="add-title" type="text" placeholder="Product Designer" autocomplete="off">
+          </div>
+        </div>
+
+        <p id="add-autofill-hint" style="display:none;font-size:11.5px;color:var(--text-light);margin:-4px 0 10px;">Auto-filled from JD — you can edit.</p>
+
+        <div class="modal-row">
+          <div class="field-group">
+            <label class="field-label" for="add-location">Location <span class="opt">(optional)</span></label>
+            <input class="field-input" id="add-location" type="text" placeholder="Remote, UK">
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="add-source">Source <span class="opt">(optional)</span></label>
+            <select class="field-input" id="add-source" style="appearance:auto;">
+              <option value="">Unknown</option>
+              <option value="LinkedIn">LinkedIn</option>
+              <option value="Recruiter outreach">Recruiter outreach</option>
+              <option value="Direct company site">Direct company site</option>
+              <option value="Job board">Job board</option>
+              <option value="Referral">Referral</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-row">
+          <div class="field-group">
+            <label class="field-label" for="add-url">URL <span class="opt">(optional)</span></label>
+            <input class="field-input" id="add-url" type="url" placeholder="https://...">
+          </div>
+          <div class="field-group" style="max-width:180px;">
+            <label class="field-label" for="add-engagement-type">Engagement type <span class="opt">(optional)</span></label>
+            <select class="field-input" id="add-engagement-type" style="appearance:auto;">
+              <option value="">Unknown</option>
+              <option value="Contract">Contract</option>
+              <option value="Freelance">Freelance</option>
+              <option value="Permanent">Permanent</option>
+              <option value="Contract-to-perm">Contract-to-perm</option>
+            </select>
+          </div>
+        </div>
+
+        <details id="recruiter-details-section" class="add-recruiter-section">
+          <summary class="add-recruiter-toggle">
+            Recruiter
+            <span class="add-recruiter-toggle-hint">(optional)</span>
+            <span id="recruiter-autofill-badge" class="recruiter-autofill-badge hidden">Auto-detected</span>
+          </summary>
+          <div class="recruiter-fields">
+            <div class="modal-row">
+              <div class="field-group">
+                <label class="field-label" for="add-rec-name">Name</label>
+                <input class="field-input" id="add-rec-name" type="text" placeholder="Sarah Mitchell" autocomplete="off">
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="add-rec-company">Agency / company</label>
+                <input class="field-input" id="add-rec-company" type="text" placeholder="Zebra People" autocomplete="off">
+              </div>
+            </div>
+            <div class="modal-row">
+              <div class="field-group">
+                <label class="field-label" for="add-rec-email">Email</label>
+                <input class="field-input" id="add-rec-email" type="email" placeholder="sarah@example.com" autocomplete="off">
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="add-rec-url">Profile URL</label>
+                <input class="field-input" id="add-rec-url" type="url" placeholder="https://linkedin.com/in/..." autocomplete="off">
+              </div>
+            </div>
+            <div class="field-group" style="max-width:180px;margin-bottom:8px;">
+              <label class="field-label" for="add-rec-type">Type</label>
+              <select class="field-input" id="add-rec-type" style="appearance:auto;">
+                <option value="">Unknown</option>
+                <option value="Agency">Agency</option>
+                <option value="Internal">Internal</option>
+              </select>
+            </div>
+          </div>
+        </details>
+
+        <details id="role-details-section" class="add-recruiter-section">
+          <summary class="add-recruiter-toggle">
+            Role details
+            <span class="add-recruiter-toggle-hint">(optional)</span>
+            <span id="role-details-autofill-badge" class="recruiter-autofill-badge hidden">Auto-detected</span>
+          </summary>
+          <div class="recruiter-fields">
+            <div class="modal-row">
+              <div class="field-group" style="max-width:200px;">
+                <label class="field-label" for="add-ir35-status">IR35 status</label>
+                <select class="field-input" id="add-ir35-status" style="appearance:auto;">
+                  <option value="">Unknown</option>
+                  <option value="Outside IR35">Outside IR35</option>
+                  <option value="Inside IR35">Inside IR35</option>
+                  <option value="Not applicable">Not applicable</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="add-day-rate">Day rate</label>
+                <input class="field-input" id="add-day-rate" type="text" placeholder="e.g. £600/day" autocomplete="off">
+              </div>
+            </div>
+            <div class="modal-row">
+              <div class="field-group" style="max-width:200px;">
+                <label class="field-label" for="add-contract-length">Contract length</label>
+                <input class="field-input" id="add-contract-length" type="text" placeholder="e.g. 6 months" autocomplete="off">
+              </div>
+              <div class="field-group" style="max-width:200px;">
+                <label class="field-label" for="add-start-timeline">Start</label>
+                <select class="field-input" id="add-start-timeline" style="appearance:auto;">
+                  <option value="">Unknown</option>
+                  <option value="Immediate">Immediate</option>
+                  <option value="Within 1 month">Within 1 month</option>
+                  <option value="Flexible">Flexible</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <button class="btn-primary" id="btn-save-add">Save JD</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Share analysis modal ────────────────────────────── -->
+  <div id="modal-share" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width:400px;">
+      <div class="modal-header">
+        <span class="modal-title">Share this analysis</span>
+        <button class="btn-icon" id="btn-close-share">&#x2715;</button>
+      </div>
+      <div class="modal-body">
+        <p class="share-modal-desc">Create a read-only link to this role analysis. Personal signals, notes, and decision history are not included.</p>
+        <div id="share-generate-area">
+          <button class="btn-primary" id="btn-generate-share-link">Generate link</button>
+        </div>
+        <div id="share-link-area" style="display:none;">
+          <div class="share-link-box">
+            <span class="share-link-text" id="share-link-display"></span>
+            <button class="btn-copy-link" id="btn-copy-share-link">Copy</button>
+          </div>
+          <p class="share-modal-note">Anyone with this link can view the analysis. No login required.</p>
+        </div>
+        <div id="share-error" class="inline-error hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Edit Role Details modal ────────────────────────── -->
+  <div id="modal-edit-details" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width:540px;">
+      <div class="modal-header">
+        <span class="modal-title">Edit role details</span>
+        <button class="btn-icon" id="btn-close-edit-details">&#x2715;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-details-role-id">
+        <div id="edit-details-error" class="inline-error hidden" style="margin-bottom:12px;"></div>
+
+        <div class="modal-row">
+          <div class="field-group">
+            <label class="field-label" for="edit-engagement-type">Engagement type</label>
+            <select class="field-input" id="edit-engagement-type" style="appearance:auto;">
+              <option value="">Unknown</option>
+              <option value="Contract">Contract</option>
+              <option value="Freelance">Freelance</option>
+              <option value="Permanent">Permanent</option>
+              <option value="Contract-to-perm">Contract-to-perm</option>
+            </select>
+          </div>
+          <div class="field-group" style="max-width:200px;">
+            <label class="field-label" for="edit-ir35-status">IR35 status</label>
+            <select class="field-input" id="edit-ir35-status" style="appearance:auto;">
+              <option value="">Unknown</option>
+              <option value="Outside IR35">Outside IR35</option>
+              <option value="Inside IR35">Inside IR35</option>
+              <option value="Undetermined">Undetermined</option>
+              <option value="Not applicable">Not applicable</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-row">
+          <div class="field-group">
+            <label class="field-label" for="edit-day-rate">Day rate</label>
+            <input class="field-input" id="edit-day-rate" type="text" placeholder="e.g. £600/day">
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="edit-contract-length">Contract length</label>
+            <input class="field-input" id="edit-contract-length" type="text" placeholder="e.g. 6 months">
+          </div>
+        </div>
+
+        <div class="modal-row">
+          <div class="field-group" style="max-width:200px;">
+            <label class="field-label" for="edit-start-timeline">Start timeline</label>
+            <select class="field-input" id="edit-start-timeline" style="appearance:auto;">
+              <option value="">Unknown</option>
+              <option value="Immediate">Immediate</option>
+              <option value="Within 1 month">Within 1 month</option>
+              <option value="Flexible">Flexible</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="edit-location">Location</label>
+            <input class="field-input" id="edit-location" type="text" placeholder="e.g. London, UK">
+          </div>
+        </div>
+
+        <div class="modal-row">
+          <div class="field-group">
+            <label class="field-label" for="edit-work-model">Work model</label>
+            <select class="field-input" id="edit-work-model" style="appearance:auto;">
+              <option value="">Unknown</option>
+              <option value="remote">Remote</option>
+              <option value="hybrid">Hybrid</option>
+              <option value="onsite">On-site</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="edit-source">Source</label>
+            <select class="field-input" id="edit-source" style="appearance:auto;">
+              <option value="">Unknown</option>
+              <option value="LinkedIn">LinkedIn</option>
+              <option value="Recruiter outreach">Recruiter outreach</option>
+              <option value="Direct company site">Direct company site</option>
+              <option value="Job board">Job board</option>
+              <option value="Referral">Referral</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-row">
+          <div class="field-group">
+            <label class="field-label" for="edit-job-url">Job URL</label>
+            <input class="field-input" id="edit-job-url" type="url" placeholder="https://...">
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+          <button class="btn-primary" id="btn-save-edit-details">Save changes</button>
+          <button class="btn-ghost" id="btn-cancel-edit-details">Cancel</button>
+          <span id="edit-details-confirm" style="font-size:12.5px;color:var(--text-muted);"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Three-column app ───────────────────────────────── -->
+  <div class="app">
+
+    <!-- Panel 1: Navigation -->
+    <aside class="col-left">
+      <div class="col-left-logo">
+        <button class="logo-btn" id="btn-logo" aria-label="RoleWise — reset view">RoleWise</button>
+      </div>
+      <div class="col-left-tagline">Better role decisions</div>
+
+      <nav class="col-left-nav">
+        <button class="nav-item active" data-nav="applications">Applications</button>
+        <div class="nav-sub-filters" id="nav-app-filters">
+          <button class="nav-sub-item" data-filter="all"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>All</button>
+          <button class="nav-sub-item" data-filter="needs_attention"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Needs attention</button>
+          <button class="nav-sub-item" data-filter="in_progress"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>In progress</button>
+          <button class="nav-sub-item active" data-filter="active"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Active</button>
+          <button class="nav-sub-item" data-filter="archive"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Archive</button>
+        </div>
+        <button class="nav-item"        data-nav="radar">Radar</button>
+        <button class="nav-item"        data-nav="recruiters">Recruiters</button>
+        <button class="nav-item"        data-nav="review">Review</button>
+        <div style="height:1px;background:var(--border);margin:8px 0 6px;"></div>
+        <button class="nav-item"        data-nav="safeguards">Platform Safeguards</button>
+        <button class="nav-item"        data-nav="admin">Admin</button>
+      </nav>
+
+      <!-- Maintenance utility: hidden from main UI -->
+      <button class="btn-backfill" id="btn-backfill" style="display:none">Fix missing updates</button>
+      <span class="backfill-msg" id="backfill-msg" style="display:none"></span>
+
+      <!-- Profile row — bottom-left -->
+      <div class="col-left-footer">
+        <!-- Version label -->
+        <div class="col-left-version">
+          <span>Rolewise v2</span>
+          <span>Single-user edition</span>
+          <span>March 2026</span>
+        </div>
+        <button class="nav-profile-row" id="btn-nav-profile" data-nav="profile" aria-label="Profile">
+          <span class="nav-profile-circle" aria-hidden="true">
+            <span id="nav-profile-initials">P</span>
+          </span>
+          <span class="nav-profile-row-name" id="nav-profile-name">Profile</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Panel 2: Filter side panel (slides in between nav and list) -->
+    <div class="col-filter" id="col-filter">
+      <div class="filter-side-panel" id="filter-side-panel">
+        <div class="fp-header">
+          <span class="fp-title">Filters</span>
+          <button class="fp-clear" id="fp-clear-all" disabled>Clear all</button>
+        </div>
+
+        <!-- Decision -->
+        <div class="fp-section">
+          <div class="fp-section-label">Decision</div>
+          <label class="fp-option"><input type="checkbox" data-filter="decision" value="awaiting"><span>Awaiting decision</span></label>
+          <label class="fp-option"><input type="checkbox" data-filter="decision" value="apply"><span>Applied</span></label>
+          <label class="fp-option"><input type="checkbox" data-filter="decision" value="skip"><span>Skipped</span></label>
+        </div>
+
+        <!-- Engagement type -->
+        <div class="fp-section">
+          <div class="fp-section-label">Engagement type</div>
+          <label class="fp-option"><input type="checkbox" data-filter="engagement" value="Contract"><span>Contract</span></label>
+          <label class="fp-option"><input type="checkbox" data-filter="engagement" value="Permanent"><span>Permanent</span></label>
+          <label class="fp-option"><input type="checkbox" data-filter="engagement" value="Freelance"><span>Freelance</span></label>
+        </div>
+
+        <!-- Work model -->
+        <div class="fp-section">
+          <div class="fp-section-label">Work model</div>
+          <label class="fp-option"><input type="checkbox" data-filter="workModel" value="remote"><span>Remote</span></label>
+          <label class="fp-option"><input type="checkbox" data-filter="workModel" value="hybrid"><span>Hybrid</span></label>
+          <label class="fp-option"><input type="checkbox" data-filter="workModel" value="on-site"><span>On-site</span></label>
+        </div>
+
+        <!-- Response state -->
+        <div class="fp-section">
+          <div class="fp-section-label">Response state</div>
+          <label class="fp-option"><input type="checkbox" data-filter="response" value="active"><span>Responded</span></label>
+          <label class="fp-option"><input type="checkbox" data-filter="response" value="waiting"><span>Waiting</span></label>
+          <label class="fp-option"><input type="checkbox" data-filter="response" value="stale"><span>Stale</span></label>
+          <label class="fp-option"><input type="checkbox" data-filter="response" value="ghosted"><span>Ghosted</span></label>
+        </div>
+
+        <!-- Recruiter linked -->
+        <div class="fp-section">
+          <div class="fp-section-label">Recruiter linked</div>
+          <label class="fp-option"><input type="checkbox" data-filter="recruiter" value="with"><span>With recruiter</span></label>
+          <label class="fp-option"><input type="checkbox" data-filter="recruiter" value="without"><span>Without recruiter</span></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 3: Role list (Applications) -->
+    <div class="col-list" id="col-list">
+      <!-- Applications sub-panel: search + tabs + role list -->
+      <div id="app-list-panel" style="display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0;">
+        <!-- Add JD lives here — only visible in the applications/roles section -->
+        <div class="list-panel-header">
+          <button class="btn-add-jd" id="btn-open-add">+ Add JD</button>
+        </div>
+        <div class="inbox-search">
+          <button class="filter-toggle-btn" id="filter-panel-toggle" title="Filters" aria-label="Toggle filters">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+              <line x1="1" y1="3" x2="12" y2="3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              <line x1="3" y1="6.5" x2="10" y2="6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              <line x1="5" y1="10" x2="8" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+            <span class="filter-dot" id="filter-active-dot" style="display:none;"></span>
+          </button>
+          <div class="inbox-search-wrap">
+            <svg class="inbox-search-icon" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle cx="5.75" cy="5.75" r="3.75" stroke="currentColor" stroke-width="1.4"/>
+              <line x1="8.75" y1="8.75" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+            <input type="text" id="filter-search" class="inbox-search-input" placeholder="Search" autocomplete="off" spellcheck="false">
+            <span class="inbox-results-count" id="inbox-results-count"></span>
+            <button class="inbox-search-clear" id="btn-search-clear" aria-label="Clear search" tabindex="-1">×</button>
+          </div>
+        </div>
+
+        <div class="role-inbox" id="role-inbox">
+          <div class="state-msg"><span class="spinner"></span></div>
+        </div>
+        <!-- Compare bar — shown when ≥1 roles checked -->
+        <div class="compare-bar" id="compare-bar">
+          <span class="compare-bar-info" id="compare-bar-info"></span>
+          <div class="compare-bar-actions">
+            <button class="btn-ghost" id="btn-compare-clear" style="font-size:12px;padding:4px 10px;">Clear</button>
+            <button class="btn-primary" id="btn-compare-roles" style="font-size:12px;padding:4px 12px;" disabled>Compare</button>
+          </div>
+        </div>
+      </div>
+      <!-- Recruiters sub-panel: injected by renderRecruitersView, hidden by default -->
+      <div id="rc-list-panel-wrapper" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0;"></div>
+    </div>
+
+    <!-- Panel 3: Role Overview (workflow controls + card grid) -->
+    <main class="col-center" id="col-center">
+
+      <!-- Intake panel — shown during Add JD flow (States 1 & 2), hidden otherwise -->
+      <div id="intake-panel" class="intake-panel" hidden>
+        <div class="intake-inner">
+          <!-- State 1: Input -->
+          <div class="intake-input-wrap" id="intake-input-wrap">
+            <div class="intake-intro">
+              <div class="intake-title">New Role</div>
+              <p class="intake-desc">Paste the job description or link for the role. You can also paste recruiter emails, company links, or anything related to the opportunity.</p>
+            </div>
+            <textarea
+              class="intake-textarea"
+              id="intake-textarea"
+              placeholder="Paste a job description, link, or recruiter email…"
+              rows="5"
+              autocomplete="off"
+              spellcheck="false"
+            ></textarea>
+            <div class="intake-footer">
+              <span class="intake-hint">Ctrl+Enter to submit</span>
+              <button class="intake-send-btn" id="intake-send-btn" disabled>Analyse</button>
+            </div>
+          </div>
+          <!-- State 2: Analysing status -->
+          <div class="intake-status-wrap" id="intake-status-wrap" hidden>
+            <div class="intake-status-text" id="intake-status-text">Analysing job description…</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="col-overview-body">
+        <div id="role-sticky-header" class="role-sticky-header" style="display:none;"></div>
+        <div id="col-rail-section" class="col-rail-section" style="display: none;"></div>
+        <div id="col-overview-cards">
+          <div class="doc-empty">Select a role to view details</div>
+        </div>
+        <div id="ws-next-action" style="display:none;"></div>
+      </div>
+    </main>
+
+    <!-- Panel 4: Chat / Workspace -->
+    <aside class="col-chat" id="col-chat">
+      <div class="doc-empty">Select a role to open the workspace.</div>
+    </aside>
+
+  </div>
+
+  <!-- ─── Scripts ───────────────────────────────────────── -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <!-- Prompt layer — must load before app.js so helpers are available globally -->
+  <script src="ai/prompts/rolewise-prompts.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
