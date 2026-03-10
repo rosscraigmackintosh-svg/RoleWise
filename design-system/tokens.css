@@ -572,66 +572,214 @@
   --avatar-company-xl:   18px;
   --avatar-company-2xl:  20px;
 
-
   /* ─────────────────────────────────────────────────────────────────────────
-     DESIGN SYSTEM SHOWCASE ALIASES
-     Used by design-system/index.html to render colour swatches.
-     Not referenced in styles.css — documentation-only.
+     SEMANTIC COLOR TOKENS — Light mode
      ───────────────────────────────────────────────────────────────────────── */
 
-  /* Text */
-  --color-text-primary:         var(--gray-900);    /* #181d27 */
-  --color-text-secondary:       var(--gray-700);    /* #414651 */
-  --color-text-tertiary:        var(--gray-600);    /* #535862 */
-  --color-text-quaternary:      var(--gray-500);    /* #717680 */
-  --color-text-disabled:        var(--gray-500);    /* #717680 */
-  --color-text-placeholder:     var(--gray-500);    /* #717680 */
-  --color-text-brand-primary:   #42307d;
-  --color-text-brand-secondary: var(--brand-700);   /* #6941c6 */
-  --color-text-brand-tertiary:  var(--brand-600);   /* #7f56d9 */
-  --color-text-error-primary:   var(--error-600);   /* #d92d20 */
-  --color-text-warning-primary: #dc6803;
-  --color-text-success-primary: #079455;
+  /* ── Text ── */
+  --color-text-primary:             #181d27;
+  --color-text-primary-on-brand:    #ffffff;
+  --color-text-secondary:           #414651;
+  --color-text-secondary-hover:     #252b37;
+  --color-text-secondary-on-brand:  #e9d7fe;
+  --color-text-tertiary:            #535862;
+  --color-text-tertiary-hover:      #414651;
+  --color-text-tertiary-on-brand:   #e9d7fe;
+  --color-text-quaternary:          #717680;
+  --color-text-quaternary-on-brand: #d6bbfb;
+  --color-text-white:               #ffffff;
+  --color-text-disabled:            #717680;
+  --color-text-placeholder:         #717680;
+  --color-text-placeholder-subtle:  #d5d7da;
+  --color-text-brand-primary:       #42307d;
+  --color-text-brand-secondary:     #6941c6;
+  --color-text-brand-tertiary:      #7f56d9;
+  --color-text-brand-tertiary-alt:  #7f56d9;
+  --color-text-error-primary:       #d92d20;
+  --color-text-error-primary-hover: #b42318;
+  --color-text-warning-primary:     #dc6803;
+  --color-text-success-primary:     #079455;
 
-  /* Background */
-  --color-bg-primary:           var(--color-white);  /* #ffffff */
-  --color-bg-secondary:         var(--gray-50);      /* #fafafa */
-  --color-bg-tertiary:          var(--gray-100);     /* #f5f5f5 */
-  --color-bg-quaternary:        var(--gray-200);     /* #e9eaeb */
-  --color-bg-disabled:          var(--gray-100);     /* #f5f5f5 */
-  --color-bg-brand-primary:     var(--brand-50);     /* #f9f5ff */
-  --color-bg-brand-secondary:   var(--brand-100);    /* #f4ebff */
-  --color-bg-brand-solid:       var(--brand-600);    /* #7f56d9 */
-  --color-bg-error-primary:     var(--error-50);     /* #fef3f2 */
-  --color-bg-error-solid:       var(--error-600);    /* #d92d20 */
-  --color-bg-success-primary:   var(--success-50);   /* #ecfdf3 */
-  --color-bg-success-solid:     #079455;
-  --color-bg-warning-primary:   var(--warning-50);   /* #fffaeb */
+  /* ── Border ── */
+  --color-border-primary:          #d5d7da;
+  --color-border-secondary:        #e9eaeb;
+  --color-border-secondary-alt:    rgba(0,0,0,0.08);
+  --color-border-tertiary:         #f5f5f5;
+  --color-border-disabled:         #d5d7da;
+  --color-border-disabled-subtle:  #e9eaeb;
+  --color-border-brand:            #9e77ed;
+  --color-border-brand-alt:        #7f56d9;
+  --color-border-error:            #f04438;
+  --color-border-error-subtle:     #fda29b;
 
-  /* Border */
-  --color-border-primary:       var(--gray-300);     /* #d5d7da */
-  --color-border-secondary:     var(--gray-200);     /* #e9eaeb */
-  --color-border-brand:         var(--brand-500);    /* #9e77ed */
-  --color-border-error:         var(--error-300);    /* #fda29b */
-  --color-border-disabled:      var(--gray-200);     /* #e9eaeb */
+  /* ── Foreground / Icon ── */
+  --color-fg-primary:               #181d27;
+  --color-fg-secondary:             #414651;
+  --color-fg-secondary-hover:       #252b37;
+  --color-fg-tertiary:              #535862;
+  --color-fg-tertiary-hover:        #414651;
+  --color-fg-quaternary:            #a4a7ae;
+  --color-fg-quaternary-hover:      #717680;
+  --color-fg-white:                 #ffffff;
+  --color-fg-disabled:              #a4a7ae;
+  --color-fg-disabled-subtle:       #d5d7da;
+  --color-fg-brand-primary:         #7f56d9;
+  --color-fg-brand-secondary:       #9e77ed;
+  --color-fg-brand-secondary-hover: #7f56d9;
+  --color-fg-error-primary:         #d92d20;
+  --color-fg-error-secondary:       #f04438;
+  --color-fg-warning-primary:       #dc6803;
+  --color-fg-warning-secondary:     #f79009;
+  --color-fg-success-primary:       #079455;
+  --color-fg-success-secondary:     #17b26a;
 
-  /* Foreground / icon */
-  --color-fg-primary:           var(--gray-900);     /* #181d27 */
-  --color-fg-secondary:         var(--gray-700);     /* #414651 */
-  --color-fg-tertiary:          var(--gray-600);     /* #535862 */
-  --color-fg-quaternary:        var(--gray-500);     /* #717680 */
-  --color-fg-disabled:          var(--gray-400);     /* #a4a7ae */
-  --color-fg-brand-primary:     var(--brand-700);    /* #6941c6 */
-  --color-fg-error-primary:     var(--error-600);    /* #d92d20 */
-  --color-fg-success-primary:   var(--success-700);  /* #067647 */
-  --color-fg-warning-primary:   #dc6803;
+  /* ── Background ── */
+  --color-bg-primary:              #ffffff;
+  --color-bg-primary-alt:          #ffffff;
+  --color-bg-primary-hover:        #fafafa;
+  --color-bg-primary-solid:        #0a0d12;
+  --color-bg-secondary:            #fafafa;
+  --color-bg-secondary-alt:        #fafafa;
+  --color-bg-secondary-hover:      #f5f5f5;
+  --color-bg-secondary-subtle:     #fdfdfd;
+  --color-bg-secondary-solid:      #535862;
+  --color-bg-tertiary:             #f5f5f5;
+  --color-bg-quaternary:           #e9eaeb;
+  --color-bg-active:               #fafafa;
+  --color-bg-disabled:             #f5f5f5;
+  --color-bg-disabled-subtle:      #fafafa;
+  --color-bg-overlay:              #0a0d12;
+  --color-bg-brand-primary:        #f9f5ff;
+  --color-bg-brand-primary-alt:    #f9f5ff;
+  --color-bg-brand-secondary:      #f4ebff;
+  --color-bg-brand-solid:          #7f56d9;
+  --color-bg-brand-solid-hover:    #6941c6;
+  --color-bg-brand-section:        #53389e;
+  --color-bg-brand-section-subtle: #6941c6;
+  --color-bg-error-primary:        #fef3f2;
+  --color-bg-error-secondary:      #fee4e2;
+  --color-bg-error-solid:          #d92d20;
+  --color-bg-error-solid-hover:    #b42318;
+  --color-bg-warning-primary:      #fffaeb;
+  --color-bg-warning-secondary:    #fef0c7;
+  --color-bg-warning-solid:        #dc6803;
+  --color-bg-success-primary:      #ecfdf3;
+  --color-bg-success-secondary:    #dcfae6;
+  --color-bg-success-solid:        #079455;
 
-  /* Focus rings */
-  --color-focus-rings-focus-ring:       var(--brand-500);  /* #9e77ed */
-  --color-focus-rings-focus-ring-error: var(--error-500);  /* #f04438 */
+  /* ── Focus Rings ── */
+  --color-focus-rings-focus-ring:       #9e77ed;
+  --color-focus-rings-focus-ring-error: #f04438;
 
-  /* Shadows (used in shadow swatch) */
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SEMANTIC COLOR TOKENS — Dark mode
+   Apply [data-theme="dark"] to <html> or any ancestor to activate.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] {
+
+  /* ── Text ── */
+  --color-text-primary:             #f7f7f7;
+  --color-text-primary-on-brand:    #f7f7f7;
+  --color-text-secondary:           #cecfd2;
+  --color-text-secondary-hover:     #ececed;
+  --color-text-secondary-on-brand:  #cecfd2;
+  --color-text-tertiary:            #94979c;
+  --color-text-tertiary-hover:      #cecfd2;
+  --color-text-tertiary-on-brand:   #94979c;
+  --color-text-quaternary:          #94979c;
+  --color-text-quaternary-on-brand: #94979c;
+  --color-text-white:               #ffffff;
+  --color-text-disabled:            #85888e;
+  --color-text-placeholder:         #85888e;
+  --color-text-placeholder-subtle:  #373a41;
+  --color-text-brand-primary:       #f7f7f7;
+  --color-text-brand-secondary:     #cecfd2;
+  --color-text-brand-tertiary:      #94979c;
+  --color-text-brand-tertiary-alt:  #f7f7f7;
+  --color-text-error-primary:       #f97066;
+  --color-text-error-primary-hover: #fda29b;
+  --color-text-warning-primary:     #fdb022;
+  --color-text-success-primary:     #47cd89;
+
+  /* ── Border ── */
+  --color-border-primary:         #373a41;
+  --color-border-secondary:       #22262f;
+  --color-border-secondary-alt:   #22262f;
+  --color-border-tertiary:        #22262f;
+  --color-border-disabled:        #373a41;
+  --color-border-disabled-subtle: #22262f;
+  --color-border-brand:           #b692f6;
+  --color-border-brand-alt:       #373a41;
+  --color-border-error:           #f97066;
+  --color-border-error-subtle:    #f04438;
+
+  /* ── Foreground / Icon ── */
+  --color-fg-primary:               #ffffff;
+  --color-fg-secondary:             #cecfd2;
+  --color-fg-secondary-hover:       #ececed;
+  --color-fg-tertiary:              #94979c;
+  --color-fg-tertiary-hover:        #cecfd2;
+  --color-fg-quaternary:            #61656c;
+  --color-fg-quaternary-hover:      #85888e;
+  --color-fg-white:                 #ffffff;
+  --color-fg-disabled:              #85888e;
+  --color-fg-disabled-subtle:       #61656c;
+  --color-fg-brand-primary:         #9e77ed;
+  --color-fg-brand-primary-alt:     #cecfd2;
+  --color-fg-brand-secondary:       #9e77ed;
+  --color-fg-brand-secondary-alt:   #61656c;
+  --color-fg-brand-secondary-hover: #85888e;
+  --color-fg-error-primary:         #f04438;
+  --color-fg-error-secondary:       #f97066;
+  --color-fg-warning-primary:       #f79009;
+  --color-fg-warning-secondary:     #fdb022;
+  --color-fg-success-primary:       #17b26a;
+  --color-fg-success-secondary:     #47cd89;
+
+  /* ── Background ── */
+  --color-bg-primary:              #0c0e12;
+  --color-bg-primary-hover:        #22262f;
+  --color-bg-secondary:            #13161b;
+  --color-bg-secondary-hover:      #22262f;
+  --color-bg-secondary-subtle:     #13161b;
+  --color-bg-secondary-solid:      #61656c;
+  --color-bg-tertiary:             #22262f;
+  --color-bg-quaternary:           #373a41;
+  --color-bg-active:               #22262f;
+  --color-bg-disabled:             #22262f;
+  --color-bg-disabled-subtle:      #13161b;
+  --color-bg-overlay:              #22262f;
+  --color-bg-brand-primary:        #9e77ed;
+  --color-bg-brand-secondary:      #7f56d9;
+  --color-bg-brand-solid:          #7f56d9;
+  --color-bg-brand-solid-hover:    #9e77ed;
+  --color-bg-error-primary:        #55160c;
+  --color-bg-error-secondary:      #d92d20;
+  --color-bg-error-solid:          #d92d20;
+  --color-bg-error-solid-hover:    #f04438;
+  --color-bg-warning-primary:      #4e1d09;
+  --color-bg-warning-secondary:    #dc6803;
+  --color-bg-warning-solid:        #dc6803;
+  --color-bg-success-primary:      #053321;
+  --color-bg-success-secondary:    #079455;
+  --color-bg-success-solid:        #079455;
+
+  /* ── Focus Rings ── */
+  --color-focus-rings-focus-ring:       #9e77ed;
+  --color-focus-rings-focus-ring-error: #f04438;
+
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SHOWCASE SHADOW ALIASES
+   Used by design-system/index.html shadow swatches only.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
   --color-shadows-shadow-xs:    var(--shadow-xs);
   --color-shadows-shadow-sm-01: 0px 1px 3px 0px rgba(10, 13, 18, 0.10);
-
 }
