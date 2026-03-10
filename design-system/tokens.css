@@ -671,6 +671,270 @@
   --color-focus-rings-focus-ring:       #9e77ed;
   --color-focus-rings-focus-ring-error: #f04438;
 
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     ALPHA TRANSPARENCY TOKENS
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* ── Black (rgba) ── */
+  --alpha-black-10: rgba(0, 0, 0, 0.1);
+  --alpha-black-100: #000000;
+  --alpha-black-20: rgba(0, 0, 0, 0.2);
+  --alpha-black-30: rgba(0, 0, 0, 0.3);
+  --alpha-black-40: rgba(0, 0, 0, 0.4);
+  --alpha-black-50: rgba(0, 0, 0, 0.5);
+  --alpha-black-60: rgba(0, 0, 0, 0.6);
+  --alpha-black-70: rgba(0, 0, 0, 0.7);
+  --alpha-black-80: rgba(0, 0, 0, 0.8);
+  --alpha-black-90: rgba(0, 0, 0, 0.9);
+
+  /* ── White (rgba) ── */
+  --alpha-white-10: rgba(255, 255, 255, 0.1);
+  --alpha-white-100: #ffffff;
+  --alpha-white-20: rgba(255, 255, 255, 0.2);
+  --alpha-white-30: rgba(255, 255, 255, 0.3);
+  --alpha-white-40: rgba(255, 255, 255, 0.4);
+  --alpha-white-50: rgba(255, 255, 255, 0.5);
+  --alpha-white-60: rgba(255, 255, 255, 0.6);
+  --alpha-white-70: rgba(255, 255, 255, 0.7);
+  --alpha-white-80: rgba(255, 255, 255, 0.8);
+  --alpha-white-90: rgba(255, 255, 255, 0.9);
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     UTILITY COLOR PALETTES
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* ── Gray ── */
+  --utility-gray-100: #f5f5f5;
+  --utility-gray-200: #e9eaeb;
+  --utility-gray-300: #d5d7da;
+  --utility-gray-400: #a4a7ae;
+  --utility-gray-50: #fafafa;
+  --utility-gray-500: #717680;
+  --utility-gray-600: #535862;
+  --utility-gray-700: #414651;
+  --utility-gray-800: #252b37;
+  --utility-gray-900: #181d27;
+
+  /* ── Brand ── */
+  --utility-brand-100: #f4ebff;
+  --utility-brand-100-alt: #f4ebff;
+  --utility-brand-200: #e9d7fe;
+  --utility-brand-200-alt: #e9d7fe;
+  --utility-brand-300: #d6bbfb;
+  --utility-brand-300-alt: #d6bbfb;
+  --utility-brand-400: #b692f6;
+  --utility-brand-400-alt: #b692f6;
+  --utility-brand-50: #f9f5ff;
+  --utility-brand-50-alt: #f9f5ff;
+  --utility-brand-500: #9e77ed;
+  --utility-brand-500-alt: #9e77ed;
+  --utility-brand-600: #7f56d9;
+  --utility-brand-600-alt: #7f56d9;
+  --utility-brand-700: #6941c6;
+  --utility-brand-700-alt: #6941c6;
+  --utility-brand-800: #53389e;
+  --utility-brand-800-alt: #53389e;
+  --utility-brand-900: #42307d;
+  --utility-brand-900-alt: #42307d;
+
+  /* ── Error ── */
+  --utility-error-100: #fee4e2;
+  --utility-error-200: #fecdca;
+  --utility-error-300: #fda29b;
+  --utility-error-400: #f97066;
+  --utility-error-50: #fef3f2;
+  --utility-error-500: #f04438;
+  --utility-error-600: #d92d20;
+  --utility-error-700: #b42318;
+
+  /* ── Warning ── */
+  --utility-warning-100: #fef0c7;
+  --utility-warning-200: #fedf89;
+  --utility-warning-300: #fec84b;
+  --utility-warning-400: #fdb022;
+  --utility-warning-50: #fffaeb;
+  --utility-warning-500: #f79009;
+  --utility-warning-600: #dc6803;
+  --utility-warning-700: #b54708;
+
+  /* ── Success ── */
+  --utility-success-100: #dcfae6;
+  --utility-success-200: #abefc6;
+  --utility-success-300: #75e0a7;
+  --utility-success-400: #47cd89;
+  --utility-success-50: #ecfdf3;
+  --utility-success-500: #17b26a;
+  --utility-success-600: #079455;
+  --utility-success-700: #067647;
+
+  /* ── Gray blue ── */
+  --utility-gray-blue-100: #eaecf5;
+  --utility-gray-blue-200: #d5d9eb;
+  --utility-gray-blue-300: #b3b8db;
+  --utility-gray-blue-400: #717bbc;
+  --utility-gray-blue-50: #f8f9fc;
+  --utility-gray-blue-500: #4e5ba6;
+  --utility-gray-blue-600: #3e4784;
+  --utility-gray-blue-700: #363f72;
+
+  /* ── Green ── */
+  --utility-green-100: #d3f8df;
+  --utility-green-200: #aaf0c4;
+  --utility-green-300: #73e2a3;
+  --utility-green-400: #3ccb7f;
+  --utility-green-50: #edfcf2;
+  --utility-green-500: #16b364;
+  --utility-green-600: #099250;
+  --utility-green-700: #087443;
+
+  /* ── Blue light ── */
+  --utility-blue-light-100: #e0f2fe;
+  --utility-blue-light-200: #b9e6fe;
+  --utility-blue-light-300: #7cd4fd;
+  --utility-blue-light-400: #36bffa;
+  --utility-blue-light-50: #f0f9ff;
+  --utility-blue-light-500: #0ba5ec;
+  --utility-blue-light-600: #0086c9;
+  --utility-blue-light-700: #026aa2;
+
+  /* ── Blue ── */
+  --utility-blue-100: #d1e9ff;
+  --utility-blue-200: #b2ddff;
+  --utility-blue-300: #84caff;
+  --utility-blue-400: #53b1fd;
+  --utility-blue-50: #eff8ff;
+  --utility-blue-500: #2e90fa;
+  --utility-blue-600: #1570ef;
+  --utility-blue-700: #175cd3;
+
+  /* ── Blue dark ── */
+  --utility-blue-dark-100: #d1e0ff;
+  --utility-blue-dark-200: #b2ccff;
+  --utility-blue-dark-300: #84adff;
+  --utility-blue-dark-400: #528bff;
+  --utility-blue-dark-50: #eff4ff;
+  --utility-blue-dark-500: #2970ff;
+  --utility-blue-dark-600: #155eef;
+  --utility-blue-dark-700: #004eeb;
+
+  /* ── Indigo ── */
+  --utility-indigo-100: #e0eaff;
+  --utility-indigo-200: #c7d7fe;
+  --utility-indigo-300: #a4bcfd;
+  --utility-indigo-400: #8098f9;
+  --utility-indigo-50: #eef4ff;
+  --utility-indigo-500: #6172f3;
+  --utility-indigo-600: #444ce7;
+  --utility-indigo-700: #3538cd;
+
+  /* ── Purple ── */
+  --utility-purple-100: #ebe9fe;
+  --utility-purple-200: #d9d6fe;
+  --utility-purple-300: #bdb4fe;
+  --utility-purple-400: #9b8afb;
+  --utility-purple-50: #f4f3ff;
+  --utility-purple-500: #7a5af8;
+  --utility-purple-600: #6938ef;
+  --utility-purple-700: #5925dc;
+
+  /* ── Fuchsia ── */
+  --utility-fuchsia-100: #fbe8ff;
+  --utility-fuchsia-200: #f6d0fe;
+  --utility-fuchsia-300: #eeaafd;
+  --utility-fuchsia-400: #e478fa;
+  --utility-fuchsia-50: #fdf4ff;
+  --utility-fuchsia-500: #d444f1;
+  --utility-fuchsia-600: #ba24d5;
+  --utility-fuchsia-700: #9f1ab1;
+
+  /* ── Pink ── */
+  --utility-pink-100: #fce7f6;
+  --utility-pink-200: #fcceee;
+  --utility-pink-300: #faa7e0;
+  --utility-pink-400: #f670c7;
+  --utility-pink-50: #fdf2fa;
+  --utility-pink-500: #ee46bc;
+  --utility-pink-600: #dd2590;
+  --utility-pink-700: #c11574;
+
+  /* ── Orange dark ── */
+  --utility-orange-dark-100: #ffe6d5;
+  --utility-orange-dark-200: #ffd6ae;
+  --utility-orange-dark-300: #ff9c66;
+  --utility-orange-dark-400: #ff692e;
+  --utility-orange-dark-50: #fff4ed;
+  --utility-orange-dark-500: #ff4405;
+  --utility-orange-dark-600: #e62e05;
+  --utility-orange-dark-700: #bc1b06;
+
+  /* ── Orange ── */
+  --utility-orange-100: #fdead7;
+  --utility-orange-200: #f9dbaf;
+  --utility-orange-300: #f7b27a;
+  --utility-orange-400: #f38744;
+  --utility-orange-50: #fef6ee;
+  --utility-orange-500: #ef6820;
+  --utility-orange-600: #e04f16;
+  --utility-orange-700: #b93815;
+
+  /* ── Yellow ── */
+  --utility-yellow-100: #fef7c3;
+  --utility-yellow-200: #feee95;
+  --utility-yellow-300: #fde272;
+  --utility-yellow-400: #fac515;
+  --utility-yellow-50: #fefbe8;
+  --utility-yellow-500: #eaaa08;
+  --utility-yellow-600: #ca8504;
+  --utility-yellow-700: #a15c07;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COMPONENT COLOR OVERRIDES
+     ───────────────────────────────────────────────────────────────────────── */
+  --app-store-badge-border: #a6a6a6;
+  --avatar-styles-bg-neutral: #e0e0e0;
+  --button-destructive-primary-icon: #fda29b;
+  --button-destructive-primary-icon-hover: #fecdca;
+  --button-primary-icon: #d6bbfb;
+  --button-primary-icon-hover: #e9d7fe;
+  --footer-button-fg: #e9d7fe;
+  --footer-button-fg-hover: #ffffff;
+  --screen-mockup-border: #181d27;
+  --slider-handle-bg: #ffffff;
+  --slider-handle-border: #7f56d9;
+  --text-editor-icon-fg: #a4a7ae;
+  --text-editor-icon-fg-active: #717680;
+  --toggle-border: #d5d7da;
+  --toggle-button-fg-disabled: #fafafa;
+  --tooltip-supporting-text: #d5d7da;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     EFFECTS — SHADOW COLORS & FOCUS RINGS
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-effects-focus-rings-focus-ring: #9e77ed;
+  --color-effects-focus-rings-focus-ring-error: #f04438;
+  --color-effects-portfolio-mockups-shadow-grid-md: rgba(10, 13, 18, 0.08);
+  --color-effects-portfolio-mockups-shadow-main-centre-lg: rgba(10, 13, 18, 0.18);
+  --color-effects-portfolio-mockups-shadow-main-centre-md: rgba(10, 13, 18, 0.14);
+  --color-effects-portfolio-mockups-shadow-overlay-lg: rgba(10, 13, 18, 0.12);
+  --color-effects-shadows-shadow-2xl-01: rgba(10, 13, 18, 0.18);
+  --color-effects-shadows-shadow-2xl-02: rgba(10, 13, 18, 0.04);
+  --color-effects-shadows-shadow-3xl-01: rgba(10, 13, 18, 0.14);
+  --color-effects-shadows-shadow-3xl-02: rgba(10, 13, 18, 0.04);
+  --color-effects-shadows-shadow-lg-01: rgba(10, 13, 18, 0.08);
+  --color-effects-shadows-shadow-lg-02: rgba(10, 13, 18, 0.03);
+  --color-effects-shadows-shadow-lg-03: rgba(10, 13, 18, 0.04);
+  --color-effects-shadows-shadow-md-01: rgba(10, 13, 18, 0.1);
+  --color-effects-shadows-shadow-md-02: rgba(10, 13, 18, 0.06);
+  --color-effects-shadows-shadow-skeumorphic-inner: rgba(10, 13, 18, 0.05);
+  --color-effects-shadows-shadow-skeumorphic-inner-border: rgba(10, 13, 18, 0.18);
+  --color-effects-shadows-shadow-sm-01: rgba(10, 13, 18, 0.1);
+  --color-effects-shadows-shadow-sm-02: rgba(10, 13, 18, 0.1);
+  --color-effects-shadows-shadow-xl-01: rgba(10, 13, 18, 0.08);
+  --color-effects-shadows-shadow-xl-02: rgba(10, 13, 18, 0.03);
+  --color-effects-shadows-shadow-xl-03: rgba(10, 13, 18, 0.04);
+  --color-effects-shadows-shadow-xs: rgba(10, 13, 18, 0.05);
+
 }
 
 
@@ -771,6 +1035,225 @@
   /* ── Focus Rings ── */
   --color-focus-rings-focus-ring:       #9e77ed;
   --color-focus-rings-focus-ring-error: #f04438;
+
+
+  /* ─── Alpha (dark mode) ─────────────────────────────── */
+  --alpha-black-10: rgba(255, 255, 255, 0.1);
+  --alpha-black-100: #ffffff;
+  --alpha-black-20: rgba(255, 255, 255, 0.2);
+  --alpha-black-30: rgba(255, 255, 255, 0.3);
+  --alpha-black-40: rgba(255, 255, 255, 0.4);
+  --alpha-black-50: rgba(255, 255, 255, 0.5);
+  --alpha-black-60: rgba(255, 255, 255, 0.6);
+  --alpha-black-70: rgba(255, 255, 255, 0.7);
+  --alpha-black-80: rgba(255, 255, 255, 0.8);
+  --alpha-black-90: rgba(255, 255, 255, 0.9);
+  --alpha-white-10: rgba(12, 14, 18, 0.1);
+  --alpha-white-100: #0c0e12;
+  --alpha-white-20: rgba(12, 14, 18, 0.2);
+  --alpha-white-30: rgba(12, 14, 18, 0.3);
+  --alpha-white-40: rgba(12, 14, 18, 0.4);
+  --alpha-white-50: rgba(12, 14, 18, 0.5);
+  --alpha-white-60: rgba(12, 14, 18, 0.6);
+  --alpha-white-70: rgba(12, 14, 18, 0.7);
+  --alpha-white-80: rgba(12, 14, 18, 0.8);
+  --alpha-white-90: rgba(12, 14, 18, 0.9);
+
+  /* ─── Utility palettes (dark mode — changed values) ─── */
+
+  /* Gray */
+  --utility-gray-100: #22262f;
+  --utility-gray-200: #373a41;
+  --utility-gray-300: #373a41;
+  --utility-gray-400: #61656c;
+  --utility-gray-50: #13161b;
+  --utility-gray-500: #85888e;
+  --utility-gray-600: #94979c;
+  --utility-gray-700: #cecfd2;
+  --utility-gray-800: #ececed;
+  --utility-gray-900: #f0f0f1;
+
+  /* Brand */
+  --utility-brand-100: #42307d;
+  --utility-brand-200: #53389e;
+  --utility-brand-300: #6941c6;
+  --utility-brand-400: #7f56d9;
+  --utility-brand-50: #2c1c5f;
+  --utility-brand-600: #b692f6;
+  --utility-brand-700: #d6bbfb;
+  --utility-brand-800: #e9d7fe;
+  --utility-brand-900: #f4ebff;
+
+  /* Error */
+  --utility-error-100: #7a271a;
+  --utility-error-200: #912018;
+  --utility-error-300: #b42318;
+  --utility-error-400: #d92d20;
+  --utility-error-50: #55160c;
+  --utility-error-600: #f97066;
+  --utility-error-700: #fda29b;
+
+  /* Warning */
+  --utility-warning-100: #7a2e0e;
+  --utility-warning-200: #93370d;
+  --utility-warning-300: #b54708;
+  --utility-warning-400: #dc6803;
+  --utility-warning-50: #4e1d09;
+  --utility-warning-600: #fdb022;
+  --utility-warning-700: #fec84b;
+
+  /* Success */
+  --utility-success-100: #074d31;
+  --utility-success-200: #085d3a;
+  --utility-success-300: #067647;
+  --utility-success-400: #079455;
+  --utility-success-50: #053321;
+  --utility-success-600: #47cd89;
+  --utility-success-700: #75e0a7;
+
+  /* Gray blue */
+  --utility-gray-blue-100: #101323;
+  --utility-gray-blue-200: #293056;
+  --utility-gray-blue-300: #363f72;
+  --utility-gray-blue-400: #3e4784;
+  --utility-gray-blue-50: #0d0f1c;
+  --utility-gray-blue-600: #717bbc;
+  --utility-gray-blue-700: #b3b8db;
+
+  /* Green */
+  --utility-green-100: #084c2e;
+  --utility-green-200: #095c37;
+  --utility-green-300: #087443;
+  --utility-green-400: #099250;
+  --utility-green-50: #052e1c;
+  --utility-green-600: #3ccb7f;
+  --utility-green-700: #73e2a3;
+
+  /* Blue light */
+  --utility-blue-light-100: #0b4a6f;
+  --utility-blue-light-200: #065986;
+  --utility-blue-light-300: #026aa2;
+  --utility-blue-light-400: #0086c9;
+  --utility-blue-light-50: #062c41;
+  --utility-blue-light-600: #36bffa;
+  --utility-blue-light-700: #7cd4fd;
+
+  /* Blue */
+  --utility-blue-100: #194185;
+  --utility-blue-200: #1849a9;
+  --utility-blue-300: #175cd3;
+  --utility-blue-400: #1570ef;
+  --utility-blue-50: #102a56;
+  --utility-blue-600: #53b1fd;
+  --utility-blue-700: #84caff;
+
+  /* Blue dark */
+  --utility-blue-dark-100: #00359e;
+  --utility-blue-dark-200: #0040c1;
+  --utility-blue-dark-300: #004eeb;
+  --utility-blue-dark-400: #155eef;
+  --utility-blue-dark-50: #002266;
+  --utility-blue-dark-600: #528bff;
+  --utility-blue-dark-700: #84adff;
+
+  /* Indigo */
+  --utility-indigo-100: #2d3282;
+  --utility-indigo-200: #2d31a6;
+  --utility-indigo-300: #3538cd;
+  --utility-indigo-400: #444ce7;
+  --utility-indigo-50: #1f235b;
+  --utility-indigo-600: #8098f9;
+  --utility-indigo-700: #a4bcfd;
+
+  /* Purple */
+  --utility-purple-100: #3e1c96;
+  --utility-purple-200: #4a1fb8;
+  --utility-purple-300: #5925dc;
+  --utility-purple-400: #6938ef;
+  --utility-purple-50: #27115f;
+  --utility-purple-600: #9b8afb;
+  --utility-purple-700: #bdb4fe;
+
+  /* Fuchsia */
+  --utility-fuchsia-100: #6f1877;
+  --utility-fuchsia-200: #821890;
+  --utility-fuchsia-300: #9f1ab1;
+  --utility-fuchsia-400: #ba24d5;
+  --utility-fuchsia-50: #47104c;
+  --utility-fuchsia-600: #e478fa;
+  --utility-fuchsia-700: #eeaafd;
+
+  /* Pink */
+  --utility-pink-100: #851651;
+  --utility-pink-200: #9e165f;
+  --utility-pink-300: #c11574;
+  --utility-pink-400: #dd2590;
+  --utility-pink-50: #4e0d30;
+  --utility-pink-600: #f670c7;
+  --utility-pink-700: #faa7e0;
+
+  /* Orange dark */
+  --utility-orange-dark-100: #771a0d;
+  --utility-orange-dark-200: #97180c;
+  --utility-orange-dark-300: #bc1b06;
+  --utility-orange-dark-400: #e62e05;
+  --utility-orange-dark-50: #57130a;
+  --utility-orange-dark-600: #ff692e;
+  --utility-orange-dark-700: #ff9c66;
+
+  /* Orange */
+  --utility-orange-100: #772917;
+  --utility-orange-200: #932f19;
+  --utility-orange-300: #b93815;
+  --utility-orange-400: #e04f16;
+  --utility-orange-50: #511c10;
+  --utility-orange-600: #f38744;
+  --utility-orange-700: #f7b27a;
+
+  /* Yellow */
+  --utility-yellow-100: #713b12;
+  --utility-yellow-200: #854a0e;
+  --utility-yellow-300: #a15c07;
+  --utility-yellow-400: #ca8504;
+  --utility-yellow-50: #542c0d;
+  --utility-yellow-600: #fac515;
+  --utility-yellow-700: #fde272;
+
+  /* ─── Component colors (dark mode — changed values) ─── */
+  --app-store-badge-border: #ffffff;
+  --footer-button-fg: #cecfd2;
+  --footer-button-fg-hover: #f0f0f1;
+  --screen-mockup-border: #373a41;
+  --text-editor-icon-fg: #94979c;
+  --text-editor-icon-fg-active: #ffffff;
+  --toggle-border: rgba(255, 255, 255, 0);
+  --toggle-button-fg-disabled: #61656c;
+  --toggle-slim-border-pressed: rgba(255, 255, 255, 0);
+  --toggle-slim-border-pressed-hover: rgba(255, 255, 255, 0);
+  --tooltip-supporting-text: #cecfd2;
+
+  /* ─── Effects (dark mode — changed values) ────────────── */
+  --color-effects-portfolio-mockups-shadow-grid-md: rgba(255, 255, 255, 0);
+  --color-effects-portfolio-mockups-shadow-main-centre-lg: rgba(255, 255, 255, 0);
+  --color-effects-portfolio-mockups-shadow-main-centre-md: rgba(255, 255, 255, 0);
+  --color-effects-portfolio-mockups-shadow-overlay-lg: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-2xl-01: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-2xl-02: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-3xl-01: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-3xl-02: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-lg-01: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-lg-02: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-lg-03: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-md-01: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-md-02: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-skeumorphic-inner: rgba(12, 14, 18, 0.05);
+  --color-effects-shadows-shadow-skeumorphic-inner-border: rgba(12, 14, 18, 0.18);
+  --color-effects-shadows-shadow-sm-01: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-sm-02: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-xl-01: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-xl-02: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-xl-03: rgba(255, 255, 255, 0);
+  --color-effects-shadows-shadow-xs: rgba(255, 255, 255, 0);
 
 }
 
