@@ -1,0 +1,2471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoleWise — v4</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+
+  /* ════════════════════════════════════════════════════════════
+     ROLEWISE v4 — Ballpark HQ inspired
+     Light · warm cream background · coral-orange accent
+     Card shadows · colorful role strips · airy readability
+     Structure from linear-v2 · role cards from Frame.io v3
+     ════════════════════════════════════════════════════════════ */
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    /* Surfaces */
+    --bg:             #F5F3EF;
+    --bg-sidebar:     #FFFFFF;
+    --bg-list:        #F9F8F5;
+    --bg-card:        #FFFFFF;
+    --bg-center:      #FFFFFF;
+    --bg-chat:        #F5F3EF;
+    --bg-hover:       rgba(0,0,0,0.03);
+    --bg-selected:    rgba(240,85,35,0.06);
+    --bg-input:       #FFFFFF;
+
+    /* Borders */
+    --border:         rgba(0,0,0,0.08);
+    --border-subtle:  rgba(0,0,0,0.045);
+    --border-focus:   rgba(240,85,35,0.45);
+
+    /* Text */
+    --text:           #18181B;
+    --text-dim:       #52525B;
+    --text-muted:     #A1A1AA;
+
+    /* Accent — warm coral-orange (Ballpark palette) */
+    --accent:         #F05523;
+    --accent-dim:     rgba(240,85,35,0.08);
+    --accent-mid:     rgba(240,85,35,0.15);
+    --accent-bright:  #FF7043;
+    --accent-text:    #C43A0E;
+
+    /* Semantic */
+    --green:          #16A34A;
+    --green-dim:      rgba(22,163,74,0.10);
+    --green-text:     #15803D;
+    --amber:          #D97706;
+    --amber-dim:      rgba(217,119,6,0.10);
+    --amber-text:     #B45309;
+    --red:            #DC2626;
+    --red-dim:        rgba(220,38,38,0.10);
+    --red-text:       #B91C1C;
+    --purple:         #7C3AED;
+    --purple-dim:     rgba(124,58,237,0.10);
+    --purple-text:    #6D28D9;
+
+    /* Company brand colours */
+    --co-stripe:      #635BFF;
+    --co-monzo:       #E8421A;
+    --co-revolut:     #1A1A2E;
+    --co-deliveroo:   #00CCBC;
+    --co-wise:        #00B9FF;
+    --co-meta:        #0866FF;
+
+    /* Layout */
+    --font:           'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono:      'JetBrains Mono', monospace;
+    --sidebar-w:      200px;
+    --list-w:         272px;
+    --chat-w:         342px;
+    --side-panel-w:   228px;
+    --radius:         8px;
+    --radius-lg:      12px;
+    --topbar-h:       52px;
+
+    /* Shadows — key to the Ballpark feel */
+    --shadow-sm:      0 1px 2px rgba(0,0,0,0.05), 0 1px 4px rgba(0,0,0,0.05);
+    --shadow-card:    0 1px 3px rgba(0,0,0,0.05), 0 4px 16px rgba(0,0,0,0.08);
+    --shadow-hover:   0 2px 8px rgba(0,0,0,0.09), 0 10px 28px rgba(0,0,0,0.11);
+    --shadow-btn:     0 1px 2px rgba(0,0,0,0.08);
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: var(--sidebar-w) var(--list-w) 1fr var(--chat-w);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+
+  /* ════════════════════════════════════════
+     SIDEBAR
+  ════════════════════════════════════════ */
+
+  .sidebar {
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-logo {
+    padding: 18px 14px 8px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex-shrink: 0;
+  }
+
+  .logo-mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: linear-gradient(145deg, var(--accent) 0%, var(--accent-bright) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: white;
+    letter-spacing: -0.04em;
+    box-shadow: 0 2px 10px rgba(240,85,35,0.32);
+    flex-shrink: 0;
+  }
+
+  .logo-text {
+    font-size: 16.5px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -0.03em;
+  }
+
+  .sidebar-tagline {
+    padding: 1px 14px 14px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 8px;
+  }
+
+  .sidebar-nav::-webkit-scrollbar { display: none; }
+
+  .nav-section-label {
+    padding: 10px 8px 3px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 8px;
+    border-radius: var(--radius);
+    font-size: 14.5px;
+    font-weight: 400;
+    color: var(--text-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: var(--font);
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+    position: relative;
+  }
+
+  .nav-item:hover { background: var(--bg-hover); color: var(--text); }
+
+  .nav-item.active {
+    background: var(--accent-dim);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+
+  .nav-icon {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    opacity: 0.5;
+    color: currentColor;
+    transition: opacity 0.1s;
+  }
+
+  .nav-item.active .nav-icon,
+  .nav-item:hover .nav-icon { opacity: 1; }
+
+  .nav-count {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    background: rgba(0,0,0,0.05);
+    border-radius: 4px;
+    padding: 1px 6px;
+    line-height: 16px;
+  }
+
+  .nav-item.active .nav-count {
+    background: var(--accent-mid);
+    color: var(--accent-text);
+  }
+
+  .nav-sub-wrap { padding: 2px 0 4px; }
+
+  .nav-sub-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px 5px 30px;
+    border-radius: 6px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+  }
+
+  .nav-sub-item:hover { background: var(--bg-hover); color: var(--text-dim); }
+  .nav-sub-item.active { color: var(--accent-text); font-weight: 600; }
+
+  .nav-sub-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .nav-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 6px 8px;
+  }
+
+  .sidebar-footer {
+    border-top: 1px solid var(--border);
+    padding: 10px 8px 14px;
+    flex-shrink: 0;
+  }
+
+  .sidebar-version {
+    padding: 0 8px 8px;
+    font-size: 10.5px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    opacity: 0.7;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .profile-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .profile-row:hover { background: var(--bg-hover); }
+
+  .profile-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(145deg, var(--accent), var(--accent-bright));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: white;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(240,85,35,0.28);
+  }
+
+  .profile-info {}
+
+  .profile-name {
+    font-size: 13.5px;
+    color: var(--text);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .profile-plan {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+
+
+  /* ════════════════════════════════════════
+     LIST PANEL
+  ════════════════════════════════════════ */
+
+  .list-panel {
+    background: var(--bg-list);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .list-header {
+    padding: 14px 14px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    background: var(--bg-card);
+  }
+
+  .list-header-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .btn-add {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--accent-text);
+    background: var(--accent-dim);
+    border: 1px solid rgba(240,85,35,0.22);
+    border-radius: 6px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: all 0.12s;
+  }
+
+  .btn-add:hover {
+    background: var(--accent-mid);
+    border-color: rgba(240,85,35,0.38);
+  }
+
+  .list-search-row {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    background: var(--bg-card);
+  }
+
+  .search-input-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    padding: 6px 10px;
+    transition: border-color 0.1s;
+  }
+
+  .search-input-wrap:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(240,85,35,0.10);
+  }
+
+  .search-icon { color: var(--text-muted); flex-shrink: 0; display: flex; }
+
+  .list-search-input {
+    flex: 1;
+    background: none;
+    border: none;
+    font-size: 13.5px;
+    color: var(--text);
+    font-family: var(--font);
+    outline: none;
+  }
+
+  .list-search-input::placeholder { color: var(--text-muted); }
+
+  .list-roles {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .list-roles::-webkit-scrollbar { display: none; }
+
+  .list-group-label {
+    padding: 4px 2px 2px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+
+  /* ════════════════════════════════════════
+     ROLE CARDS (List panel) — v3 card style, light mode
+  ════════════════════════════════════════ */
+
+  .role-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+    cursor: pointer;
+    transition: box-shadow 0.14s, transform 0.12s;
+    border: 1.5px solid transparent;
+    user-select: none;
+  }
+
+  .role-card:hover {
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-1px);
+  }
+
+  .role-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1.5px var(--accent), var(--shadow-card);
+  }
+
+  .card-strip {
+    height: 6px;
+    width: 100%;
+    flex-shrink: 0;
+  }
+
+  .card-body { padding: 10px 12px 11px; }
+
+  .card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .co-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    color: white;
+    flex-shrink: 0;
+    letter-spacing: -0.02em;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+
+  .card-info { flex: 1; min-width: 0; }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .card-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 9px;
+    gap: 6px;
+  }
+
+  .fit-badge {
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    background: rgba(0,0,0,0.05);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 7px;
+    white-space: nowrap;
+  }
+
+  .fit-badge.high { background: var(--green-dim); border-color: rgba(22,163,74,0.2); color: var(--green-text); }
+  .fit-badge.mid  { background: var(--amber-dim); border-color: rgba(217,119,6,0.2);  color: var(--amber-text); }
+
+  .status-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2.5px 8px;
+    border-radius: 100px;
+    white-space: nowrap;
+  }
+
+  .sp-review   { background: var(--amber-dim); color: var(--amber-text); }
+  .sp-progress { background: var(--accent-dim); color: var(--accent-text); }
+  .sp-applied  { background: var(--green-dim);  color: var(--green-text); }
+  .sp-skipped  { background: rgba(0,0,0,0.06);  color: var(--text-muted); }
+  .sp-round2   { background: var(--purple-dim); color: var(--purple-text); }
+
+  .card-age {
+    font-size: 10.5px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+
+
+  /* ════════════════════════════════════════
+     CENTER PANEL
+  ════════════════════════════════════════ */
+
+  .center-panel {
+    background: var(--bg-center);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+  }
+
+  /* Header bar */
+  .center-header {
+    padding: 0 22px;
+    height: var(--topbar-h);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    gap: 14px;
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .breadcrumb-sep { opacity: 0.4; font-size: 12px; }
+
+  .breadcrumb-current {
+    color: var(--text);
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .center-actions {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+
+  .hdr-btn {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 14px;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: all 0.1s;
+    box-shadow: var(--shadow-btn);
+    white-space: nowrap;
+  }
+
+  .hdr-btn:hover {
+    background: #EDECEA;
+    border-color: rgba(0,0,0,0.13);
+    color: var(--text);
+  }
+
+  .hdr-btn.accent {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+    box-shadow: 0 1px 4px rgba(240,85,35,0.3);
+  }
+
+  .hdr-btn.accent:hover { background: #E04415; }
+
+  .hdr-sep {
+    width: 1px;
+    height: 22px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  .co-badge {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    padding: 4px 10px 4px 6px;
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-btn);
+  }
+
+  .co-badge-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Two-column body */
+  .center-inner {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr var(--side-panel-w);
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .center-main {
+    overflow-y: auto;
+    padding: 26px 30px;
+  }
+
+  .center-main::-webkit-scrollbar { display: none; }
+
+  .center-side {
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 16px;
+    background: var(--bg);
+  }
+
+  .center-side::-webkit-scrollbar { display: none; }
+
+
+  /* ═══ Role content typography ═══ */
+
+  .role-title-block {
+    margin-bottom: 26px;
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .role-co-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+
+  .co-color-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .role-main-title {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+
+  .archetype-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--accent-dim);
+    border: 1px solid rgba(240,85,35,0.18);
+    border-radius: 100px;
+    padding: 5px 14px 5px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--accent-text);
+  }
+
+  .archetype-pill-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+
+
+  /* ═══ Analysis sections ═══ */
+
+  .analysis-section { margin-bottom: 30px; }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  /* Ballpark-style "KEY FINDING" label pill */
+  .section-kf-pill {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: var(--accent-dim);
+    color: var(--accent-text);
+    border: 1px solid rgba(240,85,35,0.18);
+    border-radius: 100px;
+    padding: 3px 10px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .section-kf-pill.green  { background: var(--green-dim); color: var(--green-text); border-color: rgba(22,163,74,0.2); }
+  .section-kf-pill.amber  { background: var(--amber-dim); color: var(--amber-text); border-color: rgba(217,119,6,0.2); }
+  .section-kf-pill.red    { background: var(--red-dim);   color: var(--red-text);   border-color: rgba(220,38,38,0.2); }
+  .section-kf-pill.purple { background: var(--purple-dim); color: var(--purple-text); border-color: rgba(124,58,237,0.2); }
+  .section-kf-pill.neutral { background: rgba(0,0,0,0.05); color: var(--text-muted); border-color: var(--border); }
+
+  .section-label {
+    font-size: 15.5px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.015em;
+  }
+
+  .section-rule {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .analysis-prose {
+    font-size: 15px;
+    color: var(--text-dim);
+    line-height: 1.75;
+  }
+
+  .analysis-prose + .analysis-prose { margin-top: 12px; }
+
+  .bullet-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .analysis-bullet {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .bullet-dot-wrap {
+    padding-top: 7px;
+    flex-shrink: 0;
+  }
+
+  .bullet-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.65;
+  }
+
+  .bullet-dot.green  { background: var(--green); opacity: 1; }
+  .bullet-dot.amber  { background: var(--amber); opacity: 1; }
+  .bullet-dot.red    { background: var(--red);   opacity: 1; }
+  .bullet-dot.purple { background: var(--purple); opacity: 1; }
+
+  .bullet-content {}
+
+  .bullet-text {
+    font-size: 15px;
+    color: var(--text-dim);
+    line-height: 1.65;
+  }
+
+  .bullet-text strong {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  .bullet-evidence {
+    margin-top: 6px;
+  }
+
+  .evidence-text {
+    display: inline-block;
+    font-size: 12.5px;
+    font-style: italic;
+    color: var(--text-muted);
+    border-left: 2.5px solid rgba(240,85,35,0.25);
+    padding-left: 9px;
+    line-height: 1.5;
+  }
+
+  /* Friction tags */
+  .friction-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+
+  .friction-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 5px 13px;
+    border-radius: 100px;
+    line-height: 1;
+  }
+
+  .ft-warn { background: var(--amber-dim); color: var(--amber-text); border: 1px solid rgba(217,119,6,0.2); }
+  .ft-bad  { background: var(--red-dim);   color: var(--red-text);   border: 1px solid rgba(220,38,38,0.2); }
+  .ft-ok   { background: var(--green-dim); color: var(--green-text); border: 1px solid rgba(22,163,74,0.2); }
+
+  /* Questions */
+  .q-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .q-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .q-num {
+    font-size: 11.5px;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    color: var(--accent-text);
+    background: var(--accent-dim);
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .q-text {
+    font-size: 14.5px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    flex: 1;
+  }
+
+
+  /* ═══ Decision rail ═══ */
+
+  .decision-rail {
+    border-top: 1.5px solid var(--border);
+    padding: 10px 22px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    background: var(--bg-center);
+  }
+
+  .decision-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    margin-right: 2px;
+    white-space: nowrap;
+  }
+
+  .decision-btn {
+    font-size: 13px;
+    font-weight: 700;
+    padding: 7px 18px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: var(--font);
+    transition: all 0.12s;
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    color: var(--text-dim);
+    box-shadow: var(--shadow-btn);
+    white-space: nowrap;
+  }
+
+  .decision-btn:hover {
+    background: #EDECEA;
+    border-color: rgba(0,0,0,0.14);
+    color: var(--text);
+  }
+
+  .decision-btn.apply {
+    background: var(--green-dim);
+    color: var(--green-text);
+    border-color: rgba(22,163,74,0.28);
+  }
+
+  .decision-btn.apply:hover {
+    background: rgba(22,163,74,0.16);
+    border-color: rgba(22,163,74,0.42);
+  }
+
+  .decision-btn.skip {
+    background: var(--red-dim);
+    color: var(--red-text);
+    border-color: rgba(220,38,38,0.24);
+  }
+
+  .decision-btn.skip:hover { background: rgba(220,38,38,0.16); }
+
+  .decision-btn.hold {
+    background: var(--amber-dim);
+    color: var(--amber-text);
+    border-color: rgba(217,119,6,0.24);
+  }
+
+  .decision-spacer { flex: 1; }
+
+  .decision-state {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .decision-state-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 6px rgba(217,119,6,0.45);
+  }
+
+  .decision-state-dot.green { background: var(--green); box-shadow: 0 0 6px rgba(22,163,74,0.45); }
+  .decision-state-dot.accent { background: var(--accent); box-shadow: 0 0 6px rgba(240,85,35,0.45); }
+  .decision-state-dot.muted { background: var(--text-muted); box-shadow: none; }
+
+
+  /* ════════════════════════════════════════
+     CENTER SIDE PANEL (snapshot)
+  ════════════════════════════════════════ */
+
+  .side-section { margin-bottom: 20px; }
+
+  .side-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    margin-bottom: 9px;
+  }
+
+  .snapshot-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .snapshot-fact {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .fact-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+
+  .fact-dot.good    { background: var(--green); box-shadow: 0 0 5px rgba(22,163,74,0.4); }
+  .fact-dot.warn    { background: var(--amber); box-shadow: 0 0 5px rgba(217,119,6,0.4); }
+  .fact-dot.bad     { background: var(--red);   box-shadow: 0 0 5px rgba(220,38,38,0.4); }
+  .fact-dot.neutral { background: var(--text-muted); }
+
+  .fact-body { flex: 1; min-width: 0; }
+
+  .fact-label {
+    font-size: 10.5px;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .fact-value {
+    font-size: 13px;
+    color: var(--text);
+    font-weight: 600;
+    line-height: 1.3;
+    margin-top: 1px;
+  }
+
+  .side-archetype {
+    padding: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .arch-primary {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.3;
+  }
+
+  .arch-secondary {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 3px;
+  }
+
+  .side-details {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .side-detail-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 13px;
+  }
+
+  .side-detail-row:last-child { border-bottom: none; }
+
+  .sd-label { color: var(--text-muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+  .sd-value { color: var(--text); font-weight: 600; text-align: right; font-size: 12.5px; }
+  .sd-value.hl-green { color: var(--green-text); }
+  .sd-value.hl-amber { color: var(--amber-text); }
+  .sd-value.hl-red   { color: var(--red-text); }
+
+  .side-added {
+    padding: 5px 12px 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .side-action-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .side-action-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .side-action-row:last-child { border-bottom: none; }
+
+  .side-action-lbl {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .side-action-val { font-size: 13px; color: var(--text-dim); font-weight: 500; }
+  .accent-action   { color: var(--accent-text); font-weight: 700; }
+
+
+  /* ════════════════════════════════════════
+     CHAT PANEL
+  ════════════════════════════════════════ */
+
+  .chat-panel {
+    background: var(--bg-chat);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .chat-header {
+    padding: 0 16px;
+    height: var(--topbar-h);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    background: var(--bg-sidebar);
+  }
+
+  .chat-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+
+  .ai-badge {
+    font-size: 10.5px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent-dim), rgba(124,58,237,0.08));
+    color: var(--accent-text);
+    border: 1px solid rgba(240,85,35,0.22);
+    border-radius: 100px;
+    padding: 3px 9px;
+    letter-spacing: 0.06em;
+  }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .chat-messages::-webkit-scrollbar { display: none; }
+
+  .chat-msg-group {}
+
+  .chat-msg-role {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .chat-msg-role.ai { color: var(--accent-text); }
+
+  .msg-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 800;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  .msg-avatar.ai-av { background: linear-gradient(135deg, var(--accent), var(--accent-bright)); }
+  .msg-avatar.user-av { background: linear-gradient(135deg, #7C3AED, #A78BFA); }
+
+  .chat-bubble {
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text-dim);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 11px 14px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .chat-bubble.ai {
+    border-color: rgba(240,85,35,0.14);
+    background: #FFFAF8;
+  }
+
+  .chat-bubble strong { color: var(--text); font-weight: 700; }
+
+  .chat-prompts {
+    padding: 9px 14px 7px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg-sidebar);
+  }
+
+  .quick-prompt {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-dim);
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    border-radius: 100px;
+    padding: 5px 13px;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: all 0.1s;
+    white-space: nowrap;
+    box-shadow: var(--shadow-btn);
+  }
+
+  .quick-prompt:hover {
+    background: var(--accent-dim);
+    color: var(--accent-text);
+    border-color: rgba(240,85,35,0.3);
+  }
+
+  .chat-input-area {
+    padding: 10px 14px 14px;
+    flex-shrink: 0;
+    background: var(--bg-sidebar);
+    border-top: 1px solid var(--border);
+  }
+
+  .chat-input-wrap {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 8px 8px 12px;
+    transition: border-color 0.1s;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .chat-input-wrap:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(240,85,35,0.12);
+  }
+
+  .chat-input {
+    flex: 1;
+    background: none;
+    border: none;
+    font-size: 14px;
+    font-family: var(--font);
+    color: var(--text);
+    outline: none;
+    resize: none;
+    max-height: 80px;
+    min-height: 22px;
+    line-height: 1.5;
+  }
+
+  .chat-input::placeholder { color: var(--text-muted); }
+
+  .chat-send {
+    font-size: 12.5px;
+    font-weight: 700;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 7px;
+    padding: 7px 14px;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: background 0.1s;
+    flex-shrink: 0;
+    box-shadow: 0 1px 5px rgba(240,85,35,0.3);
+  }
+
+  .chat-send:hover { background: #E04415; }
+
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ════════ SIDEBAR ════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">RW</div>
+      <span class="logo-text">RoleWise</span>
+    </div>
+    <div class="sidebar-tagline">Intelligence for your job search</div>
+
+    <nav class="sidebar-nav">
+
+      <button class="nav-item active" data-nav="overview">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1.5" y="1.5" width="4.5" height="4.5" rx="1"/>
+          <rect x="8" y="1.5" width="4.5" height="4.5" rx="1"/>
+          <rect x="1.5" y="8" width="4.5" height="4.5" rx="1"/>
+          <rect x="8" y="8" width="4.5" height="4.5" rx="1"/>
+        </svg>
+        Dashboard
+      </button>
+
+      <button class="nav-item" data-nav="applications" style="color: var(--accent-text); background: var(--accent-dim); font-weight: 600;">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="opacity:1;">
+          <path d="M2.5 3.5h9M2.5 7h7M2.5 10.5h5"/>
+        </svg>
+        Active Roles
+        <span class="nav-count">6</span>
+      </button>
+
+      <div class="nav-sub-wrap">
+        <div class="nav-sub-item active" data-subnav="all">
+          <svg class="nav-sub-dot" viewBox="0 0 6 6"><circle cx="3" cy="3" r="2" fill="currentColor" opacity="0.4"/></svg>
+          All active
+          <span style="margin-left:auto; font-size:11px; font-family: var(--font-mono); color: var(--text-muted);">6</span>
+        </div>
+        <div class="nav-sub-item" data-subnav="attention">
+          <span style="width:5px;height:5px;border-radius:50%;background:var(--amber);flex-shrink:0;box-shadow:0 0 4px rgba(217,119,6,0.5);"></span>
+          Needs attention
+          <span style="margin-left:auto; font-size:11px; font-family: var(--font-mono); color: var(--amber-text);">2</span>
+        </div>
+        <div class="nav-sub-item" data-subnav="applied">
+          <span style="width:5px;height:5px;border-radius:50%;background:var(--green);flex-shrink:0;"></span>
+          Applied
+          <span style="margin-left:auto; font-size:11px; font-family: var(--font-mono); color: var(--green-text);">1</span>
+        </div>
+      </div>
+
+      <div class="nav-divider"></div>
+
+      <button class="nav-item" data-nav="archived">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1.5" y="2.5" width="11" height="3" rx="1"/>
+          <path d="M2.5 5.5v5a1 1 0 001 1h7a1 1 0 001-1v-5"/>
+          <path d="M5.5 8.5h3"/>
+        </svg>
+        Archived
+        <span class="nav-count">4</span>
+      </button>
+
+      <button class="nav-item" data-nav="compare">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 1.5V12.5M3.5 4.5L1.5 7l2 2.5M10.5 4.5L12.5 7l-2 2.5"/>
+        </svg>
+        Compare
+      </button>
+
+      <button class="nav-item" data-nav="radar">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="7" cy="7" r="5.5"/>
+          <circle cx="7" cy="7" r="2.5"/>
+          <path d="M7 1.5V7M7 7l3.9-3.9"/>
+        </svg>
+        Radar
+      </button>
+
+      <button class="nav-item" data-nav="recruiters">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="7" cy="4.5" r="2.5"/>
+          <path d="M2.5 11.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5"/>
+        </svg>
+        Recruiters
+      </button>
+
+      <button class="nav-item" data-nav="review">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1.5 4.5h11M1.5 7h7.5M1.5 9.5h5"/>
+        </svg>
+        Review
+      </button>
+
+      <div class="nav-divider"></div>
+
+      <button class="nav-item" data-nav="safeguards">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 1.5L12 3.5V7c0 2.8-2.2 4.8-5 5.5C4.2 11.8 2 9.8 2 7V3.5L7 1.5Z"/>
+        </svg>
+        Safeguards
+      </button>
+
+      <button class="nav-item" data-nav="admin">
+        <svg class="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <circle cx="7" cy="7" r="1.5"/>
+          <path d="M7 1.5V3M7 11v1.5M1.5 7H3M11 7h1.5M3.1 3.1l1.1 1.1M9.8 9.8l1.1 1.1M3.1 10.9l1.1-1.1M9.8 4.2l1.1-1.1"/>
+        </svg>
+        Admin
+      </button>
+
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-version">
+        <span>RoleWise v4 · Single-user</span>
+        <span>March 2026</span>
+      </div>
+      <div class="profile-row">
+        <div class="profile-avatar">R</div>
+        <div class="profile-info">
+          <div class="profile-name">Ross Mackintosh</div>
+          <div class="profile-plan">Pro · active</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+
+  <!-- ════════ LIST PANEL ════════ -->
+  <div class="list-panel">
+    <div class="list-header">
+      <span class="list-header-title">Active · 6</span>
+      <button class="btn-add">+ Add JD</button>
+    </div>
+
+    <div class="list-search-row">
+      <div class="search-input-wrap">
+        <span class="search-icon">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <circle cx="5.5" cy="5.5" r="3.8" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M8.5 8.5L11 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <input class="list-search-input" type="text" placeholder="Search roles…" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+
+    <div class="list-roles">
+
+      <div class="list-group-label">Needs attention</div>
+
+      <!-- Stripe -->
+      <div class="role-card selected" onclick="selectRole(this, 0)">
+        <div class="card-strip" style="background: linear-gradient(90deg, #635BFF, #8B85FF);"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="co-avatar" style="background: linear-gradient(145deg, #635BFF, #8B85FF);">St</div>
+            <div class="card-info">
+              <div class="card-title">Senior Product Manager</div>
+              <div class="card-sub">Stripe · Contract · £650/day</div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <span class="fit-badge high">FIT 7.1</span>
+            <span class="status-pill sp-review">Needs Review</span>
+            <span class="card-age">2d</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Monzo -->
+      <div class="role-card" onclick="selectRole(this, 1)">
+        <div class="card-strip" style="background: linear-gradient(90deg, #E8421A, #FF6540);"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="co-avatar" style="background: linear-gradient(145deg, #E8421A, #FF6540);">Mo</div>
+            <div class="card-info">
+              <div class="card-title">Product Lead</div>
+              <div class="card-sub">Monzo · Permanent · £95k</div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <span class="fit-badge mid">FIT 6.4</span>
+            <span class="status-pill sp-review">Needs Review</span>
+            <span class="card-age">4d</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="list-group-label">In progress</div>
+
+      <!-- Revolut -->
+      <div class="role-card" onclick="selectRole(this, 2)">
+        <div class="card-strip" style="background: linear-gradient(90deg, #1A1A2E, #2D2D4A);"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="co-avatar" style="background: linear-gradient(145deg, #1A1A2E, #3D3D5C);">Rv</div>
+            <div class="card-info">
+              <div class="card-title">Lead UX Designer</div>
+              <div class="card-sub">Revolut · Permanent · Remote</div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <span class="fit-badge high">FIT 8.2</span>
+            <span class="status-pill sp-round2">Round 2</span>
+            <span class="card-age">1d</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Deliveroo -->
+      <div class="role-card" onclick="selectRole(this, 3)">
+        <div class="card-strip" style="background: linear-gradient(90deg, #00CCBC, #00EDD9);"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="co-avatar" style="background: linear-gradient(145deg, #009B8E, #00CCBC);">De</div>
+            <div class="card-info">
+              <div class="card-title">Senior PM — Growth</div>
+              <div class="card-sub">Deliveroo · Permanent · £90–110k</div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <span class="fit-badge mid">FIT 5.8</span>
+            <span class="status-pill sp-applied">Applied</span>
+            <span class="card-age">6d</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="list-group-label">Active</div>
+
+      <!-- Wise -->
+      <div class="role-card" onclick="selectRole(this, 4)">
+        <div class="card-strip" style="background: linear-gradient(90deg, #00B9FF, #40D0FF);"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="co-avatar" style="background: linear-gradient(145deg, #0090CC, #00B9FF);">Wi</div>
+            <div class="card-info">
+              <div class="card-title">Head of Design Systems</div>
+              <div class="card-sub">Wise · Contract · £550/day</div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <span class="fit-badge high">FIT 7.4</span>
+            <span class="status-pill sp-review">Needs Review</span>
+            <span class="card-age">1w</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Meta -->
+      <div class="role-card" onclick="selectRole(this, 5)">
+        <div class="card-strip" style="background: linear-gradient(90deg, #0866FF, #4090FF);"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="co-avatar" style="background: linear-gradient(145deg, #0652CC, #0866FF);">Me</div>
+            <div class="card-info">
+              <div class="card-title">Principal Designer</div>
+              <div class="card-sub">Meta · Permanent · London</div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <span class="fit-badge">FIT 4.2</span>
+            <span class="status-pill sp-skipped">Skipped</span>
+            <span class="card-age">1w</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ════════ CENTER PANEL ════════ -->
+  <main class="center-panel">
+
+    <!-- Header bar -->
+    <div class="center-header">
+      <div class="breadcrumb">
+        <span>Applications</span>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current" id="crumb-role">Senior Product Manager</span>
+      </div>
+      <div class="center-actions">
+        <div class="co-badge" id="co-badge">
+          <span class="co-badge-dot" id="co-badge-dot" style="background: #635BFF;"></span>
+          <span id="co-badge-name">Stripe</span>
+        </div>
+        <div class="hdr-sep"></div>
+        <button class="hdr-btn">Edit details</button>
+        <button class="hdr-btn">Share</button>
+        <button class="hdr-btn accent">Re-analyse</button>
+      </div>
+    </div>
+
+    <!-- Two-column body -->
+    <div class="center-inner">
+
+      <!-- ─── Left: Main analysis ─── -->
+      <div class="center-main" id="center-main">
+
+        <!-- ═══ ROLE 0: Stripe Senior PM ═══ -->
+        <div id="role-view-0">
+          <div class="role-title-block">
+            <div class="role-co-pill">
+              <span class="co-color-dot" style="background: #635BFF;"></span>
+              Stripe · London · Contract
+            </div>
+            <div class="role-main-title">Senior Product Manager</div>
+            <div class="archetype-pill">
+              <span class="archetype-pill-dot"></span>
+              Operator-Builder Hybrid · Payments &amp; Growth
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill">Overview</span>
+              <span class="section-label">Role Summary</span>
+              <div class="section-rule"></div>
+            </div>
+            <p class="analysis-prose">A senior individual contributor PM role focused on Stripe's payments product in London. Scope centres on merchant-facing product — improving conversion, reducing friction in checkout flows, and iterating on the core payments API experience.</p>
+            <p class="analysis-prose">This role exists because Stripe is expanding European PM capacity as merchant adoption grows in the region. The hire is likely to own a defined payment vertical rather than a generalist PM function, which is a positive scope signal.</p>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill amber">Fit Reality</span>
+              <span class="section-label">How Well You Match</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="bullet-list">
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot green"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>Strong product ownership expected</strong> — full roadmap accountability with direct stakeholder alignment, not execution-layer PM work.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"owns the end-to-end product roadmap for your domain, from ideation through delivery"</span></div>
+                </div>
+              </div>
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot amber"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>Technical depth required but scope is undefined</strong> — coding collaboration is mentioned without a clear boundary between PM and engineering ownership.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"partner closely with engineering on technical decisions and trade-offs"</span></div>
+                </div>
+              </div>
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot green"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>Senior IC positioning is appropriate</strong> — no people management expectation stated, scope aligns with 6–8 years of experience, not a stretch.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"individual contributor role with significant cross-functional influence across the London team"</span></div>
+                </div>
+              </div>
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot amber"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>Fintech domain experience implied</strong> — payments-specific language throughout, though not explicitly required as a hard prerequisite.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"experience in payments, fintech, or complex transactional products preferred"</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill neutral">Day to Day</span>
+              <span class="section-label">What You'd Actually Do</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="bullet-list">
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text">Define and own the product roadmap for a defined payment vertical from ideation through delivery.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"own the roadmap for your product area, prioritising ruthlessly based on merchant impact"</span></div>
+                </div>
+              </div>
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text">Lead cross-functional alignment across engineering, design, data science, legal, and compliance.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"working closely with engineering, design, and compliance to ship iteratively"</span></div>
+                </div>
+              </div>
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text">Conduct merchant research to identify friction points and surface actionable opportunity areas.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"gathering feedback from merchants and converting qualitative insights into clear requirements"</span></div>
+                </div>
+              </div>
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text">Drive measurable improvements to conversion-critical flows using data-driven prioritisation.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"improving conversion and reducing drop-off across key payment flows with measurable outcomes"</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill neutral">Requirements</span>
+              <span class="section-label">What They're Looking For</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="bullet-list">
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot green"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>6+ years PM experience</strong> — ideally in fintech, payments, or a high-volume transactional product context.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"6+ years of product management experience, preferably in payments or high-volume B2B SaaS"</span></div>
+                </div>
+              </div>
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot green"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>Comfort working alongside world-class engineers</strong> — ability to engage credibly on technical decisions without being the decision-maker.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"ability to collaborate with and influence a world-class engineering team on technical direction"</span></div>
+                </div>
+              </div>
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot amber"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>Strong analytical and data mindset</strong> — evidence of using quantitative data to drive product prioritisation at scale.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"data-driven approach to prioritisation, comfortable with SQL and dashboarding tools"</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill red">Watch Out</span>
+              <span class="section-label">Friction Signals</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="friction-tags">
+              <span class="friction-tag ft-warn">⚠ Hybrid terms unconfirmed</span>
+              <span class="friction-tag ft-warn">⚠ Coding scope undefined</span>
+              <span class="friction-tag ft-bad">✕ No equity details stated</span>
+              <span class="friction-tag ft-ok">✓ Salary transparent</span>
+              <span class="friction-tag ft-ok">✓ Clear scope, no people mgmt</span>
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill purple">Prep</span>
+              <span class="section-label">Questions Worth Asking</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="q-list">
+              <div class="q-item">
+                <div class="q-num">1</div>
+                <div class="q-text">"The JD mentions technical collaboration — where does PM ownership end and engineering begin day-to-day?"</div>
+              </div>
+              <div class="q-item">
+                <div class="q-num">2</div>
+                <div class="q-text">"The listing says 3 days minimum hybrid. Is that fixed, or is there flexibility around travel weeks?"</div>
+              </div>
+              <div class="q-item">
+                <div class="q-num">3</div>
+                <div class="q-text">"Who would I report to, and what does that relationship look like in practice week-to-week?"</div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /role-view-0 -->
+
+
+        <!-- ═══ ROLE 1: Monzo Product Lead ═══ -->
+        <div id="role-view-1" style="display:none;">
+          <div class="role-title-block">
+            <div class="role-co-pill">
+              <span class="co-color-dot" style="background: #E8421A;"></span>
+              Monzo · London · Permanent
+            </div>
+            <div class="role-main-title">Product Lead</div>
+            <div class="archetype-pill">
+              <span class="archetype-pill-dot"></span>
+              Product Squad PM · Consumer Banking
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill">Overview</span>
+              <span class="section-label">Role Summary</span>
+              <div class="section-rule"></div>
+            </div>
+            <p class="analysis-prose">A lead PM role at Monzo, likely managing a cross-functional squad in consumer banking. The title "Product Lead" at Monzo typically implies player-coach responsibilities — owning a roadmap while providing informal leadership to junior PMs or APMs.</p>
+            <p class="analysis-prose">The compensation at £95k is transparent and competitive for a lead IC role at a high-growth fintech. The permanent employment structure is a positive signal vs. recent Monzo contractor conversions in 2024.</p>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill amber">Fit Reality</span>
+              <span class="section-label">How Well You Match</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="bullet-list">
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot amber"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>Player-coach expectation unconfirmed</strong> — the title often implies mentorship at Monzo, but the JD doesn't explicitly state management scope.</div>
+                  <div class="bullet-evidence"><span class="evidence-text">"lead a cross-functional squad and contribute to team development"</span></div>
+                </div>
+              </div>
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot green"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>Salary transparency is a positive signal</strong> — £95k is above London PM median, suggesting genuine seniority rather than a mid-level repackaged title.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill red">Watch Out</span>
+              <span class="section-label">Friction Signals</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="friction-tags">
+              <span class="friction-tag ft-warn">⚠ Scope of people mgmt unclear</span>
+              <span class="friction-tag ft-warn">⚠ Hybrid terms unspecified</span>
+              <span class="friction-tag ft-ok">✓ Salary transparent</span>
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill purple">Prep</span>
+              <span class="section-label">Questions Worth Asking</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="q-list">
+              <div class="q-item">
+                <div class="q-num">1</div>
+                <div class="q-text">"Does Product Lead here involve managing or mentoring junior PMs, or is this a pure IC role?"</div>
+              </div>
+              <div class="q-item">
+                <div class="q-num">2</div>
+                <div class="q-text">"What does the hybrid arrangement look like in practice — is 2 days in office typical across the team?"</div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /role-view-1 -->
+
+
+        <!-- ═══ ROLE 2: Revolut Lead UX Designer ═══ -->
+        <div id="role-view-2" style="display:none;">
+          <div class="role-title-block">
+            <div class="role-co-pill">
+              <span class="co-color-dot" style="background: #1A1A2E;"></span>
+              Revolut · Remote · Permanent
+            </div>
+            <div class="role-main-title">Lead UX Designer</div>
+            <div class="archetype-pill">
+              <span class="archetype-pill-dot"></span>
+              Product Squad Designer · Consumer FinTech
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill">Overview</span>
+              <span class="section-label">Role Summary</span>
+              <div class="section-rule"></div>
+            </div>
+            <p class="analysis-prose">A senior design IC role at Revolut, fully remote with UK preference. Round 2 is already underway. Salary not yet stated — this is an active risk that needs to be addressed before progressing further into the process.</p>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill red">Watch Out</span>
+              <span class="section-label">Friction Signals</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="friction-tags">
+              <span class="friction-tag ft-bad">✕ Salary not stated at Round 2</span>
+              <span class="friction-tag ft-ok">✓ Fully remote confirmed</span>
+              <span class="friction-tag ft-warn">⚠ Revolut culture risk (known)</span>
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill purple">Prep</span>
+              <span class="section-label">Questions Worth Asking</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="q-list">
+              <div class="q-item">
+                <div class="q-num">1</div>
+                <div class="q-text">"Can you share the salary band for this role before we continue to Round 3?"</div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /role-view-2 -->
+
+
+        <!-- ═══ ROLE 3: Deliveroo Senior PM Growth ═══ -->
+        <div id="role-view-3" style="display:none;">
+          <div class="role-title-block">
+            <div class="role-co-pill">
+              <span class="co-color-dot" style="background: #00CCBC;"></span>
+              Deliveroo · London · Permanent
+            </div>
+            <div class="role-main-title">Senior PM — Growth</div>
+            <div class="archetype-pill">
+              <span class="archetype-pill-dot"></span>
+              Growth PM · Consumer Marketplace
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill">Overview</span>
+              <span class="section-label">Role Summary</span>
+              <div class="section-rule"></div>
+            </div>
+            <p class="analysis-prose">Applied 6 days ago, currently awaiting a reply. Salary range is transparent at £90–110k. The growth PM remit suggests experimentation, retention, and funnel optimisation work — a strong fit for data-driven product leaders.</p>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill amber">Fit Reality</span>
+              <span class="section-label">How Well You Match</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="bullet-list">
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot green"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>Salary range is competitive and transparent</strong> — £90–110k is mid-to-senior market for London growth PM roles.</div>
+                </div>
+              </div>
+              <div class="analysis-bullet">
+                <div class="bullet-dot-wrap"><div class="bullet-dot amber"></div></div>
+                <div class="bullet-content">
+                  <div class="bullet-text"><strong>Team structure unknown</strong> — unclear whether this role owns a standalone growth team or sits embedded in a broader consumer squad.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /role-view-3 -->
+
+
+        <!-- ═══ ROLE 4: Wise Head of Design Systems ═══ -->
+        <div id="role-view-4" style="display:none;">
+          <div class="role-title-block">
+            <div class="role-co-pill">
+              <span class="co-color-dot" style="background: #00B9FF;"></span>
+              Wise · London · Contract
+            </div>
+            <div class="role-main-title">Head of Design Systems</div>
+            <div class="archetype-pill">
+              <span class="archetype-pill-dot"></span>
+              Platform Design Lead · FinTech Systems
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill">Overview</span>
+              <span class="section-label">Role Summary</span>
+              <div class="section-rule"></div>
+            </div>
+            <p class="analysis-prose">Contract role at £550/day, but IR35 status is completely unconfirmed — this is a critical blocker. At outside IR35, £550/day is workable; inside IR35, the effective take-home is significantly reduced. Do not progress without clarity on this.</p>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill red">Watch Out</span>
+              <span class="section-label">Friction Signals</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="friction-tags">
+              <span class="friction-tag ft-bad">✕ IR35 status unknown</span>
+              <span class="friction-tag ft-warn">⚠ Day rate below mid-market</span>
+              <span class="friction-tag ft-warn">⚠ Hybrid London required</span>
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill purple">Prep</span>
+              <span class="section-label">Questions Worth Asking</span>
+              <div class="section-rule"></div>
+            </div>
+            <div class="q-list">
+              <div class="q-item">
+                <div class="q-num">1</div>
+                <div class="q-text">"What is the IR35 determination for this contract? Is there a written SDS (Status Determination Statement) available?"</div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /role-view-4 -->
+
+
+        <!-- ═══ ROLE 5: Meta Principal Designer ═══ -->
+        <div id="role-view-5" style="display:none;">
+          <div class="role-title-block">
+            <div class="role-co-pill">
+              <span class="co-color-dot" style="background: #0866FF;"></span>
+              Meta · London · Permanent
+            </div>
+            <div class="role-main-title">Principal Designer</div>
+            <div class="archetype-pill" style="background: rgba(0,0,0,0.05); border-color: var(--border); color: var(--text-muted);">
+              <span class="archetype-pill-dot" style="background: var(--text-muted);"></span>
+              Skipped · Decision Final
+            </div>
+          </div>
+
+          <div class="analysis-section">
+            <div class="section-head">
+              <span class="section-kf-pill neutral">Decision</span>
+              <span class="section-label">Role Skipped</span>
+              <div class="section-rule"></div>
+            </div>
+            <p class="analysis-prose">This role was reviewed and skipped. The scope was assessed as too broad for a single Principal IC, and the 3-day on-site requirement in London was incompatible with current constraints. No further action needed.</p>
+          </div>
+        </div><!-- /role-view-5 -->
+
+      </div><!-- /center-main -->
+
+
+      <!-- ─── Right: Snapshot sidebar ─── -->
+      <div class="center-side" id="center-side">
+
+        <!-- ═══ SIDE 0: Stripe ═══ -->
+        <div id="side-view-0">
+          <div class="side-section">
+            <div class="side-label">Reality Snapshot</div>
+            <div class="snapshot-facts">
+              <div class="snapshot-fact">
+                <div class="fact-dot good"></div>
+                <div class="fact-body"><div class="fact-label">Role level</div><div class="fact-value">Senior IC · Payments</div></div>
+              </div>
+              <div class="snapshot-fact">
+                <div class="fact-dot neutral"></div>
+                <div class="fact-body"><div class="fact-label">Domain</div><div class="fact-value">B2B FinTech · Merchant</div></div>
+              </div>
+              <div class="snapshot-fact">
+                <div class="fact-dot warn"></div>
+                <div class="fact-body"><div class="fact-label">Work model</div><div class="fact-value">Hybrid · 3d unconfirmed</div></div>
+              </div>
+              <div class="snapshot-fact">
+                <div class="fact-dot good"></div>
+                <div class="fact-body"><div class="fact-label">Salary clarity</div><div class="fact-value">£650/day stated</div></div>
+              </div>
+              <div class="snapshot-fact">
+                <div class="fact-dot warn"></div>
+                <div class="fact-body"><div class="fact-label">Primary risk</div><div class="fact-value">Coding scope undefined</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Role Archetype</div>
+            <div class="side-archetype">
+              <div class="arch-primary">Operator-Builder Hybrid</div>
+              <div class="arch-secondary">Payments · Senior IC · London</div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Role Details</div>
+            <div class="side-details">
+              <div class="side-detail-row"><span class="sd-label">Company</span><span class="sd-value">Stripe</span></div>
+              <div class="side-detail-row"><span class="sd-label">Location</span><span class="sd-value">London, UK</span></div>
+              <div class="side-detail-row"><span class="sd-label">Work model</span><span class="sd-value">Hybrid (3d est.)</span></div>
+              <div class="side-detail-row"><span class="sd-label">Type</span><span class="sd-value">Contract</span></div>
+              <div class="side-detail-row"><span class="sd-label">Day rate</span><span class="sd-value hl-green">£650/day</span></div>
+              <div class="side-detail-row"><span class="sd-label">Source</span><span class="sd-value">LinkedIn</span></div>
+              <div class="side-added">Added 2 days ago · Awaiting decision</div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Suggested Actions</div>
+            <div class="side-action-block">
+              <div class="side-action-row">
+                <div class="side-action-lbl">Next step</div>
+                <div class="side-action-val accent-action">Clarify hybrid + coding scope</div>
+              </div>
+              <div class="side-action-row">
+                <div class="side-action-lbl">Recommended CV</div>
+                <div class="side-action-val">Senior PM · Payments &amp; Growth</div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /side-view-0 -->
+
+        <!-- ═══ SIDE 1: Monzo ═══ -->
+        <div id="side-view-1" style="display:none;">
+          <div class="side-section">
+            <div class="side-label">Reality Snapshot</div>
+            <div class="snapshot-facts">
+              <div class="snapshot-fact"><div class="fact-dot neutral"></div><div class="fact-body"><div class="fact-label">Role level</div><div class="fact-value">Senior IC · Lead</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot neutral"></div><div class="fact-body"><div class="fact-label">Domain</div><div class="fact-value">Consumer FinTech</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot warn"></div><div class="fact-body"><div class="fact-label">Work model</div><div class="fact-value">Hybrid (unspecified)</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot good"></div><div class="fact-body"><div class="fact-label">Salary clarity</div><div class="fact-value">£95,000 stated</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot warn"></div><div class="fact-body"><div class="fact-label">Primary risk</div><div class="fact-value">People mgmt scope unclear</div></div></div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Role Archetype</div>
+            <div class="side-archetype">
+              <div class="arch-primary">Product Squad Lead PM</div>
+              <div class="arch-secondary">Consumer Banking · Permanent</div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Role Details</div>
+            <div class="side-details">
+              <div class="side-detail-row"><span class="sd-label">Company</span><span class="sd-value">Monzo</span></div>
+              <div class="side-detail-row"><span class="sd-label">Location</span><span class="sd-value">London, UK</span></div>
+              <div class="side-detail-row"><span class="sd-label">Type</span><span class="sd-value">Permanent</span></div>
+              <div class="side-detail-row"><span class="sd-label">Salary</span><span class="sd-value hl-green">£95,000</span></div>
+              <div class="side-detail-row"><span class="sd-label">Source</span><span class="sd-value">Recruiter outreach</span></div>
+              <div class="side-added">Added 4 days ago · Awaiting decision</div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Suggested Actions</div>
+            <div class="side-action-block">
+              <div class="side-action-row">
+                <div class="side-action-lbl">Next step</div>
+                <div class="side-action-val accent-action">Ask scope + comp questions</div>
+              </div>
+              <div class="side-action-row">
+                <div class="side-action-lbl">Recommended CV</div>
+                <div class="side-action-val">Senior PM · Product Leadership</div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /side-view-1 -->
+
+        <!-- ═══ SIDE 2: Revolut ═══ -->
+        <div id="side-view-2" style="display:none;">
+          <div class="side-section">
+            <div class="side-label">Reality Snapshot</div>
+            <div class="snapshot-facts">
+              <div class="snapshot-fact"><div class="fact-dot neutral"></div><div class="fact-body"><div class="fact-label">Role level</div><div class="fact-value">Senior IC · Lead</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot good"></div><div class="fact-body"><div class="fact-label">Work model</div><div class="fact-value">Fully remote confirmed</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot bad"></div><div class="fact-body"><div class="fact-label">Salary clarity</div><div class="fact-value">Not stated at Round 2</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot warn"></div><div class="fact-body"><div class="fact-label">Primary risk</div><div class="fact-value">Ask for salary now</div></div></div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Role Details</div>
+            <div class="side-details">
+              <div class="side-detail-row"><span class="sd-label">Company</span><span class="sd-value">Revolut</span></div>
+              <div class="side-detail-row"><span class="sd-label">Work model</span><span class="sd-value hl-green">Fully remote</span></div>
+              <div class="side-detail-row"><span class="sd-label">Salary</span><span class="sd-value hl-red">Not stated</span></div>
+              <div class="side-detail-row"><span class="sd-label">Stage</span><span class="sd-value">Round 2 · In progress</span></div>
+              <div class="side-added">Added 1 day ago</div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Suggested Actions</div>
+            <div class="side-action-block">
+              <div class="side-action-row">
+                <div class="side-action-lbl">Next step</div>
+                <div class="side-action-val accent-action">Ask for salary range now</div>
+              </div>
+              <div class="side-action-row">
+                <div class="side-action-lbl">Recommended CV</div>
+                <div class="side-action-val">Lead Designer · Consumer Product</div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /side-view-2 -->
+
+        <!-- ═══ SIDE 3: Deliveroo ═══ -->
+        <div id="side-view-3" style="display:none;">
+          <div class="side-section">
+            <div class="side-label">Reality Snapshot</div>
+            <div class="snapshot-facts">
+              <div class="snapshot-fact"><div class="fact-dot neutral"></div><div class="fact-body"><div class="fact-label">Role level</div><div class="fact-value">Senior IC</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot warn"></div><div class="fact-body"><div class="fact-label">Work model</div><div class="fact-value">Hybrid · London (2d)</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot good"></div><div class="fact-body"><div class="fact-label">Salary clarity</div><div class="fact-value">£90–110k stated</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot warn"></div><div class="fact-body"><div class="fact-label">Primary risk</div><div class="fact-value">Team structure unknown</div></div></div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Role Details</div>
+            <div class="side-details">
+              <div class="side-detail-row"><span class="sd-label">Company</span><span class="sd-value">Deliveroo</span></div>
+              <div class="side-detail-row"><span class="sd-label">Type</span><span class="sd-value">Permanent</span></div>
+              <div class="side-detail-row"><span class="sd-label">Salary</span><span class="sd-value hl-green">£90,000–£110,000</span></div>
+              <div class="side-added">Added 6 days ago · Awaiting reply</div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Suggested Actions</div>
+            <div class="side-action-block">
+              <div class="side-action-row">
+                <div class="side-action-lbl">Next step</div>
+                <div class="side-action-val accent-action">Monitor · Follow up at 7 days</div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /side-view-3 -->
+
+        <!-- ═══ SIDE 4: Wise ═══ -->
+        <div id="side-view-4" style="display:none;">
+          <div class="side-section">
+            <div class="side-label">Reality Snapshot</div>
+            <div class="snapshot-facts">
+              <div class="snapshot-fact"><div class="fact-dot neutral"></div><div class="fact-body"><div class="fact-label">Role level</div><div class="fact-value">Head of · Contract</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot warn"></div><div class="fact-body"><div class="fact-label">Work model</div><div class="fact-value">Hybrid · London</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot warn"></div><div class="fact-body"><div class="fact-label">Day rate</div><div class="fact-value">£550/day (below mid)</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot bad"></div><div class="fact-body"><div class="fact-label">Primary risk</div><div class="fact-value">IR35 unconfirmed</div></div></div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Role Details</div>
+            <div class="side-details">
+              <div class="side-detail-row"><span class="sd-label">Company</span><span class="sd-value">Wise</span></div>
+              <div class="side-detail-row"><span class="sd-label">Type</span><span class="sd-value">Contract</span></div>
+              <div class="side-detail-row"><span class="sd-label">IR35</span><span class="sd-value hl-red">Unknown</span></div>
+              <div class="side-detail-row"><span class="sd-label">Day rate</span><span class="sd-value hl-amber">£550/day</span></div>
+              <div class="side-added">Added 1 week ago</div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Suggested Actions</div>
+            <div class="side-action-block">
+              <div class="side-action-row">
+                <div class="side-action-lbl">Next step</div>
+                <div class="side-action-val accent-action">Confirm IR35 before proceeding</div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /side-view-4 -->
+
+        <!-- ═══ SIDE 5: Meta ═══ -->
+        <div id="side-view-5" style="display:none;">
+          <div class="side-section">
+            <div class="side-label">Reality Snapshot</div>
+            <div class="snapshot-facts">
+              <div class="snapshot-fact"><div class="fact-dot neutral"></div><div class="fact-body"><div class="fact-label">Role level</div><div class="fact-value">Principal IC</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot bad"></div><div class="fact-body"><div class="fact-label">Work model</div><div class="fact-value">Hybrid · 3d on-site</div></div></div>
+              <div class="snapshot-fact"><div class="fact-dot bad"></div><div class="fact-body"><div class="fact-label">Primary risk</div><div class="fact-value">Scope too broad</div></div></div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="side-label">Role Details</div>
+            <div class="side-details">
+              <div class="side-detail-row"><span class="sd-label">Company</span><span class="sd-value">Meta</span></div>
+              <div class="side-detail-row"><span class="sd-label">Decision</span><span class="sd-value hl-red">Skipped</span></div>
+              <div class="side-added">Added 1 week ago · Decision final</div>
+            </div>
+          </div>
+        </div><!-- /side-view-5 -->
+
+      </div><!-- /center-side -->
+
+    </div><!-- /center-inner -->
+
+    <!-- Decision rail -->
+    <div class="decision-rail" id="decision-rail">
+      <span class="decision-label">Decision</span>
+      <button class="decision-btn apply">✓ Apply</button>
+      <button class="decision-btn skip">✕ Skip</button>
+      <button class="decision-btn hold">⟳ Hold</button>
+      <div class="decision-spacer"></div>
+      <div class="decision-state" id="decision-state">
+        <span class="decision-state-dot" id="decision-dot"></span>
+        <span id="decision-label-text">Awaiting decision</span>
+      </div>
+    </div>
+
+  </main><!-- /center-panel -->
+
+
+  <!-- ════════ CHAT PANEL ════════ -->
+  <aside class="chat-panel">
+    <div class="chat-header">
+      <span class="chat-title">Workspace</span>
+      <span class="ai-badge">AI · ON</span>
+    </div>
+
+    <div class="chat-messages">
+      <div class="chat-msg-group">
+        <div class="chat-msg-role ai">
+          <div class="msg-avatar ai-av">RW</div>
+          RoleWise
+        </div>
+        <div class="chat-bubble ai">
+          I've analysed the Stripe Senior PM role. Two things worth flagging: the coding scope boundary isn't defined, and the hybrid arrangement needs confirmation in writing.<br><br>
+          That said, the salary transparency alone puts this in the top 20% of listings I see. Everything else looks solid — clear ownership, appropriate seniority, good culture signals. What would you like to dig into?
+        </div>
+      </div>
+
+      <div class="chat-msg-group">
+        <div class="chat-msg-role">
+          <div class="msg-avatar user-av">R</div>
+          You
+        </div>
+        <div class="chat-bubble">What questions should I ask in the first screening call?</div>
+      </div>
+
+      <div class="chat-msg-group">
+        <div class="chat-msg-role ai">
+          <div class="msg-avatar ai-av">RW</div>
+          RoleWise
+        </div>
+        <div class="chat-bubble ai">
+          For the Stripe screening, I'd prioritise these three:<br><br>
+          <strong>1. Coding expectations</strong><br>
+          "The JD mentions technical collaboration — where does PM ownership end and engineering begin day-to-day?"<br><br>
+          <strong>2. Hybrid flexibility</strong><br>
+          "The listing says 3 days minimum. Is that fixed, or is there flexibility around travel weeks?"<br><br>
+          <strong>3. Reporting line</strong><br>
+          "Who would I report to, and what does that relationship look like in practice?"
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-prompts">
+      <button class="quick-prompt">CV match check</button>
+      <button class="quick-prompt">Interview prep</button>
+      <button class="quick-prompt">Compare roles</button>
+      <button class="quick-prompt">Flag risks</button>
+      <button class="quick-prompt">Write outreach</button>
+    </div>
+
+    <div class="chat-input-area">
+      <div class="chat-input-wrap">
+        <textarea class="chat-input" id="chat-input" placeholder="Ask anything about this role…" rows="1"></textarea>
+        <button class="chat-send">Send</button>
+      </div>
+    </div>
+  </aside>
+
+</div><!-- .app -->
+
+<script>
+  const roleData = [
+    { title: 'Senior Product Manager', co: 'Stripe',    coColor: '#635BFF', stateLabel: 'Awaiting decision', stateDot: '' },
+    { title: 'Product Lead',           co: 'Monzo',     coColor: '#E8421A', stateLabel: 'Awaiting decision', stateDot: '' },
+    { title: 'Lead UX Designer',       co: 'Revolut',   coColor: '#1A1A2E', stateLabel: 'Round 2 · In progress', stateDot: 'accent' },
+    { title: 'Senior PM — Growth',     co: 'Deliveroo', coColor: '#00CCBC', stateLabel: 'Applied · Awaiting reply', stateDot: 'green' },
+    { title: 'Head of Design Systems', co: 'Wise',      coColor: '#00B9FF', stateLabel: 'Awaiting decision', stateDot: '' },
+    { title: 'Principal Designer',     co: 'Meta',      coColor: '#0866FF', stateLabel: 'Skipped', stateDot: 'muted' },
+  ];
+
+  let currentRole = 0;
+
+  function selectRole(el, idx) {
+    if (idx === currentRole) return;
+
+    // Update card selection
+    document.querySelectorAll('.role-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+
+    // Swap main views
+    document.querySelectorAll('[id^="role-view-"]').forEach(v => v.style.display = 'none');
+    const mv = document.getElementById('role-view-' + idx);
+    if (mv) mv.style.display = 'block';
+
+    // Swap side views
+    document.querySelectorAll('[id^="side-view-"]').forEach(v => v.style.display = 'none');
+    const sv = document.getElementById('side-view-' + idx);
+    if (sv) sv.style.display = 'block';
+
+    // Update breadcrumb + co badge
+    document.getElementById('crumb-role').textContent = roleData[idx].title;
+    document.getElementById('co-badge-name').textContent = roleData[idx].co;
+    document.getElementById('co-badge-dot').style.background = roleData[idx].coColor;
+
+    // Update decision state
+    const dot = document.getElementById('decision-dot');
+    dot.className = 'decision-state-dot' + (roleData[idx].stateDot ? ' ' + roleData[idx].stateDot : '');
+    document.getElementById('decision-label-text').textContent = roleData[idx].stateLabel;
+
+    // Scroll to top
+    document.getElementById('center-main').scrollTop = 0;
+    document.getElementById('center-side').scrollTop = 0;
+
+    currentRole = idx;
+  }
+
+  // Sidebar nav items
+  document.querySelectorAll('.nav-item[data-nav]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item[data-nav]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Sub-nav items
+  document.querySelectorAll('.nav-sub-item[data-subnav]').forEach(item => {
+    item.addEventListener('click', () => {
+      item.closest('.nav-sub-wrap')
+          .querySelectorAll('.nav-sub-item')
+          .forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+    });
+  });
+
+  // Quick prompts → fill input
+  document.querySelectorAll('.quick-prompt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById('chat-input');
+      input.value = btn.textContent;
+      input.dispatchEvent(new Event('input'));
+      input.focus();
+    });
+  });
+
+  // Auto-resize textarea
+  const chatInput = document.getElementById('chat-input');
+  chatInput.addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 80) + 'px';
+  });
+</script>
+</body>
+</html>

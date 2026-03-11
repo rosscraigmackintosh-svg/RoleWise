@@ -70,11 +70,11 @@
       flex-shrink: 0;
     }
     .fp-title {
-      font-size: 10.5px;
+      font-size: var(--text-xs, 10.5px);
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-light);
+      letter-spacing: var(--label-tracking-md, 0.07em);
+      color: var(--color-text-tertiary, var(--text-light));
     }
     .fp-clear {
       font-size: 11.5px;
@@ -92,12 +92,12 @@
     .fp-section { margin-bottom: 20px; }
     .fp-section:last-child { margin-bottom: 0; }
     .fp-section-label {
-      font-size: 10px;
+      font-size: var(--text-xs, 10.5px);
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: var(--text-light);
-      margin-bottom: 7px;
+      letter-spacing: var(--label-tracking-md, 0.07em);
+      color: var(--color-text-tertiary, var(--text-light));
+      margin-bottom: var(--spacing-md, 8px);
     }
     .fp-option {
       display: flex;
@@ -164,18 +164,18 @@
       width: 100%;
       background: none;
       border: none;
-      border-radius: 4px;
-      padding: 6px 8px;
+      border-radius: var(--radius-sm, 6px);
+      padding: var(--spacing-sm, 6px) var(--spacing-md, 8px);
       font-family: var(--font);
-      font-size: 13px;
-      color: var(--text-muted);
+      font-size: var(--text-sm, 13px);
+      color: var(--color-text-tertiary, var(--text-muted));
       text-align: left;
       cursor: pointer;
-      transition: background 0.1s, color 0.1s;
-      line-height: 1.4;
+      transition: background 0.15s, color 0.15s;
+      line-height: var(--leading-snug, 1.4);
     }
-    .nav-item:hover  { background: var(--border-light); color: var(--text); }
-    .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+    .nav-item:hover  { background: var(--color-bg-secondary, var(--border-light)); color: var(--color-text-primary, var(--text)); }
+    .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
     /* ─── Applications sub-nav filters ────────────────────────── */
     /* Stacked context filters that appear below Applications.     */
@@ -190,18 +190,18 @@
       width: 100%;
       background: none;
       border: none;
-      border-radius: 4px;
-      padding: 4px 8px 4px 14px;
+      border-radius: var(--radius-sm, 6px);
+      padding: var(--spacing-xxs, 2px) var(--spacing-md, 8px) var(--spacing-xxs, 2px) 14px;
       font-family: var(--font);
       font-size: 12px;
-      color: var(--text-muted);
+      color: var(--color-text-tertiary, var(--text-muted));
       text-align: left;
       cursor: pointer;
-      transition: background 0.1s, color 0.1s;
-      line-height: 1.4;
+      transition: background 0.15s, color 0.15s;
+      line-height: var(--leading-snug, 1.4);
     }
-    .nav-sub-item:hover  { background: var(--border-light); color: var(--text); }
-    .nav-sub-item.active { color: var(--accent); font-weight: 500; }
+    .nav-sub-item:hover  { background: var(--color-bg-secondary, var(--border-light)); color: var(--color-text-primary, var(--text)); }
+    .nav-sub-item.active { color: var(--accent); font-weight: 600; }
 
     .nav-sub-icon {
       width: 13px;
@@ -1441,7 +1441,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      z-index: 10;
+      z-index: var(--z-raised);
       margin-top: 32px;
     }
     .dab-label {
@@ -2584,6 +2584,68 @@
       font-style: italic;
     }
 
+    /* ─── Role Intelligence Summary ─────────────────────────────── */
+    /* Compact briefing block between quality indicator and card grid. */
+    /* Renders as a horizontal wrap of signal pills, each with a tone  */
+    /* dot, label, separator, and value. Not a card — no hover.       */
+    .rw-intel-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 18px;
+      padding: 10px 14px;
+      background: var(--color-bg-secondary, #fafafa);
+      border: 1px solid var(--border-light);
+      border-radius: 8px;
+    }
+
+    .ris-signal {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px 3px 6px;
+      border-radius: 5px;
+      background: var(--surface);
+      border: 1px solid var(--border-light);
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+
+    .ris-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--text-light);
+    }
+
+    .ris-signal--pos .ris-dot  { background: var(--success-500, #17b26a); }
+    .ris-signal--warn .ris-dot { background: var(--utility-warning-400, #fdb022); }
+
+    .ris-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .ris-sep {
+      font-size: 11px;
+      color: var(--text-light);
+    }
+
+    .ris-value {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .ris-signal--pos .ris-value  { color: var(--success-600, #079455); }
+    .ris-signal--warn .ris-value { color: var(--utility-warning-700, #b54708); }
+
+    /* Dark mode: surface and borders already token-resolved; value accent tones */
+    [data-theme="dark"] .ris-signal--pos .ris-value  { color: var(--utility-success-600, #47cd89); }
+    [data-theme="dark"] .ris-signal--warn .ris-value { color: var(--utility-warning-600, #fdb022); }
+
     /* ─── Role Header ───────────────────────────────────────────── */
     .col-role-header {
       padding: 0;
@@ -2923,19 +2985,20 @@
     }
     .btn-add-jd {
       width: 100%;
-      background: var(--text);
-      color: #fff;
+      background: var(--color-bg-primary-solid, var(--text));
+      color: var(--color-white, #fff);
       border: none;
-      border-radius: var(--radius);
-      padding: 8px 14px;
-      font-size: 13px;
-      font-weight: 500;
+      border-radius: var(--radius-md, 8px);
+      padding: var(--spacing-md, 8px) var(--spacing-xl, 16px);
+      font-size: var(--text-sm, 13px);
+      font-weight: 600;
       font-family: var(--font);
       cursor: pointer;
-      transition: opacity 0.15s;
+      transition: background 0.15s, opacity 0.15s;
       text-align: center;
+      box-shadow: 0 1px 2px rgba(10,13,18,0.05);
     }
-    .btn-add-jd:hover { opacity: 0.82; }
+    .btn-add-jd:hover { opacity: 0.88; }
 
     .btn-backfill {
       width: 100%;
@@ -3025,11 +3088,12 @@
       line-height: var(--leading-snug);
     }
 
-    /* ─── Inbox signals line (line 3) ────────────────────────── */
+    /* ─── Inbox intelligence signal — single-line hint beneath title ── */
     .inbox-signals {
       font-size: var(--text-xs);
       color: var(--text-light);
-      margin-top: 5px;
+      margin-top: 2px;           /* tight: feels like a subtitle to the title */
+      margin-bottom: 2px;        /* small gap before meta line                */
       line-height: var(--leading-snug);
       white-space: nowrap;
       overflow: hidden;
@@ -3047,48 +3111,46 @@
     }
 
     .inbox-role {
-      padding: 12px 14px 13px;
-      border-bottom: 1px solid #ECECEC;
+      padding: var(--spacing-lg, 12px) 14px 13px;
+      border-bottom: 1px solid var(--color-border-secondary, #e9eaeb);
       border-left: 3px solid transparent;
       cursor: pointer;
-      background: var(--bg);
-      transition: background 0.1s, border-color 0.1s;
+      background: var(--color-bg-primary, var(--bg));
+      transition: background 0.15s, border-color 0.15s;
     }
-    .inbox-role:hover  { background: #F3F2EF; }
+    .inbox-role:hover  { background: var(--color-bg-secondary, #fafafa); }
     .inbox-role.active {
-      background: var(--surface);
-      border-left-color: var(--text);
+      background: var(--color-bg-primary-alt, var(--surface));
+      border-left-color: var(--color-fg-brand-primary, var(--accent));
       border-bottom-color: transparent;
     }
-    /* Title is always the primary visual anchor; active row gets full-weight treatment */
-    .inbox-role:not(.active) .inbox-title { color: var(--text); font-weight: 400; }
-    .inbox-role.active .inbox-title { color: var(--text); font-weight: 500; }
+    /* Company is the primary visual anchor; active row gets full-weight treatment */
+    .inbox-role.active .inbox-company { font-weight: 700; }
     /* Decision colour indicator — left border tint based on analysis outcome.
-       The selected-row border (var(--text)) always wins via specificity. */
-    .inbox-role[data-decision="green"] { border-left-color: #86EFAC; }
-    .inbox-role[data-decision="amber"] { border-left-color: #FCD34D; }
-    .inbox-role[data-decision="red"]   { border-left-color: #FCA5A5; }
-    .inbox-role.active { border-left-color: var(--text); } /* keep selected override last */
+       The selected-row border (accent) always wins via specificity. */
+    .inbox-role[data-decision="green"] { border-left-color: var(--success-500, #17b26a); }
+    .inbox-role[data-decision="amber"] { border-left-color: var(--utility-warning-400, #fdb022); }
+    .inbox-role[data-decision="red"]   { border-left-color: var(--utility-error-400, #f97066); }
+    .inbox-role.active { border-left-color: var(--color-fg-brand-primary, var(--accent)); } /* keep selected override last */
 
     .inbox-company {
-      font-size: 10px;
+      font-size: var(--text-md, 14px);
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: var(--text-light);
-      margin-bottom: 3px;
+      color: var(--color-text-primary, var(--text));
+      line-height: var(--leading-snug, 1.35);
+      margin-bottom: 2px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .inbox-company-unknown { color: #CCCAC4; }
+    .inbox-company-unknown { color: var(--color-text-disabled, #a4a7ae); }
 
     .inbox-title {
-      font-size: 13.5px;
+      font-size: var(--text-sm, 12px);
       font-weight: 400;
-      color: var(--text);
-      line-height: 1.35;
-      margin-bottom: 6px;
+      color: var(--color-text-secondary, var(--text-muted));
+      line-height: var(--leading-snug, 1.35);
+      margin-bottom: var(--spacing-sm, 6px);
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
@@ -3129,7 +3191,7 @@
       position: sticky;
       top: 0;
       background: var(--bg);
-      z-index: 1;
+      z-index: var(--z-inset);
       border-bottom: 1px solid var(--border-light);
     }
     .inbox-cluster-label {
@@ -3213,7 +3275,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 20;
+      z-index: var(--z-sticky);
       background: var(--surface);
       padding: 0 48px;
     }
@@ -3249,21 +3311,23 @@
       min-height: 120px;
       max-height: 260px;
       resize: none;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px 14px;
-      font-size: 13.5px;
+      border: 1px solid var(--color-border-primary, var(--border));
+      border-radius: var(--radius-md, 8px);
+      padding: var(--spacing-lg, 12px) var(--spacing-xl, 16px);
+      font-size: 14px;
       line-height: 1.55;
-      color: var(--text);
-      background: var(--bg);
+      color: var(--color-text-primary, var(--text));
+      background: var(--color-bg-primary, var(--bg));
       font-family: inherit;
       outline: none;
       box-sizing: border-box;
       display: block;
-      transition: border-color 0.15s ease;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 1px 2px rgba(10,13,18,0.05);
     }
     .intake-textarea:focus {
-      border-color: rgba(0,0,0,0.3);
+      border-color: var(--color-border-brand, var(--accent));
+      box-shadow: var(--focus-ring-shadow);
     }
 
     .intake-footer {
@@ -3280,16 +3344,17 @@
     }
 
     .intake-send-btn {
-      padding: 7px 20px;
-      background: var(--text);
-      color: var(--surface);
+      padding: var(--spacing-md, 8px) var(--spacing-2xl, 20px);
+      background: var(--color-bg-primary-solid, var(--text));
+      color: var(--color-white, #fff);
       border: none;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
+      border-radius: var(--radius-md, 8px);
+      font-size: 14px;
+      font-weight: 600;
       cursor: pointer;
       letter-spacing: 0.01em;
       transition: opacity 0.15s ease;
+      box-shadow: 0 1px 2px rgba(10,13,18,0.05);
     }
     .intake-send-btn:disabled {
       opacity: 0.3;
@@ -3326,26 +3391,26 @@
     .role-sticky-header {
       position: sticky;
       top: 0;
-      z-index: 10;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 9px 24px 8px;
+      z-index: var(--z-raised);
+      background: var(--color-bg-primary-alt, var(--surface));
+      border-bottom: 1px solid var(--color-border-secondary, var(--border));
+      padding: 10px 24px;
       flex-shrink: 0;
     }
 
     .rsh-title {
-      font-size: 12.5px;
+      font-size: 13px;
       font-weight: 600;
-      color: var(--text);
-      line-height: 1.35;
+      color: var(--color-text-primary, var(--text));
+      line-height: var(--leading-snug, 1.35);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .rsh-meta {
-      font-size: 11px;
-      color: var(--text-light);
+      font-size: 12px;
+      color: var(--color-text-tertiary, var(--text-light));
       margin-top: 1px;
       white-space: nowrap;
       overflow: hidden;
@@ -3356,9 +3421,9 @@
     /* Sits flush with the overview background. Soft separator, not a panel edge.*/
     .col-rail-section {
       flex-shrink: 0;
-      border-bottom: 1px solid rgba(0, 0, 0, 0.055);
+      border-bottom: 1px solid var(--color-border-secondary, rgba(0,0,0,0.055));
       padding: 24px 24px 36px;
-      background: var(--bg);
+      background: var(--color-bg-primary, var(--bg));
     }
 
     /* ─── Panel 3b: Overview cards area ──────────────────────── */
@@ -3382,8 +3447,8 @@
       align-items: center;
       justify-content: center;
       height: 100%;
-      font-size: 13.5px;
-      color: var(--text-light);
+      font-size: 14px;
+      color: var(--color-text-quaternary, var(--text-light));
     }
 
     /* Decision badge */
@@ -3594,44 +3659,44 @@
     .nav-profile-row {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--spacing-md, 8px);
       width: 100%;
       background: none;
       border: none;
-      border-radius: 4px;
-      padding: 6px 8px;
+      border-radius: var(--radius-sm, 6px);
+      padding: var(--spacing-sm, 6px) var(--spacing-md, 8px);
       font-family: var(--font);
       cursor: pointer;
       text-align: left;
-      transition: background 0.1s;
+      transition: background 0.15s;
       min-width: 0;
     }
-    .nav-profile-row:hover  { background: var(--border-light); }
-    .nav-profile-row:hover .nav-profile-circle  { background: var(--border); border-color: var(--text-light); }
-    .nav-profile-row:hover .nav-profile-row-name { color: var(--text); }
+    .nav-profile-row:hover  { background: var(--color-bg-secondary, var(--border-light)); }
+    .nav-profile-row:hover .nav-profile-circle  { background: var(--color-bg-tertiary, var(--border)); border-color: var(--color-border-primary, var(--text-light)); }
+    .nav-profile-row:hover .nav-profile-row-name { color: var(--color-text-primary, var(--text)); }
     .nav-profile-row.active                        { background: var(--accent-soft); }
-    .nav-profile-row.active .nav-profile-circle  { background: var(--border); border-color: var(--text-light); }
-    .nav-profile-row.active .nav-profile-row-name { color: var(--accent); font-weight: 500; }
+    .nav-profile-row.active .nav-profile-circle  { background: var(--color-bg-tertiary, var(--border)); border-color: var(--color-border-primary, var(--text-light)); }
+    .nav-profile-row.active .nav-profile-row-name { color: var(--accent); font-weight: 600; }
     .nav-profile-circle {
       flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: var(--border-light);
-      border: 1.5px solid var(--border);
+      width: 24px;
+      height: 24px;
+      border-radius: var(--radius-full, 9999px);
+      background: var(--color-bg-secondary, var(--border-light));
+      border: 1.5px solid var(--color-border-secondary, var(--border));
       font-size: 9px;
       font-weight: 600;
-      color: var(--text-muted);
-      transition: background 0.1s, border-color 0.1s;
+      color: var(--color-text-tertiary, var(--text-muted));
+      transition: background 0.15s, border-color 0.15s;
       font-family: var(--font);
       pointer-events: none;
     }
     .nav-profile-row-name {
-      font-size: 13px;
-      color: var(--text-muted);
+      font-size: var(--text-sm, 13px);
+      color: var(--color-text-tertiary, var(--text-muted));
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -3904,7 +3969,7 @@
     .sticky-decision-bar {
       position: sticky;
       top: 0;
-      z-index: 20;
+      z-index: var(--z-sticky);
       display: none;
       background: var(--surface);
       border-bottom: 1px solid var(--border-light);
@@ -5047,7 +5112,7 @@
       justify-content: center;
       font-size: 0; /* text hidden on stage dots; outcome-end overrides below */
       position: relative;
-      z-index: 1;
+      z-index: var(--z-inset);
     }
 
     /* Completed stages — solid filled */
@@ -5064,7 +5129,7 @@
 
     /* Future stages — outlined circle */
     .rail-step-dot.upcoming {
-      background: #ffffff;
+      background: var(--color-bg-primary, #ffffff);
       border: 1.5px solid #CFCFCF;
     }
 
@@ -5155,37 +5220,41 @@
     /* ─── Loading / state messages ────────────────────────── */
     .state-msg {
       padding: 32px 0;
-      font-size: 13.5px;
-      color: var(--text-light);
+      font-size: 14px;
+      color: var(--color-text-tertiary, var(--text-light));
       text-align: center;
     }
 
     .spinner {
-      width: 18px;
-      height: 18px;
-      border: 2px solid var(--border);
-      border-top-color: var(--text-muted);
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--color-border-secondary, var(--border));
+      border-top-color: var(--color-fg-brand-primary, var(--accent));
+      border-radius: var(--radius-full, 50%);
+      animation: spin 0.75s linear infinite;
       display: inline-block;
       vertical-align: middle;
-      margin-right: 6px;
+      margin-right: var(--spacing-sm, 6px);
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ─── Status tags (kept) ──────────────────────────────── */
     .status-tag {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      padding: var(--spacing-xxs, 2px) var(--spacing-md, 8px);
+      border-radius: var(--radius-full, 9999px);
+      font-size: 12px;
       font-weight: 500;
+      line-height: 18px;
+      border: 1px solid transparent;
     }
-    .s-reviewed   { background: #F2F1EF; color: var(--text-muted); }
-    .s-applied    { background: #EBF4FF; color: #1A56DB; }
-    .s-in_progress{ background: #FEF3C7; color: #92400E; }
-    .s-rejected   { background: #FEE2E2; color: var(--error); }
-    .s-skipped    { background: #F2F1EF; color: var(--text-light); }
+    /* Status tag colours — use utility palette tokens which carry dark mode overrides */
+    .s-reviewed   { background: var(--color-bg-secondary, #fafafa); color: var(--color-text-tertiary, var(--text-muted)); border-color: var(--color-border-secondary, #e9eaeb); }
+    .s-applied    { background: var(--utility-brand-50, #f9f5ff); color: var(--utility-brand-700, #6941c6); border-color: var(--utility-brand-200, #e9d7fe); }
+    .s-in_progress{ background: var(--utility-warning-50, #fffaeb); color: var(--utility-warning-700, #b54708); border-color: var(--utility-warning-200, #fedf89); }
+    .s-rejected   { background: var(--utility-error-50, #fef3f2); color: var(--utility-error-700, #b42318); border-color: var(--utility-error-200, #fecdca); }
+    .s-skipped    { background: var(--color-bg-secondary, #fafafa); color: var(--color-text-quaternary, var(--text-light)); border-color: var(--color-border-secondary, #e9eaeb); }
 
     /* ─── Modals ──────────────────────────────────────────── */
     .modal-backdrop {
@@ -5195,40 +5264,41 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 100;
+      z-index: var(--z-dropdown);
       padding: 20px;
     }
 
     .modal-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
+      background: var(--color-bg-primary-alt, var(--surface));
+      border: 1px solid var(--color-border-secondary, var(--border));
+      border-radius: var(--radius-xl, 12px);
       width: 100%;
       max-width: 440px;
       max-height: 92vh;
       overflow-y: auto;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.09);
+      box-shadow: 0 20px 24px -4px rgba(10,13,18,0.08), 0 8px 8px -4px rgba(10,13,18,0.03);
     }
 
     .modal-header {
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border-light);
+      padding: var(--spacing-xl, 16px) var(--spacing-2xl, 20px);
+      border-bottom: 1px solid var(--color-border-secondary, var(--border-light));
     }
 
     .modal-title {
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 600;
+      color: var(--color-text-primary, var(--text));
       letter-spacing: -0.2px;
     }
 
     .modal-body {
-      padding: 20px;
+      padding: var(--spacing-2xl, 20px);
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: var(--spacing-xl, 16px);
     }
 
     .modal-row {
@@ -5240,30 +5310,34 @@
     .field-group { display: flex; flex-direction: column; gap: 5px; }
 
     .field-label {
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 500;
-      color: var(--text-muted);
+      color: var(--color-text-secondary, var(--text-muted));
     }
 
     .field-label .opt {
       font-weight: 400;
-      color: var(--text-light);
+      color: var(--color-text-tertiary, var(--text-light));
     }
 
     .field-input, .field-select, .field-textarea {
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 8px 10px;
+      border: 1px solid var(--color-border-primary, var(--border));
+      border-radius: var(--radius-md, 8px);
+      padding: 10px var(--spacing-xl, 14px);
       font-family: var(--font);
-      font-size: 13.5px;
-      color: var(--text);
-      background: var(--surface);
+      font-size: 14px;
+      color: var(--color-text-primary, var(--text));
+      background: var(--color-bg-primary, var(--surface));
       outline: none;
       width: 100%;
-      transition: border-color 0.15s;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      box-shadow: 0 1px 2px rgba(10,13,18,0.05);
     }
-    .field-input:focus, .field-select:focus, .field-textarea:focus { border-color: #B0ADA5; }
-    .field-input::placeholder, .field-textarea::placeholder { color: var(--text-light); }
+    .field-input:focus, .field-select:focus, .field-textarea:focus {
+      border-color: var(--color-border-brand, var(--accent));
+      box-shadow: var(--focus-ring-shadow);
+    }
+    .field-input::placeholder, .field-textarea::placeholder { color: var(--color-text-placeholder, var(--text-light)); }
 
     .field-textarea {
       resize: vertical;
@@ -5351,42 +5425,36 @@
 
     /* ─── Profile view ─────────────────────────────────────── */
 
-    /* ── Accent theme switcher ──────────────────────────────── */
-    .accent-swatch-row {
+    /* ── Appearance mode selector ───────────────────────────── */
+    .appearance-mode-row {
       display: flex;
-      align-items: flex-start;
-      gap: 14px;
+      gap: 8px;
     }
-    .accent-swatch {
-      display: flex;
-      flex-direction: column;
+    .appearance-mode-btn {
+      display: inline-flex;
       align-items: center;
-      gap: 6px;
-      background: none;
-      border: none;
-      padding: 0;
-      cursor: pointer;
+      justify-content: center;
+      padding: 6px 16px;
+      border-radius: var(--radius-md, 6px);
+      border: 1px solid var(--border);
+      background: var(--bg-card, var(--bg));
+      color: var(--text-secondary, var(--text-muted));
       font-family: var(--font);
-    }
-    .accent-swatch-dot {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      outline: 2px solid transparent;
-      outline-offset: 2px;
-      transition: outline-color 0.1s;
-      display: block;
-    }
-    .accent-swatch.active .accent-swatch-dot     { outline-color: var(--accent); }
-    .accent-swatch:hover .accent-swatch-dot      { outline-color: var(--text-light); }
-    .accent-swatch.active:hover .accent-swatch-dot { outline-color: var(--accent); }
-    .accent-swatch-label {
-      font-size: var(--text-xs);
-      color: var(--text-muted);
+      font-size: var(--text-sm);
       font-weight: 500;
-      letter-spacing: var(--label-tracking-sm);
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
     }
-    #profile-appearance-section .doc-section-heading { color: var(--accent); }
+    .appearance-mode-btn:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .appearance-mode-btn.active {
+      background: var(--accent-soft, var(--brand-50));
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
 
     .pref-radio-group {
       display: flex;
@@ -5830,20 +5898,20 @@
       justify-content: center;
       width: 32px;
       height: 32px;
-      background: var(--border-light);
-      border: 1px solid transparent;
-      border-radius: var(--radius-lg);
+      background: var(--color-bg-secondary, var(--border-light));
+      border: 1px solid var(--color-border-secondary, transparent);
+      border-radius: var(--radius-md, 8px);
       padding: 0;
-      color: var(--text-muted);
+      color: var(--color-fg-quaternary, var(--text-muted));
       cursor: pointer;
       position: relative;
-      transition: background 0.1s, color 0.1s, border-color 0.1s;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
     }
-    .filter-toggle-btn:hover { background: var(--border); color: var(--text); }
+    .filter-toggle-btn:hover { background: var(--color-bg-tertiary, var(--border)); color: var(--color-text-primary, var(--text)); }
     .filter-toggle-btn.panel-open {
-      color: var(--text);
-      background: var(--border-light);
-      border-color: var(--border);
+      color: var(--color-text-primary, var(--text));
+      background: var(--color-bg-secondary, var(--border-light));
+      border-color: var(--color-border-primary, var(--border));
     }
     .filter-toggle-btn.has-custom { border-color: var(--border); }
     .filter-toggle-btn .filter-dot {
@@ -5920,24 +5988,26 @@
       min-width: 0;
       display: flex;
       align-items: center;
-      gap: 7px;
-      background: var(--border-light);
-      border: 1px solid transparent;
-      border-radius: var(--radius-lg);
-      padding: 0 10px;
-      height: 32px;
+      gap: var(--spacing-md, 8px);
+      background: var(--color-bg-secondary, var(--border-light));
+      border: 1px solid var(--color-border-secondary, transparent);
+      border-radius: var(--radius-md, 8px);
+      padding: 0 var(--spacing-lg, 12px);
+      height: 36px;
       overflow: hidden;
-      transition: border-color 0.1s, background 0.1s;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+      box-shadow: 0 1px 2px rgba(10,13,18,0.05);
     }
     .inbox-search-wrap:focus-within {
-      border-color: var(--border);
-      background: var(--bg);
+      border-color: var(--color-border-brand, var(--accent));
+      background: var(--color-bg-primary, var(--bg));
+      box-shadow: var(--focus-ring-shadow);
     }
     .inbox-search-icon {
       flex-shrink: 0;
-      color: var(--text-light);
-      width: 13px;
-      height: 13px;
+      color: var(--color-fg-quaternary, var(--text-light));
+      width: 14px;
+      height: 14px;
     }
     .inbox-search-input {
       flex: 1;
@@ -5946,11 +6016,11 @@
       border: none;
       padding: 0;
       font-family: var(--font);
-      font-size: 12.5px;
-      color: var(--text);
+      font-size: 13px;
+      color: var(--color-text-primary, var(--text));
       outline: none;
     }
-    .inbox-search-input::placeholder { color: var(--text-light); }
+    .inbox-search-input::placeholder { color: var(--color-text-placeholder, var(--text-light)); }
     .inbox-search-clear {
       flex-shrink: 0;
       background: none;
@@ -6149,6 +6219,12 @@
       flex-direction: column;
     }
 
+    /* ─── Timeline spacer — pushes messages to bottom when content is short ── */
+    .ws-timeline-spacer {
+      flex: 1 1 0;
+      min-height: 0;
+    }
+
     /* ─── Blank state ──────────────────────────────────────────────────────── */
     .ws-blank-state {
       display: flex;
@@ -6214,7 +6290,7 @@
       height: 48px;
       pointer-events: none;
       background: linear-gradient(to bottom, transparent 0%, var(--surface) 100%);
-      z-index: 1;
+      z-index: var(--z-inset);
     }
 
     /* ─── Composer shell ────────────────────────────────────────────────────── */
@@ -6419,7 +6495,7 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.18);
       opacity: 0;
       transition: opacity 0.2s;
-      z-index: 10;
+      z-index: var(--z-raised);
     }
 
     #ws-scroll-nudge.visible {
@@ -6463,7 +6539,7 @@
       width: fit-content;
       max-width: 420px;
       align-self: flex-end;  /* right-aligns in the flex column */
-      margin-bottom: 16px;   /* user → next item */
+      margin-bottom: 20px;   /* user → assistant reply gap */
     }
 
     .ws-chat-bubble--assistant {
@@ -6485,7 +6561,7 @@
       color: var(--text);
       font-size: 13.5px;
       line-height: 1.6;
-      margin-bottom: 20px;
+      margin-bottom: 24px;   /* slightly more space before next user turn */
       white-space: pre-wrap;
       word-break: break-word;
     }
@@ -8550,38 +8626,36 @@
       }
     }
 
-    /* ─── Role list card: title-first hierarchy (title primary, company secondary)
+    /* ─── Role list card: company-first hierarchy (company primary, title secondary)
+       Company is the primary visual anchor for fast list scanning.
        Hiring signal badges for all stages of the hiring model.              */
 
-    /* Override existing order: title is now above company */
-    .inbox-title {
-      font-size: 13.5px;
-      font-weight: 400;
-      color: var(--text);
+    .inbox-company {
+      font-size: var(--text-md, 14px);
+      font-weight: 600;
+      color: var(--color-text-primary, var(--text));
       line-height: 1.35;
-      margin-bottom: 0;    /* tight coupling to company line below */
+      margin-bottom: 2px;   /* tight coupling to title line below */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .inbox-title {
+      font-size: var(--text-sm, 12px);
+      font-weight: 400;
+      color: var(--color-text-secondary, var(--text-muted));
+      line-height: 1.35;
+      margin-bottom: var(--spacing-sm, 6px);  /* separation before metadata */
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
 
-    .inbox-company {
-      font-size: 10.5px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: var(--text-light);
-      margin-bottom: 0;
-      margin-top: 3px;     /* 3px below title */
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    /* Increased gap from identity block to metadata (12px instead of 4px) */
+    /* Meta sits naturally after title's margin-bottom — no extra override needed */
     .inbox-meta {
-      margin-top: 12px;
+      margin-top: 0;
     }
 
     /* Hiring signal badge row */
@@ -8821,6 +8895,19 @@
       }
     }
 
+    /* ── Role-switch panel transition — reduced-motion override ─────────────── */
+    /* The JS animation uses translateY + opacity. For users who prefer reduced  */
+    /* motion the JS takes an opacity-only path, but this block acts as a        */
+    /* belt-and-suspenders CSS-level fallback suppressing any transform and       */
+    /* capping transition-duration on these containers.                          */
+    @media (prefers-reduced-motion: reduce) {
+      #col-overview-body,
+      #col-chat {
+        transform: none !important;
+        transition-duration: 60ms !important;
+      }
+    }
+
     /* ── Section headers (chapter dividers) ──────────────────────────────────── */
     /*
      * Each .rw-section-header spans both grid columns and creates a named
@@ -8985,6 +9072,52 @@
       letter-spacing: 0.04em;
     }
 
+    /* ═══════════════════════════════════════════════════════════════════════
+       PASS 1 — Role Overview Layout Polish
+       ─────────────────────────────────────────────────────────────────────
+       Goals: card readability, body text comfort, section heading legibility,
+              visual rhythm, and correct dark mode theming for all card surfaces.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* ── Section header label: raise from text-light to text-muted ──────────── */
+    /* The base block uses --text-light (#697586), which is very faint. Bumping  */
+    /* to --text-muted improves scannability without making it compete with body. */
+    .rw-section-header__label {
+      color: var(--text-muted);
+      letter-spacing: 0.10em;      /* slightly tighter — 0.08em was too wide     */
+    }
+
+    /* ── Card body text: comfortable reading line-height ─────────────────────── */
+    /* Analytical content (Fit Reality, Role Shape, Risks) reads better at 1.65. */
+    /* Data cards also benefit — labels and values gain vertical breathing room.  */
+    .rw-card p,
+    .rw-card li {
+      line-height: 1.65;
+    }
+
+    /* ── Narrative paragraphs: natural text measure for long-form reading ──────── */
+    /* Full-width narrative cards can have very long paragraph lines at 720px.    */
+    /* 66ch ≈ 66 characters ≈ ideal reading width. Centres naturally within card. */
+    .rw-card--narrative p,
+    .rw-card--full p {
+      max-width: 66ch;
+    }
+
+    /* ── Dark mode card hover: border glow instead of shadow ─────────────────── */
+    /* Light mode hover uses a subtle drop shadow (invisible on dark surfaces).   */
+    /* In dark mode, a slightly lighter border gives the same "alive" feeling     */
+    /* without a box-shadow that won't render against a dark background.          */
+    [data-theme="dark"] .rw-card:hover {
+      box-shadow: none;
+      border-color: var(--utility-gray-400, #61656c);
+    }
+
+    /* ── Dark mode: suppress hover on full/intel cards (consistent with light) ── */
+    [data-theme="dark"] .rw-card--intel:hover,
+    [data-theme="dark"] .rw-card--full:hover {
+      border-color: var(--card-border);
+    }
+
     /* ── ws-artifact: consistent 8px radius to match rw-card ─────────────────  */
     .ws-artifact {
       border-radius: 8px;
@@ -9047,35 +9180,87 @@
       display: none;
     }
 
-    /* ── col-chat: no self-scroll — ws-timeline handles scroll ──────────── */
+    /* ── col-chat: bounded flex container for the workspace layout ─────── */
+    /* height:100% is the key constraint. The CSS grid assigns col-chat its  */
+    /* height via align-items:stretch (100vh from .app), but the flex        */
+    /* formatting context requires a DECLARED height — not just a grid-      */
+    /* assigned one — to treat the container as "definite size". Without     */
+    /* height:100%, flex children using flex:1 resolve to content-height     */
+    /* (auto), so ws-timeline grows unboundedly and never scrolls.           */
+    /* overflow:hidden clips anything the grid/flex can't constrain below.   */
     .col-chat.ws-active {
+      height: 100%;
       overflow: hidden;
     }
 
-    /* ── ws-workspace: fills the full column height ──────────────────────── */
-    /* flex:1 fills col-chat; min-height:0 allows shrinking within flex      */
+    /* ── ws-workspace: fills col-chat exactly; contains timeline + bar ──── */
+    /* flex:1 fills the declared 100% height of col-chat.                   */
+    /* height:100% is required in addition to flex:1 — flex-basis alone     */
+    /* does not create a "definite size" for nested flex children in all     */
+    /* browsers. Without a declared height, ws-timeline's flex:1 resolves   */
+    /* to content-height (auto) and grows unboundedly past the chat bar.    */
+    /* min-height:0 allows the workspace to shrink below content size.      */
+    /* overflow:hidden is secondary containment.                            */
     .ws-workspace {
       flex: 1;
+      height: 100%;
       min-height: 0;
+      overflow: hidden;
       background: var(--bg);
+    }
+
+    /* ── ws-scroll-nudge: absolute within ws-workspace ─────────────────── */
+    /* Base rule uses position:fixed which anchors to the viewport.         */
+    /* In the chat panel layout, the nudge must be relative to ws-workspace */
+    /* (which has position:relative) so it stays inside the chat column.   */
+    #ws-scroll-nudge {
+      position: absolute;
+      bottom: 120px;    /* clears ws-chat-bar (≈111px) plus breathing room */
     }
 
     /* ── ws-timeline: scrollable content area ───────────────────────────── */
     /* flex:1 fills available height; overflow-y:auto scrolls the messages   */
-    /* Padding reduced from 140px (sticky clearance) to 24px                 */
+    /* padding-bottom must clear the ws-chat-bar::before gradient (48px)     */
+    /* plus comfortable breathing room above the composer = 56px             */
+    /* display:flex + flex-direction:column required for the spacer trick     */
+    /* scroll-behavior:auto — streaming auto-scrolls must be instant; user-  */
+    /* initiated smooth scrolls are handled per-call via scrollTo({behavior  */
+    /* :'smooth'}) in JS, which takes precedence over this CSS setting.      */
+    /* overflow-anchor:auto — browser keeps scroll position anchored to the  */
+    /* last visible message as new content is appended (correct default).    */
     .ws-timeline {
       flex: 1;
       overflow-y: auto;
       min-height: 0;
-      padding-bottom: 24px;
+      padding-top: 28px;
+      padding-bottom: 4px;
+      display: flex;
+      flex-direction: column;
+      scroll-behavior: auto;
+      overflow-anchor: auto;
+    }
+
+    /* ── ws-timeline-spacer: bottom-anchoring trick ──────────────────────── */
+    /* Grows to fill empty space above messages when there are few entries,   */
+    /* pushing content to the bottom (iMessage / WhatsApp pattern).           */
+    /* Collapses to 0 once messages overflow the container height.            */
+    /* overflow-anchor:none — the spacer is purely layout; it must never be  */
+    /* treated as a scroll anchor. If the browser anchors to it while it is  */
+    /* collapsing (as messages fill the viewport), scroll position jumps.    */
+    .ws-timeline-spacer {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow-anchor: none;
     }
 
     /* ── ws-chat-bar: pinned at bottom by flex, not position:sticky ─────── */
     /* position:relative kept so ::before gradient still works               */
-    /* Border-top provides subtle visual separation on the same bg tone      */
+    /* flex-shrink:0 prevents compression when input grows to max-height     */
     .ws-chat-bar {
       position: relative;
       bottom: unset;
+      flex-shrink: 0;
+      flex-grow: 0;
       background: var(--bg);
       padding-top: 14px;
     }
@@ -9128,6 +9313,14 @@
       display: none;
     }
 
+    /* ── Last timeline item: strip trailing margin ───────────────────────── */
+    /* .ws-assistant-reply, .ws-chat-bubble, chips etc. carry margin-bottom  */
+    /* for inter-message spacing. When that element is the LAST child in the */
+    /* timeline the margin creates dead space above the chat bar. Zero it.   */
+    .ws-timeline > :last-child {
+      margin-bottom: 0;
+    }
+
     /* ═══════════════════════════════════════════════════════════════════════
        SALARY HINT — hide from chat UI
        The text is available to the assistant via other context; it should
@@ -9136,6 +9329,52 @@
     #ws-salary-hint {
       display: none;
     }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       PASS 3 — Chat UX Refinement
+       ─────────────────────────────────────────────────────────────────────
+       Goals: correct dark mode tints for user bubbles and composer focus,
+              improved paragraph readability, smooth visual rhythm.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* ── User bubble: dark mode tint ─────────────────────────────────────── */
+    /* Light mode uses --accent-soft (≈ 8% opacity brand blue) for a gentle  */
+    /* "you said this" tint. 8% on a dark background = invisible.            */
+    /* Use utility-brand-50 (same swatch as inbox selected row in dark mode). */
+    [data-theme="dark"] .ws-chat-bubble--user {
+      background: var(--utility-brand-50, #2c1c5f);
+    }
+
+    /* ── Composer focus glow: dark mode ──────────────────────────────────── */
+    /* Light mode: box-shadow uses --accent-soft (8% opacity — barely there).*/
+    /* Dark mode: reuse the focus-ring token which has 28% opacity + correct  */
+    /* brand-500 dark value (#9e77ed). Matches all other focus rings.         */
+    [data-theme="dark"] .ws-chat-inner:focus-within {
+      box-shadow: var(--focus-ring-shadow);
+    }
+
+    /* ── Assistant reply: slightly more generous paragraph spacing ───────── */
+    /* 8px paragraph gap is compact. 10px adds breathing room without        */
+    /* making long multi-paragraph replies feel padded.                      */
+    .ws-assistant-reply p {
+      margin-bottom: 10px;
+    }
+
+    /* ── Assistant reply: list items comfortable read density ───────────── */
+    /* Numbered and bulleted lists inside assistant replies benefit from a   */
+    /* small bottom gap between items.                                       */
+    .ws-assistant-reply li {
+      margin-bottom: 4px;
+      line-height: 1.6;
+    }
+
+    /* ── Thinking dots: match the panel background in dark mode ──────────── */
+    /* Dot colour is --text-light. In dark mode this resolves to #61656c.   */
+    /* This is fine — the dots are intentionally subtle.                    */
+
+    /* ── ws-chat-inner: border tone in dark mode ─────────────────────────── */
+    /* Base rule uses var(--border) which now has a dark override (#373a41). */
+    /* No extra rule needed — the token system handles this.                 */
 
     /* ═══════════════════════════════════════════════════════════════════════
        STAGE / OUTCOME CHIPS — horizontal chip rows inside the overview card
@@ -9420,6 +9659,76 @@
     .inbox-role.active:hover {
       background: var(--accent-soft);
     }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       PASS 2 — Inbox Role Card Interaction Polish
+       ─────────────────────────────────────────────────────────────────────
+       Goals: visible hover + active states in dark mode, clear attention dot
+              intent, and correct dark mode colours for badge/tag variants.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* ── Dark mode: col-list panel — rgba(0,0,0,0.06) is invisible ───────── */
+    /* Light-mode uses a near-transparent black tint for the border + shadow. */
+    /* On a dark surface both values disappear entirely. Swap to token values. */
+    [data-theme="dark"] .col-list {
+      border-color: var(--card-border, #373a41);
+      box-shadow: none;
+    }
+
+    /* ── Dark mode: inbox-search divider ─────────────────────────────────── */
+    [data-theme="dark"] .inbox-search {
+      border-bottom-color: var(--border-light, #22262f);
+    }
+
+    /* ── Dark mode: hover lift — background matches surface, needs a step up ─ */
+    /* In dark mode --color-bg-secondary (#13161b) == --surface (#13161b):    */
+    /* the hover is invisible. Step up to --color-bg-active (#22262f) instead. */
+    [data-theme="dark"] .inbox-role:hover {
+      background: var(--color-bg-active, #22262f);
+    }
+
+    /* ── Dark mode: active row — accent-soft is near-transparent on dark bg ─ */
+    /* rgba(82,100,180,0.08) becomes effectively invisible against #13161b.   */
+    /* Replace with the utility brand-50 dark swatch for clear selection tint. */
+    [data-theme="dark"] .inbox-role.active,
+    [data-theme="dark"] .inbox-role.active:hover {
+      background: var(--utility-brand-50, #2c1c5f);
+      border-bottom-color: var(--border-light, #22262f);
+    }
+
+    /* ── Attention dot: accent colour gives it clear intent ─────────────── */
+    /* Grey (--text-muted) reads as neutral. Accent colour = "needs action". */
+    .inbox-attn-dot {
+      background: var(--accent, #5264b4);
+      vertical-align: 0.15em;   /* fine-tuned to sit centrally against 14px cap height */
+    }
+
+    /* ── ARS hiring-signal badges: dark mode tint overrides ─────────────── */
+    /* All variants use hardcoded light-mode backgrounds. These use the      */
+    /* utility palette dark swatches (already defined in tokens.css).        */
+    [data-theme="dark"] .ars-active    { background: var(--utility-success-100, #074d31); color: var(--utility-success-700, #75e0a7); }
+    [data-theme="dark"] .ars-waiting   { background: var(--utility-warning-50, #4e1d09); color: var(--utility-warning-700, #fec84b); }
+    [data-theme="dark"] .ars-stale     { background: var(--utility-warning-100, #7a2e0e); color: var(--utility-warning-600, #fdb022); }
+    [data-theme="dark"] .ars-ghosted   { background: var(--utility-gray-100, #22262f); color: var(--utility-gray-600, #94979c); }
+    [data-theme="dark"] .ars-withdrew  { background: var(--utility-gray-100, #22262f); color: var(--utility-gray-600, #94979c); }
+    [data-theme="dark"] .ars-interviewing { background: var(--utility-blue-100, #194185); color: var(--utility-blue-700, #84caff); }
+    [data-theme="dark"] .ars-offer,
+    [data-theme="dark"] .ars-accepted  { background: var(--utility-success-100, #074d31); color: var(--utility-success-700, #75e0a7); }
+    [data-theme="dark"] .ars-rejected  { background: var(--utility-error-100, #7a271a); color: var(--utility-error-700, #fda29b); }
+
+    /* ── Stage tags: dark mode tint overrides ────────────────────────────── */
+    /* Same issue — all stage-tag variants use hardcoded light tints.        */
+    [data-theme="dark"] .stage-tag {
+      background: var(--utility-gray-100, #22262f);
+      color: var(--utility-gray-700, #cecfd2);
+    }
+    [data-theme="dark"] .stage-tag.stage-jd-review       { background: var(--utility-success-50, #053321);     color: var(--utility-success-700, #75e0a7); }
+    [data-theme="dark"] .stage-tag.stage-applied          { background: var(--utility-gray-blue-100, #101323);  color: var(--utility-gray-blue-700, #b3b8db); }
+    [data-theme="dark"] .stage-tag.stage-recruiter-screen { background: var(--utility-blue-100, #194185);       color: var(--utility-blue-700, #84caff); }
+    [data-theme="dark"] .stage-tag.stage-hiring-manager   { background: var(--utility-indigo-100, #2d3282);     color: var(--utility-indigo-700, #a4bcfd); }
+    [data-theme="dark"] .stage-tag.stage-panel            { background: var(--utility-purple-100, #3e1c96);     color: var(--utility-purple-700, #bdb4fe); }
+    [data-theme="dark"] .stage-tag.stage-final            { background: var(--utility-warning-100, #7a2e0e);    color: var(--utility-yellow-700, #fde272); }
+    [data-theme="dark"] .stage-tag.stage-offer            { background: var(--utility-success-100, #074d31);    color: var(--utility-success-700, #75e0a7); }
 
     /* ═══════════════════════════════════════════════════════════════════════
        ADD NEW ROLE — intake panel intro copy
@@ -10225,7 +10534,7 @@
 
 /* Hover — slight bg warmth */
 .rgi:hover:not(:has(input:disabled)) {
-  background: var(--gray-25);
+  background: var(--color-bg-secondary-subtle, #fdfdfd);
 }
 
 /* Layout: input wrapper + text group */
@@ -10431,7 +10740,7 @@
   align-items: center;
   justify-content: center;
   padding: 32px;
-  z-index: 1000;
+  z-index: var(--z-modal);
 }
 
 /* Modal card */
@@ -10512,7 +10821,7 @@
   color: var(--gray-500);
   transition: background 0.1s, color 0.1s;
 }
-.modal__close:hover { background: var(--gray-50); color: var(--gray-700); }
+.modal__close:hover { background: var(--color-bg-secondary, #fafafa); color: var(--gray-700); }
 .modal__close svg { width: 24px; height: 24px; }
 
 /* Actions row */
@@ -10573,7 +10882,7 @@
   text-decoration: none;
 }
 .tab-btn:hover:not(.tab-btn--active) {
-  background: var(--gray-50);
+  background: var(--color-bg-secondary, #fafafa);
   color: var(--gray-700);
 }
 
@@ -10637,7 +10946,7 @@
   font-weight: 500;
   line-height: 18px;
   border: 1px solid var(--gray-200);
-  background: var(--gray-50);
+  background: var(--color-bg-secondary, #fafafa);
   color: var(--gray-700);
 }
 .tab-btn--active .tab-badge {
@@ -10766,7 +11075,7 @@
 
 /* Bubble */
 .msg__bubble {
-  background: var(--gray-50);          /* #fafafa */
+  background: var(--color-bg-secondary, #fafafa);          /* #fafafa */
   border: 1px solid var(--gray-200);   /* #e9eaeb */
   border-radius: 0 8px 8px 8px;        /* top-left cut = sender corner */
   padding: 8px 12px;
@@ -10807,7 +11116,7 @@
   height: 24px;
   padding: 4px 8px;
   border-radius: var(--radius-pill);
-  background: var(--gray-50);
+  background: var(--color-bg-secondary, #fafafa);
   border: 1px solid var(--gray-200);
   font-size: var(--text-sm);           /* 14px */
   font-weight: 500;
@@ -10953,7 +11262,7 @@
   transition: background 0.12s, border-color 0.12s;
 }
 .file-upload:hover, .file-upload--hover {
-  background: var(--gray-25, #fafafa);
+  background: var(--color-bg-secondary, #fafafa);
   border-color: var(--brand-300, #d6bbfb);
 }
 .file-upload--active {
@@ -11082,11 +11391,11 @@
   transition: background 0.1s, color 0.1s;
 }
 .page-btn:hover:not(.page-btn--active) {
-  background: var(--gray-50);
+  background: var(--color-bg-secondary, #fafafa);
   color: var(--gray-700);
 }
 .page-btn--active {
-  background: var(--gray-50);
+  background: var(--color-bg-secondary, #fafafa);
   color: var(--gray-700);
   font-weight: 600;
 }
@@ -11110,7 +11419,7 @@
   line-height: 20px;
   transition: background 0.1s;
 }
-.page-nav:hover { background: var(--gray-50); }
+.page-nav:hover { background: var(--color-bg-secondary, #fafafa); }
 .page-nav:disabled { opacity: 0.5; cursor: not-allowed; }
 .page-nav svg { width: 20px; height: 20px; }
 
@@ -11153,7 +11462,7 @@
 
 /* Header row */
 .table thead tr {
-  background: var(--gray-25, #fafafa);
+  background: var(--color-bg-secondary, #fafafa);
   border-bottom: 1px solid var(--gray-200);
 }
 
@@ -11176,7 +11485,7 @@
   transition: background 0.1s;
 }
 .table tbody tr:last-child { border-bottom: none; }
-.table tbody tr:hover { background: var(--gray-25, #fafafa); }
+.table tbody tr:hover { background: var(--color-bg-secondary, #fafafa); }
 .table tbody tr.is-selected { background: var(--brand-25, #fefbff); }
 
 /* Body cell */
@@ -11240,5 +11549,5 @@
 }
 
 /* Alternating fills variant */
-.table--alt tbody tr:nth-child(even) { background: var(--gray-25, #fafafa); }
-.table--alt tbody tr:nth-child(even):hover { background: var(--gray-50); }
+.table--alt tbody tr:nth-child(even) { background: var(--color-bg-secondary, #fafafa); }
+.table--alt tbody tr:nth-child(even):hover { background: var(--color-bg-secondary, #fafafa); }

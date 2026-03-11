@@ -121,6 +121,7 @@
   --accent-soft:   var(--brand-100);   /* #f4ebff  Soft accent fill            */
   --accent-soft-2: var(--brand-200);   /* #e9d7fe  Stronger soft accent fill   */
   --focus-ring:    var(--brand-600);   /* #7f56d9  Focus outline               */
+  --focus-ring-shadow: 0 0 0 4px rgba(127,86,217,0.14), 0 1px 2px rgba(10,13,18,0.05);  /* Focus halo */
 
 
   /* ─────────────────────────────────────────────────────────────────────────
@@ -187,7 +188,12 @@
      Source: Untitled UI PRO v7.0 › Spacing
      ───────────────────────────────────────────────────────────────────────── */
 
+  --spacing-xxs:  2px;    /* spacing-xxs  */
+  --spacing-sm:   6px;    /* spacing-sm   */
   --spacing-md:   8px;    /* spacing-md   */
+  --spacing-lg:  12px;    /* spacing-lg   */
+  --spacing-xl:  16px;    /* spacing-xl   */
+  --spacing-2xl: 24px;    /* spacing-2xl  */
 
   /* Legacy aliases (used throughout styles.css) */
 
@@ -204,6 +210,21 @@
   --radius-xl:   12px;   /* Untitled UI: radius-xl            */
   --radius-2xl:  16px;   /* Untitled UI: radius-2xl           */
   --radius-pill: 9999px; /* Legacy alias → maps to radius-full*/
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     Z-INDEX SCALE
+     Stacking order for all positioned elements.
+     --z-inset through --z-toast covers every layer in the app.
+     ───────────────────────────────────────────────────────────────────────── */
+
+  --z-base:     0;    /* Default — no stacking context                        */
+  --z-inset:    1;    /* Minor lift: sticky cluster headers, pseudo-elements  */
+  --z-raised:   10;   /* Raised UI: floating labels, sticky role header       */
+  --z-sticky:   20;   /* Sticky bars: intake panel, decision bar              */
+  --z-dropdown: 100;  /* Dropdowns, popovers, overlay panels                  */
+  --z-overlay:  200;  /* Dim/backdrop overlays                                */
+  --z-modal:    300;  /* Modals and dialogs                                   */
+  --z-toast:    400;  /* Toasts and notifications (always topmost)            */
 
 
   /* ─────────────────────────────────────────────────────────────────────────
@@ -1254,6 +1275,24 @@
   --color-effects-shadows-shadow-xl-02: rgba(255, 255, 255, 0);
   --color-effects-shadows-shadow-xl-03: rgba(255, 255, 255, 0);
   --color-effects-shadows-shadow-xs: rgba(255, 255, 255, 0);
+
+  /* ─── Focus ring (dark mode — slightly more visible) ─── */
+  --focus-ring-shadow: 0 0 0 4px rgba(158,119,237,0.28), 0 1px 2px rgba(0,0,0,0.30);
+
+  /* ─── Semantic shorthand tokens (dark mode overrides) ───
+     These legacy tokens are used widely in styles.css.
+     Without these overrides they stay at light-mode values
+     even when [data-theme="dark"] is active.               */
+  --bg:           #0c0e12;   /* Page / panel wash           */
+  --surface:      #13161b;   /* Elevated surfaces           */
+  --bg-card:      #13161b;   /* Legacy alias                */
+  --card-bg:      #13161b;   /* Card background             */
+  --card-border:  #373a41;   /* Card border                 */
+  --border:       #373a41;   /* Default border              */
+  --border-light: #22262f;   /* Subtle border               */
+  --text:         #f0f0f1;   /* Primary body text           */
+  --text-muted:   #94979c;   /* Tertiary / labels           */
+  --text-light:   #61656c;   /* Placeholder / disabled      */
 
 }
 

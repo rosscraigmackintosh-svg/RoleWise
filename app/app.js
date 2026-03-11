@@ -375,6 +375,32 @@
       if (_saved && ACCENT_THEMES[_saved]) setAccentTheme(_saved);
     })();
 
+    // ── Appearance mode (Light / Dark / System) ────────────────────────────────
+    const _appearanceMQ = window.matchMedia('(prefers-color-scheme: dark)');
+    function setAppearanceMode(mode) {
+      const root = document.documentElement;
+      const systemIsDark = _appearanceMQ.matches;
+      if (mode === 'dark' || (mode === 'system' && systemIsDark)) {
+        root.setAttribute('data-theme', 'dark');
+      } else {
+        root.removeAttribute('data-theme');
+      }
+      try { localStorage.setItem('rw-appearance-mode', mode); } catch (_) {}
+      document.querySelectorAll('.appearance-mode-btn').forEach(el => {
+        el.classList.toggle('active', el.dataset.mode === mode);
+      });
+    }
+    // Re-apply when system preference changes (for System mode users)
+    _appearanceMQ.addEventListener('change', () => {
+      const _cur = localStorage.getItem('rw-appearance-mode') || 'system';
+      if (_cur === 'system') setAppearanceMode('system');
+    });
+    // Apply on page load
+    (function () {
+      const _savedMode = localStorage.getItem('rw-appearance-mode') || 'system';
+      setAppearanceMode(_savedMode);
+    })();
+
     // ─── Location normalisation ───────────────────────────────────────────────
     // Strips intermediate region labels (e.g. "England", "California", "Bavaria")
     // from LinkedIn-style "City, Region, Country" strings and normalises country names.
@@ -1355,6 +1381,34 @@
         return null;
       };
 
+      // ── Single intelligence signal for inbox card subtitle ─────────────────
+      // Returns a short phrase (string) or null. Priority: warning signals first
+      // (weak evaluation, high-volume funnel, intense pace, inflated seniority),
+      // then positive/informational (ownership, hiring route). Only one signal
+      // surfaces per role — the most noteworthy characteristic.
+      const _buildInboxSignal = lmo => {
+        if (!lmo || typeof lmo !== 'object') return null;
+        // 1 — Low-signal evaluation (top priority — affects analysis confidence)
+        if (lmo._weakSignal) return 'Low-signal evaluation';
+        // 2 — High-volume funnel (warn: poor candidate experience expected)
+        if (lmo.hiring_system?.type === 'high_volume_funnel') return 'High-volume hiring funnel';
+        // 3 — Intense pace (warn: energy cost to flag early)
+        if (lmo.delivery_pressure === 'intense') return 'Intense pace expected';
+        // 4 — Seniority inflated (warn: scope/comp misalignment risk)
+        if (lmo.seniority_authenticity === 'inflated') return 'Seniority may be inflated';
+        // 5 — High ownership (positive signal, worth surfacing)
+        if (['high', 'company_level', 'platform'].includes(lmo.ownership_level))
+          return 'High ownership role';
+        // 6 — Low ownership (informational)
+        if (lmo.ownership_level === 'low') return 'Low ownership role';
+        // 7 — Founder-led or direct hire (positive: lean process)
+        if (lmo.hiring_system?.type === 'founder_led') return 'Founder-led hire';
+        if (lmo.hiring_system?.type === 'direct_employer') return 'Direct employer hire';
+        // 8 — Understated scope (interesting edge case)
+        if (lmo.seniority_authenticity === 'understated') return 'Understated scope';
+        return null;
+      };
+
       const renderRoleCard = role => {
         const company    = sanitiseCompanyName(role.company_name);
         const title      = role.role_title || 'Untitled role';
@@ -1406,9 +1460,16 @@
           ? `<div class="inbox-mini-reasons">${_miniSignals.slice(0, 2).map(esc).join(' \u00B7 ')}</div>`
           : '';
 
+        // ── Intelligence signal — single notable characteristic beneath title ──
+        const _intelSig    = _buildInboxSignal(lmo);
+        const intelSigHtml = _intelSig
+          ? `<div class="inbox-signals">${esc(_intelSig)}</div>`
+          : '';
+
         return `<div class="inbox-role${role.id === selectedRoleId ? ' active' : ''}"${decAttr} data-id="${esc(role.id)}">
-          <div class="inbox-title">${attnDot}${esc(title)}</div>
-          <div class="inbox-company${company ? '' : ' inbox-company-unknown'}">${esc(company || 'Unknown company')}</div>
+          <div class="inbox-company inbox-role-company${company ? '' : ' inbox-company-unknown'}">${attnDot}${esc(company || 'Unknown company')}</div>
+          <div class="inbox-title inbox-role-title">${esc(title)}</div>
+          ${intelSigHtml}
           ${metaHtml}
           ${hiringBadgeHtml}
           ${miniReasonHtml}
@@ -1642,6 +1703,12 @@
     }
 
     // ─── Select role ──────────────────────────────────────────────────────────
+    // Generation counter for the role-switch animation. Incremented on every
+    // selectRole call so that in-flight exit timers from a previous (superseded)
+    // switch bail out before swapping content, preventing a stale role from
+    // flashing in during rapid navigation.
+    let _rsSwitchGen = 0;
+
     function selectRole(roleId, { scrollIntoView = false } = {}) {
       selectedRoleId = roleId;
       _wsDuplicateDetected = false;   // any active duplicate state is invalidated by navigation
@@ -1666,30 +1733,95 @@
         }
       }
 
-      // ── Workspace transition: fade out → render → fade in ────────────────────
-      // Snap opacity to 0 synchronously so the outgoing content vanishes before
-      // the new role's content is painted. Render happens in the next animation
-      // frame, then a second rAF triggers the 120 ms fade-in.
-      const _ovBody = document.getElementById('col-overview-body');
-      if (_ovBody) {
-        _ovBody.style.transition = 'none';
-        _ovBody.style.opacity    = '0';
-      }
+      // ── Slide + fade panel swap ───────────────────────────────────────────────
+      //
+      // Phase 1 (exit,  110 ms): panels slide DOWN (translateY 0 → 12px) and
+      //   fade out (opacity 1 → 0.35) simultaneously. Content is still visible
+      //   at the start so the user sees a directional exit gesture.
+      //
+      // Phase 2 (swap,  at 110 ms): renderRoleDoc + renderRail fire while panels
+      //   are at their dimmest / lowest point. DOM replacement is imperceptible.
+      //   Scroll is reset here too — no visible jump.
+      //
+      // Phase 3 (enter, 160 ms): panels slide UP (translateY 12px → 0) and fade
+      //   back in (opacity 0.35 → 1). New content rises into place.
+      //
+      // Rapid switching: _rsSwitchGen is incremented on each selectRole call.
+      // In-flight callbacks compare the captured generation and bail if a newer
+      // switch has superseded them — only the last-clicked role ever renders.
+      //
+      // prefers-reduced-motion: transforms are suppressed entirely; a short
+      // opacity-only fade is used instead. The CSS @media rule in styles.css
+      // enforces this at the CSS layer as a belt-and-suspenders fallback.
+      const _ovBody   = document.getElementById('col-overview-body');
+      const _chatEl   = document.getElementById('col-chat');
+      const _panels   = [_ovBody, _chatEl].filter(Boolean);
+      const _noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+      // Snap panels to a clean baseline so any in-progress transition from a
+      // previous switch does not interfere. transition:none prevents the reset
+      // itself from animating.
+      _panels.forEach(p => {
+        p.style.transition = 'none';
+        p.style.opacity    = '1';
+        p.style.transform  = 'translateY(0)';
+      });
+
+      // Capture current generation. A single rAF ensures the browser commits
+      // the clean baseline to the compositor before the exit begins.
+      const _gen = ++_rsSwitchGen;
       requestAnimationFrame(() => {
-        renderRoleDoc(role);
-        renderRail(role);
+        if (_rsSwitchGen !== _gen) return; // superseded by a faster click
 
-        // Reset scroll instantly (hidden during fade-out so no visible jump)
-        if (_ovBody) _ovBody.scrollTop = 0;
+        if (_noMotion) {
+          // Reduced-motion path: opacity-only, no transform.
+          _panels.forEach(p => {
+            p.style.transition = 'opacity 60ms ease';
+            p.style.opacity    = '0.75';
+          });
+        } else {
+          // Full motion path: slide down + fade out.
+          _panels.forEach(p => {
+            p.style.transition = 'opacity 110ms ease-in-out, transform 110ms ease-in-out';
+            p.style.opacity    = '0.35';
+            p.style.transform  = 'translateY(12px)';
+          });
+        }
 
-        // Fade the new content in
-        requestAnimationFrame(() => {
-          if (_ovBody) {
-            _ovBody.style.transition = 'opacity 0.12s ease';
-            _ovBody.style.opacity    = '1';
-          }
-        });
+        // Swap content at the end of the exit window. Panels are at their
+        // dimmest / lowest point so the DOM replacement is imperceptible.
+        setTimeout(() => {
+          if (_rsSwitchGen !== _gen) return; // superseded — do not render stale role
+
+          renderRoleDoc(role);
+          renderRail(role);
+
+          // Scroll reset while faded — no visible position jump.
+          if (_ovBody) _ovBody.scrollTop = 0;
+
+          // Two rAFs: the first lets the browser commit the new content to the
+          // render tree; the second triggers the enter transition on the next
+          // paint so it fires against the freshly rendered content.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (_rsSwitchGen !== _gen) return; // superseded
+
+              if (_noMotion) {
+                _panels.forEach(p => {
+                  p.style.transition = 'opacity 60ms ease';
+                  p.style.opacity    = '1';
+                });
+              } else {
+                // Full motion path: slide up + fade in.
+                _panels.forEach(p => {
+                  p.style.transition = 'opacity 160ms ease-in-out, transform 160ms ease-in-out';
+                  p.style.opacity    = '1';
+                  p.style.transform  = 'translateY(0)';
+                });
+              }
+            });
+          });
+        }, _noMotion ? 60 : 110);
       });
     }
 
@@ -2747,16 +2879,48 @@
     // ── Respectful scroll helper ──────────────────────────────────────────────
     // Only auto-scrolls if the user is already near the bottom (within 80px).
     // If they've scrolled away, shows the nudge pill instead.
-    function _wsScrollIfNear(timelineEl) {
-      // col-chat is the scroll container; timelineEl grows to natural height.
-      const scrollEl = document.getElementById('col-chat') || timelineEl;
-      const distFromBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
-      if (distFromBottom < 80) {
+    // Debounced at 16ms (one frame) so rapid back-to-back calls (e.g. user
+    // bubble + thinking bubble inserted synchronously) collapse into a single
+    // layout read + scrollTop write, eliminating extra reflows.
+    // Force-scroll to bottom unconditionally — used when the user explicitly
+    // sends a message or when the assistant first starts responding. Deferred
+    // via rAF so the newly-appended element is included in scrollHeight.
+    function _wsScrollToBottom(timelineEl) {
+      const scrollEl = timelineEl || document.getElementById('ws-timeline');
+      if (!scrollEl) return;
+      requestAnimationFrame(() => {
         scrollEl.scrollTop = scrollEl.scrollHeight;
-      } else {
         const nudge = document.getElementById('ws-scroll-nudge');
-        if (nudge) nudge.classList.add('visible');
-      }
+        if (nudge) nudge.classList.remove('visible');
+      });
+    }
+
+    let _wsScrollDebounceId = null;
+    function _wsScrollIfNear(timelineEl) {
+      // ws-timeline is the scroll container (col-chat has overflow:hidden in the
+      // responsive layout — scrolling col-chat has no effect).
+      const scrollEl = timelineEl || document.getElementById('ws-timeline');
+      if (!scrollEl) return;
+      clearTimeout(_wsScrollDebounceId);
+      // setTimeout(0) lets synchronous DOM mutations finish (e.g. bubble append),
+      // then requestAnimationFrame defers the scroll read until AFTER the browser
+      // has computed layout for the new element. Without rAF, scrollHeight can
+      // still reflect the pre-append value, causing the scroll to land short and
+      // leaving the newest message partially out of view.
+      _wsScrollDebounceId = setTimeout(() => {
+        requestAnimationFrame(() => {
+          const distFromBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+          if (distFromBottom < 80) {
+            scrollEl.scrollTop = scrollEl.scrollHeight;
+            // Dismiss nudge — we are at (or very near) the bottom.
+            const nudge = document.getElementById('ws-scroll-nudge');
+            if (nudge) nudge.classList.remove('visible');
+          } else {
+            const nudge = document.getElementById('ws-scroll-nudge');
+            if (nudge) nudge.classList.add('visible');
+          }
+        });
+      }, 0);
     }
 
     // ── Settle animation helper ───────────────────────────────────────────────
@@ -2827,18 +2991,36 @@
       el.innerHTML = `<span>${esc(text || 'Rolewise is thinking')}</span>`
         + '<span class="ws-thinking-dots"><span></span><span></span><span></span></span>';
       timelineEl.appendChild(el);
-      _wsScrollIfNear(timelineEl);
+      // Always force-scroll when thinking bubble appears — the user just sent
+      // and must see the response area regardless of prior scroll position.
+      _wsScrollToBottom(timelineEl);
       return el;
     }
 
     // Remove the thinking bubble. Fades out over ~180ms, then removes the node.
     // If immediate=true, removes without animation (used in error paths).
+    // After the node is actually removed the timeline scrollHeight shrinks by the
+    // bubble's height (~36px). Without correction this causes a visible upward jump.
+    // We correct by snapping scrollTop back to the bottom when the user was pinned there.
     function _wsRemoveThinking(timelineEl, immediate) {
       const el = timelineEl?.querySelector('.ws-thinking-bubble');
       if (!el) return;
       if (immediate) { el.remove(); return; }
       el.classList.add('ws-thinking--out');
-      setTimeout(() => { if (el.isConnected) el.remove(); }, 200);
+      setTimeout(() => {
+        if (el.isConnected) el.remove();
+        // Correct scroll after the height collapse caused by node removal.
+        // Wrapped in rAF so the browser has finished reflowing the timeline
+        // (recalculating scrollHeight after the node is gone) before we read
+        // it. Without rAF, scrollHeight can still include the removed node's
+        // height, causing an overshoot that snaps back on the next paint.
+        if (timelineEl) {
+          requestAnimationFrame(() => {
+            const dist = timelineEl.scrollHeight - timelineEl.scrollTop - timelineEl.clientHeight;
+            if (dist < 80) timelineEl.scrollTop = timelineEl.scrollHeight;
+          });
+        }
+      }, 200);
     }
 
     // One optional clarification question after analysis — ask only if something meaningful is missing
@@ -3721,6 +3903,11 @@
     // Punctuation at sentence ends triggers a slightly longer pause.
     async function _wsStreamText(el, text) {
       if (!text) return;
+      // Walk up to the scroll container once so we can keep pinned users at the
+      // bottom as the bubble grows taller word by word. Without this, a single
+      // _wsScrollIfNear call before streaming starts means text beyond the first
+      // screenful appears below the viewport and the user has to scroll manually.
+      const tlEl = el.closest ? el.closest('#ws-timeline') : null;
       const words = text.split(' ');
       let rendered = '';
       for (let i = 0; i < words.length; i++) {
@@ -3729,7 +3916,27 @@
         el.textContent = rendered;
         const w = words[i];
         const delay = /[.?!]$/.test(w) ? 65 : /[,;:]$/.test(w) ? 40 : 22;
+        // Re-pin every 6 words. Combined with the 16ms debounce on _wsScrollIfNear
+        // this fires at most once per ~130ms — cheap and keeps the bottom in view.
+        if (tlEl && (i % 6 === 0 || i === words.length - 1)) {
+          _wsScrollIfNear(tlEl);
+        }
         await new Promise(r => setTimeout(r, delay));
+      }
+
+      // Final pass: render **bold** markdown.
+      // During streaming we use textContent (XSS-safe). Once the loop is
+      // done we do one innerHTML pass — HTML special chars are escaped first
+      // so injected markup in the AI text cannot execute.
+      if (el.isConnected && text) {
+        const safe = text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        el.innerHTML = safe
+          .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+          .replace(/\n\n/g, '<br><br>')
+          .replace(/\n/g, '<br>');
       }
     }
 
@@ -3753,7 +3960,14 @@
       const el = document.createElement('div');
       el.className = 'ws-decision-history';
       el.innerHTML = `<div class="ws-dh-heading">Decision history</div><ul class="ws-dh-list">${items}</ul>`;
-      timelineEl.prepend(el);
+      // Insert after the spacer (not prepend) so the spacer stays at position 0
+      // and continues to push all content toward the bottom.
+      const spacer = timelineEl.querySelector('.ws-timeline-spacer');
+      if (spacer) {
+        spacer.after(el);
+      } else {
+        timelineEl.prepend(el);
+      }
     }
 
     // ── Quick choice chips renderer ────────────────────────────────────────────
@@ -4192,12 +4406,43 @@
           }
         } catch (_cvErr) { /* non-critical — chat works without CV context */ }
 
-        // Last 6 short messages as conversation history (skip very long ones like JD pastes)
+        // Last 6 short messages as conversation history (skip very long ones like JD pastes).
+        //
+        // Briefing JSON blobs (stored as {"_type":"briefing",...} for the restore path)
+        // typically exceed 800 chars and would be silently dropped by the length filter,
+        // leaving the model with no awareness that a structured overview card was already
+        // shown. Without that context a follow-up like "and the salary" looks like a fresh
+        // query, so the model generates another full sections card instead of a focused
+        // plain-text answer.
+        //
+        // Fix: before the length filter, decode briefing blobs into a compact one-line
+        // summary. The model then sees e.g.:
+        //   assistant: [Structured card: Role Overview] Sections: What the role is, …
+        // and knows the overview was given, so follow-up questions receive focused replies.
         if (Array.isArray(memory.conversations)) {
           context.recent_messages = memory.conversations
-            .filter(m => m.message && m.message.length < 800)
-            .slice(-6)
-            .map(m => ({ role: m.sender === 'assistant' ? 'assistant' : 'user', content: m.message }));
+            .slice(-8)                                                // wider window before filter
+            .map(m => {
+              const _isAsst = m.sender === 'assistant';
+              let _content  = m.message || '';
+              // Decode briefing blobs → compact summary so the model retains context.
+              if (_isAsst && _content.startsWith('{') && _content.includes('"_type"')) {
+                try {
+                  const _bp = JSON.parse(_content);
+                  if (_bp._type === 'briefing' && _bp.title) {
+                    const _labels = Array.isArray(_bp.sections)
+                      ? _bp.sections.map(s => s.label).filter(Boolean).join(', ')
+                      : '';
+                    _content = _labels
+                      ? `[Structured card: ${_bp.title}] Sections: ${_labels}`
+                      : `[Structured card: ${_bp.title}]`;
+                  }
+                } catch (_) {}
+              }
+              return { role: _isAsst ? 'assistant' : 'user', content: _content };
+            })
+            .filter(m => m.content && m.content.length < 800)        // drop JD pastes etc
+            .slice(-6);
         }
 
         // Guard: _wsHandlePaste saves the user message fire-and-forget before calling
@@ -4342,14 +4587,19 @@
               bubble.appendChild(secEl);
             });
             timelineEl.appendChild(bubble);
-            _wsScrollIfNear(timelineEl);
+            // Force-scroll so the card is immediately visible — same behaviour
+            // as the plain-text streaming path. _wsScrollIfNear is intentionally
+            // not used here because structured cards are always new responses,
+            // not history restores, and should always scroll into view.
+            _wsScrollToBottom(timelineEl);
           } else {
             // Standard plain-text reply — stream word-by-word
             const bubble = document.createElement('div');
             bubble.className = 'ws-assistant-reply ws-settle';
             bubble.dataset.wsEntry = WS_ENTRY.CHAT_ASSISTANT;
             timelineEl.appendChild(bubble);
-            _wsScrollIfNear(timelineEl);
+            // Force-scroll so the response is immediately visible as it streams.
+            _wsScrollToBottom(timelineEl);
             await _wsStreamText(bubble, reply);
           }
 
@@ -4372,8 +4622,14 @@
           }
           // ────────────────────────────────────────────────────────────────────
 
-          // Persist assistant reply for history
-          wsAddMessage(role.id, 'assistant', reply).catch(() => {});
+          // Persist assistant reply for history.
+          // Briefing responses (structured sections) are stored as a JSON envelope
+          // so _wsRenderTimelineEntry can re-render the card on history restore.
+          // Plain-text replies are stored as-is.
+          const _storedReply = (sections && sections.length > 0)
+            ? JSON.stringify({ _type: 'briefing', title: reply, sections })
+            : reply;
+          wsAddMessage(role.id, 'assistant', _storedReply).catch(() => {});
         } else {
           // Show a calm failure state — avoids silent drop
           console.warn('[_wsTriggerChat] no reply returned');
@@ -5320,10 +5576,12 @@
 
         let score = 0;
 
-        // Company match — required signal (score += 2)
+        // Company match — exact normalised equality required (score += 2).
+        // Substring containment is intentionally excluded: "Acme" must not match
+        // "Acme Capital" or vice versa.
         if (srcCompany.length > 1 && r.company_name) {
           const rc = normCompany(r.company_name);
-          if (rc.length > 1 && (rc === srcCompany || rc.includes(srcCompany) || srcCompany.includes(rc))) {
+          if (rc.length > 1 && rc === srcCompany) {
             score += 2;
           }
         }
@@ -5336,7 +5594,9 @@
           }
         }
 
-        if (score >= 2 && score > bestScore) {
+        // Require both company AND title to match (score must reach 3).
+        // Company-only matches (score == 2) no longer trigger the duplicate notice.
+        if (score >= 3 && score > bestScore) {
           bestScore = score;
           bestMatch = r;
         }
@@ -5388,9 +5648,8 @@
       }
 
       // ── Match basis transparency ─────────────────────────────────────────────
-      const _basis = matchScore >= 3
-        ? 'Matched on company name and role title'
-        : 'Matched on company name';
+      // The notice only fires when score >= 3, so company + title always matched.
+      const _basis = 'Matched on company name and role title';
 
       // ── Outcome label ────────────────────────────────────────────────────────
       const _outcomeDisp = {
@@ -5891,8 +6150,9 @@
           }
         };
         const _scrollChatToBottom = () => {
-          const _chatEl = document.getElementById('col-chat');
-          if (_chatEl) _chatEl.scrollTop = _chatEl.scrollHeight;
+          // ws-timeline is the scroll container; col-chat has overflow:hidden
+          const _tlEl = document.getElementById('ws-timeline');
+          if (_tlEl) _tlEl.scrollTop = _tlEl.scrollHeight;
         };
 
         try {
@@ -6091,8 +6351,39 @@
               `<div class="ws-chat-bubble ws-chat-bubble--user" data-ws-entry="${WS_ENTRY.CHAT_USER}">${esc(msg.message)}</div>`);
           }
         } else {
-          timelineEl.insertAdjacentHTML('beforeend',
-            `<div class="ws-assistant-reply" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(msg.message)}</div>`);
+          // Try to re-hydrate structured briefing cards stored as JSON envelopes.
+          // Fall back to plain-text rendering for any message that isn't JSON or
+          // doesn't carry the _type:'briefing' marker.
+          let _rendered = false;
+          try {
+            const _parsed = JSON.parse(msg.message);
+            if (_parsed._type === 'briefing' && Array.isArray(_parsed.sections)) {
+              const _sectionsHtml = _parsed.sections.map(s =>
+                `<div class="ws-briefing-section">` +
+                  `<div class="ws-briefing-label">${esc(s.label || '')}</div>` +
+                  `<div class="ws-briefing-text">${esc(s.text || '')}</div>` +
+                `</div>`
+              ).join('');
+              timelineEl.insertAdjacentHTML('beforeend',
+                `<div class="ws-assistant-reply ws-briefing-block" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">` +
+                  `<div class="ws-briefing-title">${esc(_parsed.title || '')}</div>` +
+                  _sectionsHtml +
+                `</div>`);
+              _rendered = true;
+            }
+          } catch (_) {}
+          if (!_rendered) {
+            // Apply the same safe markdown rendering as the live _wsStreamText final pass.
+            // esc() escapes HTML special chars first; markdown patterns are then applied to
+            // the escaped string so the injected <strong> / <br> tags cannot be spoofed by
+            // content in the message itself. Mirrors _wsStreamText's post-stream innerHTML pass.
+            const _safeHtml = esc(msg.message)
+              .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+              .replace(/\n\n/g, '<br><br>')
+              .replace(/\n/g, '<br>');
+            timelineEl.insertAdjacentHTML('beforeend',
+              `<div class="ws-assistant-reply" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${_safeHtml}</div>`);
+          }
         }
       } else if (item.type === 'artifact') {
         try {
@@ -6202,7 +6493,7 @@
             </button>
             <div class="ws-docs-list" id="ws-docs-list" hidden></div>
           </div>
-          <div class="ws-timeline" id="ws-timeline"></div>
+          <div class="ws-timeline" id="ws-timeline"><div class="ws-timeline-spacer"></div></div>
           <div id="ws-scroll-nudge" role="button" aria-label="Scroll to latest">↓ New response</div>
           <div class="ws-chat-bar" id="ws-chat-bar">
             <div class="ws-salary-hint" id="ws-salary-hint" hidden></div>
@@ -6342,7 +6633,9 @@
         // routed temp roles (memory=null) into the history restoration else-branch,
         // causing: TypeError: Cannot read properties of null (reading 'conversations').
         if (!role._isTemp) {
+          // Spacer must always be first child for bottom-anchoring to work.
           timelineEl.innerHTML = `
+            <div class="ws-timeline-spacer"></div>
             <div class="ws-blank-state">
               <div class="ws-blank-title">New Role</div>
               <div class="ws-blank-prompt">Paste the job description or link for the role.</div>
@@ -6401,7 +6694,11 @@
           }
 
           _wsWireSourceCards(timelineEl);
-          timelineEl.scrollTop = timelineEl.scrollHeight;
+          // Defer scroll until after browser has laid out the new flex heights.
+          // Without rAF the timeline's scrollHeight may still be 0 at this point.
+          requestAnimationFrame(() => {
+            timelineEl.scrollTop = timelineEl.scrollHeight;
+          });
         }
       }
 
@@ -6448,9 +6745,13 @@
       // Scroll nudge wiring — click to jump to bottom and dismiss
       const nudgeEl = document.getElementById('ws-scroll-nudge');
       if (nudgeEl) {
-        const scrollContainer = document.getElementById('col-chat') || timelineEl;
+        // ws-timeline is the scroll container (col-chat has overflow:hidden)
+        const scrollContainer = timelineEl;
         nudgeEl.addEventListener('click', () => {
-          scrollContainer.scrollTop = scrollContainer.scrollHeight;
+          // User-initiated scroll: smooth behaviour for a polished feel.
+          // scrollTo({ behavior:'smooth' }) takes per-call precedence over the
+          // scroll-behavior:auto set on ws-timeline (which keeps streaming instant).
+          scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
           nudgeEl.classList.remove('visible');
         });
         // Auto-dismiss nudge when user manually scrolls near the bottom
@@ -9753,15 +10054,13 @@
           <!-- E: Appearance ──────────────────────────────── -->
           <div class="doc-section" id="profile-appearance-section" style="margin-top:32px; padding-top:28px; border-top:1px solid var(--border-light);">
             <div class="doc-section-heading">Appearance</div>
-            <p class="pref-context-note" style="margin-bottom:16px;">Choose the accent colour used for interactive highlights across Rolewise.</p>
+            <p class="pref-context-note" style="margin-bottom:16px;">Choose how Rolewise looks on this device.</p>
             <div class="field-group" style="margin-top:8px;">
-              <div class="field-label" style="margin-bottom:10px;">Accent colour</div>
-              <div class="accent-swatch-row" id="accent-swatch-row">
-                <button class="accent-swatch" data-theme="blue"   onclick="setAccentTheme('blue')"  ><span class="accent-swatch-dot" style="background:#3B7DD8;"></span><span class="accent-swatch-label">Blue</span></button>
-                <button class="accent-swatch" data-theme="indigo" onclick="setAccentTheme('indigo')"><span class="accent-swatch-dot" style="background:#5B6CF0;"></span><span class="accent-swatch-label">Indigo</span></button>
-                <button class="accent-swatch" data-theme="teal"   onclick="setAccentTheme('teal')"  ><span class="accent-swatch-dot" style="background:#0F8B8D;"></span><span class="accent-swatch-label">Teal</span></button>
-                <button class="accent-swatch" data-theme="forest" onclick="setAccentTheme('forest')"><span class="accent-swatch-dot" style="background:#2F7A4A;"></span><span class="accent-swatch-label">Forest</span></button>
-                <button class="accent-swatch" data-theme="plum"   onclick="setAccentTheme('plum')"  ><span class="accent-swatch-dot" style="background:#7C4D8B;"></span><span class="accent-swatch-label">Plum</span></button>
+              <div class="field-label" style="margin-bottom:10px;">Colour scheme</div>
+              <div class="appearance-mode-row" id="appearance-mode-row">
+                <button class="appearance-mode-btn" data-mode="light"  onclick="setAppearanceMode('light')">Light</button>
+                <button class="appearance-mode-btn" data-mode="dark"   onclick="setAppearanceMode('dark')">Dark</button>
+                <button class="appearance-mode-btn" data-mode="system" onclick="setAppearanceMode('system')">System</button>
               </div>
             </div>
           </div>
@@ -9808,8 +10107,11 @@
       });
 
       loadAndRenderCvs();
-      // Reflect current accent theme in swatches
-      setAccentTheme(localStorage.getItem('rw-accent-theme') || 'blue');
+      // Reflect current appearance mode in buttons
+      const _curMode = localStorage.getItem('rw-appearance-mode') || 'system';
+      document.querySelectorAll('.appearance-mode-btn').forEach(el => {
+        el.classList.toggle('active', el.dataset.mode === _curMode);
+      });
     }
 
     // ─── Legacy → canonical converter ─────────────────────────────────────────
@@ -11481,6 +11783,79 @@
       }
     }
 
+    // ── Role Intelligence Summary ─────────────────────────────────────────────
+    // Builds an array of { label, value, tone } signals for the compact briefing
+    // block rendered above the card grid. Derives everything from fields already
+    // produced by the analysis — no new LLM calls.
+    //
+    // tone: 'pos' | 'warn' | 'neutral'
+    function _buildIntelSummary(output) {
+      if (!output || typeof output !== 'object') return [];
+      const signals = [];
+
+      // 1 — Evaluation Quality
+      if (output._weakSignal) {
+        signals.push({ label: 'Evaluation quality', value: 'Low signal', tone: 'warn' });
+      } else if (output.jd_completeness && output.jd_completeness.grade) {
+        const g = output.jd_completeness.grade;
+        const tone = (g === 'A' || g === 'B') ? 'pos' : g === 'D' || g === 'F' ? 'warn' : 'neutral';
+        signals.push({ label: 'Evaluation quality', value: output.jd_completeness.label || `Grade ${g}`, tone });
+      } else {
+        signals.push({ label: 'Evaluation quality', value: 'Standard', tone: 'neutral' });
+      }
+
+      // 2 — Ownership Level
+      const _ownershipLabels = {
+        company_level: 'Company-wide', platform: 'Platform scope',
+        product_area:  'Product area',  feature: 'Feature scope',
+        low: 'Low ownership', medium: 'Medium ownership', high: 'High ownership',
+      };
+      if (output.ownership_level && output.ownership_level !== 'unclear' && output.ownership_level !== 'unknown') {
+        const tone = ['high', 'company_level', 'platform'].includes(output.ownership_level) ? 'pos'
+                   : output.ownership_level === 'low' ? 'warn' : 'neutral';
+        signals.push({ label: 'Ownership', value: _ownershipLabels[output.ownership_level] || output.ownership_level, tone });
+      }
+
+      // 3 — Technical Expectations (from domain_complexity)
+      if (output.domain_complexity && output.domain_complexity !== 'unclear') {
+        const _techLabels = { low: 'Light technical', medium: 'Moderate technical', high: 'Heavy technical' };
+        signals.push({ label: 'Technical', value: _techLabels[output.domain_complexity] || output.domain_complexity, tone: 'neutral' });
+      }
+
+      // 4 — Energy Impact (from delivery_pressure)
+      if (output.delivery_pressure && output.delivery_pressure !== 'unclear') {
+        const _energyLabels = { sustainable: 'Sustainable pace', fast: 'Fast pace', intense: 'Intense pace' };
+        const tone = output.delivery_pressure === 'sustainable' ? 'pos'
+                   : output.delivery_pressure === 'intense' ? 'warn' : 'neutral';
+        signals.push({ label: 'Energy impact', value: _energyLabels[output.delivery_pressure] || output.delivery_pressure, tone });
+      }
+
+      // 5 — Funnel / Hiring Route (from hiring_system)
+      if (output.hiring_system && output.hiring_system.type) {
+        const _funnelLabels = {
+          direct_employer:    'Direct hire',
+          recruiter_mediated: 'Recruiter-mediated',
+          high_volume_funnel: 'High-volume funnel',
+          founder_led:        'Founder-led',
+          enterprise_matrix:  'Enterprise matrix',
+          agency_search:      'Agency search',
+        };
+        const tone = output.hiring_system.type === 'high_volume_funnel' ? 'warn'
+                   : ['direct_employer', 'founder_led'].includes(output.hiring_system.type) ? 'pos' : 'neutral';
+        signals.push({ label: 'Hiring route', value: _funnelLabels[output.hiring_system.type] || output.hiring_system.type, tone });
+      }
+
+      // 6 — Role Stability (from seniority_authenticity)
+      if (output.seniority_authenticity && output.seniority_authenticity !== 'unclear') {
+        const _stabLabels = { authentic: 'Seniority authentic', inflated: 'Seniority inflated', understated: 'Understated scope' };
+        const tone = output.seniority_authenticity === 'authentic' ? 'pos'
+                   : output.seniority_authenticity === 'inflated' ? 'warn' : 'neutral';
+        signals.push({ label: 'Role stability', value: _stabLabels[output.seniority_authenticity] || output.seniority_authenticity, tone });
+      }
+
+      return signals;
+    }
+
     function renderMatchOutput(output) {
       if (!output || typeof output !== 'object') {
         return '<p class="doc-no-analysis" style="padding:8px 0;">No analysis data.</p>';
@@ -11634,6 +12009,24 @@
         html += `<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:10px 14px;margin-bottom:20px;">
           <div class="doc-prose" style="color:#92400E;">Full analysis unavailable. Showing limited output extracted from JD text only.</div>
         </div>`;
+      }
+
+      // ── Role Intelligence Summary ─────────────────────────────────────────
+      // Compact briefing block — sits between quality indicator/notices and the
+      // card grid. Shows key signals at a glance without opening any cards.
+      {
+        const _risSigs = _buildIntelSummary(output);
+        if (_risSigs.length > 0) {
+          const _risHtml = _risSigs.map(s =>
+            `<div class="ris-signal ris-signal--${esc(s.tone)}">` +
+              `<span class="ris-dot"></span>` +
+              `<span class="ris-label">${esc(s.label)}</span>` +
+              `<span class="ris-sep">&middot;</span>` +
+              `<span class="ris-value">${esc(s.value)}</span>` +
+            `</div>`
+          ).join('');
+          html += `<div class="rw-intel-summary" id="section-intel-summary">${_risHtml}</div>`;
+        }
       }
 
       html += `<div class="rw-card-grid">`;
@@ -17093,14 +17486,28 @@
           console.error('[workspace-chat invoke error]', error);
           return null;
         }
-        const reply = data?.reply?.trim();
+        let reply    = data?.reply?.trim();
+        let chips    = Array.isArray(data?.chips)    && data.chips.length    >= 2 ? data.chips    : null;
+        let sections = Array.isArray(data?.sections) && data.sections.length >  0 ? data.sections : null;
+
+        // Safety net: edge function occasionally returns the raw LLM JSON
+        // output as the reply string instead of unwrapping it. Detect and fix.
+        if (reply?.startsWith('{') && reply.includes('"reply"')) {
+          try {
+            const inner = JSON.parse(reply);
+            if (inner?.reply) {
+              reply    = inner.reply.trim();
+              if (!chips    && Array.isArray(inner.chips)    && inner.chips.length    >= 2) chips    = inner.chips;
+              if (!sections && Array.isArray(inner.sections) && inner.sections.length >  0) sections = inner.sections;
+              console.warn('[callWorkspaceChatAPI] unwrapped nested JSON reply');
+            }
+          } catch (_) {}
+        }
+
         if (!reply) {
           console.error('[workspace-chat] no reply in response', data);
           return null;
         }
-        const chips    = Array.isArray(data?.chips) && data.chips.length >= 2 ? data.chips : null;
-        // sections: structured mini-briefing blocks [{label, text}]
-        const sections = Array.isArray(data?.sections) && data.sections.length > 0 ? data.sections : null;
         console.log('[callWorkspaceChatAPI] reply OK', reply.slice(0, 80), chips ? `chips: ${chips.join(', ')}` : '', sections ? `sections: ${sections.length}` : '');
         return { reply, chips, sections };
       } catch (err) {

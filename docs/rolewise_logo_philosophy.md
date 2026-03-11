@@ -1,0 +1,13 @@
+# Weighted Wit
+
+**An aesthetic of disciplined character**
+
+Weighted Wit is the art of the single gesture — a philosophy built on the conviction that 95% of any composition should earn its authority through restraint, so that the remaining 5% may speak freely. The work is monolithic in tone: one material, one weight, one colour, held with absolute conviction. There are no gradients, no shadows, no colour banding. What exists is shape, and what shape says is everything. The discipline of the overall form makes the singular playful mark feel radical without being loud.
+
+Form in this movement is derived from the logic of the craft itself — letterforms are geometric but warm, engineered but handmade. The serious carries the majority of the visual weight, while a single calligraphic or sculptural flourish is permitted — even demanded — to exist as a pressure release. This gesture is never decoration. It is structural to the emotional meaning. It is the moment the stone smiles. Every surrounding element must be meticulous, painstakingly refined, the product of someone working at the absolute top of their discipline, so that the gesture reads as earned rather than applied.
+
+Colour is singular and assertive. Deep, slightly warm dark neutrals — ink, navy, near-black — carry the form. The colour selection is made with the confidence of someone who has studied it for years. Nothing about the palette hedges. The hue chosen is not safe; it is decided. The contrast between the colour and the background is crisp and unambiguous. Within this singular palette, the calligraphic gesture does not change colour — it is of the same material as everything else. Its difference is only in form.
+
+Space is treated as a co-equal element. Negative space is not leftover — it is planned and protected. The work breathes deliberately, with generous margins that signal quiet confidence rather than timidity. No element crowds another. The letterforms and their flourishes are given room to be read as separate decisions before the eye discovers that they compose a single intent. Scale is used sparingly but boldly: one element may exceed expected proportion to announce itself, while all others recede into considered precision.
+
+The result should feel as though it emerged from a single, decisive sitting — three hours, midnight, absolute clarity — by someone who has spent twenty years preparing for that moment. The refinement is invisible: no unnecessary anchors, no fussed edges, no compromised decisions. The work is the product of painstaking deliberation rendered to appear effortless. It respects its viewer enough to trust that they will feel the wit before they name it, and appreciate the weight long after.
