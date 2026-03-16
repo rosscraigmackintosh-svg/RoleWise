@@ -12904,6 +12904,68 @@
       }
 
       html += `<div class="rw-card-grid">`;
+
+      // ── Role Briefing card — Archetype + Briefing Header (full width) ──────────
+      let _briefHtml = '';
+      {
+        // Role Archetype
+        const _arch = output.role_archetype;
+        const _comp = output.jd_completeness;
+        if (_arch || _comp) {
+          const _archHtml = _arch
+            ? `<div style="font-size:13.5px;color:var(--text);line-height:1.5;margin-bottom:${_comp ? '8px' : '0'};">${esc(_arch)}</div>`
+            : '';
+          const _compHtml = _comp
+            ? `<div style="font-size:11px;color:var(--text-light);letter-spacing:0.03em;">JD CLARITY &thinsp;&middot;&thinsp; <span style="color:var(--text-muted);font-weight:600;">${esc(_comp.grade)}</span>&thinsp;&middot;&thinsp;${esc(_comp.label)}&ensp;(${_comp.score}/${_comp.total})</div>`
+            : '';
+          _briefHtml += `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-light);">${_archHtml}${_compHtml}</div>`;
+        }
+      }
+
+      // Rolewise Briefing Header — role_summary paragraph + practical quick grid
+      {
+        const _rs  = output.role_summary;
+        const _pd  = output.practical_details || {};
+        const _hs  = output.hiring_system;
+        const _rrs = Array.isArray(output.role_reality_summary) && output.role_reality_summary.length
+          ? output.role_reality_summary : null;
+
+        const hasBrief = (_rs && _rs !== 'Not stated') || _rrs;
+        const _loc    = _pd.location     || null;
+        const _wm     = _pd.remote_model || null;
+        const _sal    = (_pd.salary_annual && _pd.salary_annual !== 'Not stated') ? _pd.salary_annual : null;
+        const _bhHsLabels = {
+          direct_employer:    'Direct employer',
+          recruiter_mediated: 'Recruiter-mediated',
+          high_volume_funnel: 'High-volume funnel',
+          founder_led:        'Founder-led',
+          enterprise_matrix:  'Enterprise / matrix',
+          agency_search:      'Agency search',
+        };
+        const _hsLabel = (_hs && _hs.type) ? (_bhHsLabels[_hs.type] || _hs.type) : null;
+        const hasGrid  = _loc || _wm || _sal || _hsLabel;
+
+        if (hasBrief || hasGrid) {
+          let _bh = '';
+          if (_rs && _rs !== 'Not stated') {
+            _bh += `<div class="rw-bh-paragraph">${esc(_rs)}</div>`;
+          } else if (_rrs) {
+            _bh += `<div class="rw-bh-paragraph">${_rrs.map(s => esc(String(s))).join(' ')}</div>`;
+          }
+          if (hasGrid) {
+            const _bhCells = [
+              _loc     ? ['Location',      _loc]     : null,
+              _wm      ? ['Work model',    _wm]      : null,
+              _sal     ? ['Salary',        _sal]     : null,
+              _hsLabel ? ['Hiring source', _hsLabel] : null,
+            ].filter(Boolean);
+            _bh += `<div class="rw-bh-grid">${_bhCells.map(([k, v]) =>
+              `<div class="rw-bh-cell"><span class="rw-bc-label">${esc(k)}</span><span class="rw-bc-value">${esc(v)}</span></div>`
+            ).join('')}</div>`;
+          }
+          _briefHtml += `<div class="rw-briefing-header">${_bh}</div>`;
+        }
+      }
       html += sectionHeader('Role Briefing', true);
       html += `<div class="rw-card rw-card--full rw-card--narrative" id="section-briefing">${_briefHtml}</div>`;
 
