@@ -19180,17 +19180,18 @@
           : `${totalRoles} role${totalRoles !== 1 ? 's' : ''} shared · ${activeRoles} active`;
         const avatarClass = _recruiterAvatarClass(rec.name);
         const initials    = _recruiterInitials(rec.name);
+        // Line 2: company if present, fall back to contact type so the row is never blank
+        const _typeLabel  = _recruiterTypeLabel(rec);
+        const _subline    = rec.company || _typeLabel || null;
+        const _metaStr    = `${countStr} · Last contact ${_rcRelativeDate(lastDate)}`;
 
         return `<div class="rc-item${rec.id === selectedRecruiterId ? ' active' : ''}" data-rc-id="${esc(rec.id)}">
           <div class="rc-item-inner">
             <div class="rc-avatar rc-avatar-sm ${esc(avatarClass)}" aria-hidden="true">${esc(initials)}</div>
             <div class="rc-item-text">
-              <div class="rc-item-row1">
-                <span class="rc-item-name">${esc(rec.name)}</span>
-                ${rec.company ? `<span class="rc-item-company">${esc(rec.company)}</span>` : ''}
-              </div>
-              <div class="rc-item-counts">${esc(countStr)}</div>
-              <div class="rc-item-last">Last contact ${esc(_rcRelativeDate(lastDate))}</div>
+              <div class="rc-item-name">${esc(rec.name)}</div>
+              ${_subline ? `<div class="rc-item-company">${esc(_subline)}</div>` : ''}
+              <div class="rc-item-meta">${esc(_metaStr)}</div>
               ${followUp ? `<div style="font-size:11.5px;color:#b5811a;margin-top:3px;">Follow up suggested</div>` : ''}
             </div>
           </div>
@@ -19318,7 +19319,7 @@
       html += `<div class="rc-section">
         <div class="rc-section-label-row">
           <span class="rc-section-label">Contact</span>
-          <button class="rc-edit-btn" id="rc-edit-btn-${esc(rec.id)}">Edit recruiter</button>
+          <button class="rc-edit-btn" id="rc-edit-btn-${esc(rec.id)}">Edit contact</button>
         </div>`;
       if (_hasContact) {
         if (rec.email)        html += `<div class="rc-contact-row"><span class="rc-contact-label">Email</span><span class="rc-contact-val"><a href="mailto:${esc(rec.email)}">${esc(rec.email)}</a></span></div>`;
@@ -19418,7 +19419,7 @@
       const el = document.getElementById('col-overview-cards');
       if (!el) return;
       el.innerHTML = `<div class="rc-detail rc-form">
-        <div class="rc-form-title">Edit recruiter</div>
+        <div class="rc-form-title">Edit contact</div>
         <div class="rc-form-row">
           <label class="rc-form-label" for="rc-edit-name">Name <span style="color:#c0392b">*</span></label>
           <input class="rc-form-input" id="rc-edit-name" type="text" autocomplete="off" value="${esc(rec.name || '')}">
