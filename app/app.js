@@ -19180,9 +19180,8 @@
           : `${totalRoles} role${totalRoles !== 1 ? 's' : ''} shared · ${activeRoles} active`;
         const avatarClass = _recruiterAvatarClass(rec.name);
         const initials    = _recruiterInitials(rec.name);
-        // Line 2: company if present, fall back to contact type so the row is never blank
-        const _typeLabel  = _recruiterTypeLabel(rec);
-        const _subline    = rec.company || _typeLabel || null;
+        // Line 2: company/agency only — hidden entirely when absent (no fallback placeholder)
+        const _subline    = rec.company || null;
         const _metaStr    = `${countStr} · Last contact ${_rcRelativeDate(lastDate)}`;
 
         return `<div class="rc-item${rec.id === selectedRecruiterId ? ' active' : ''}" data-rc-id="${esc(rec.id)}">
