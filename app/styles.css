@@ -723,6 +723,30 @@
     .sg-panel { display: none; }
     .sg-panel.active { display: block; }
 
+    /* Inactive-notice state — used when a tab's pipeline is not yet wired */
+    .sg-inactive-notice {
+      padding: 24px;
+      max-width: 520px;
+    }
+    .sg-inactive-notice-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .sg-inactive-notice-body {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .sg-inactive-notice-body code {
+      font-family: monospace;
+      font-size: 11px;
+      background: var(--border-light);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
     /* ─── Admin area ─────────────────────────────────────────────── */
     .admin-wrap {
       display: flex;
@@ -1490,6 +1514,335 @@
       font-size: 12px;
       color: var(--text-light);
       margin-left: 6px;
+    }
+
+    /* ── Decision Layer V1 — Potential Blockers ──────────────────────────── */
+    .dl-blockers-section {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px 14px;
+      margin: 0 0 6px;
+    }
+    .dl-blockers-header {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .dl-blockers-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.01em;
+    }
+    .dl-blockers-hint {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+    .dl-blockers-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .dl-blocker-item {
+      background: var(--bg-subtle, #F9FAFB);
+      border: 1px solid var(--border-light, #E5E7EB);
+      border-radius: 8px;
+      padding: 10px 12px 8px;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .dl-blocker-item--hard {
+      background: #FEF2F2;
+      border-color: #FECACA;
+    }
+    .dl-blocker-item--soft {
+      background: #FFFBEB;
+      border-color: #FDE68A;
+    }
+    .dl-blocker-item--clear {
+      background: #F0FDF4;
+      border-color: #BBF7D0;
+      opacity: 0.75;
+    }
+    .dl-blocker-top {
+      margin-bottom: 8px;
+    }
+    .dl-blocker-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      display: block;
+      margin-bottom: 2px;
+    }
+    .dl-blocker-evidence {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      font-style: italic;
+      margin-top: 2px;
+      line-height: 1.4;
+      padding: 3px 6px;
+      background: rgba(0,0,0,0.03);
+      border-left: 2px solid var(--border);
+      border-radius: 2px;
+    }
+    .dl-blocker-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .dl-blocker-btn {
+      font-size: 11.5px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 5px;
+      border: 1.5px solid var(--border);
+      background: var(--bg);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .dl-blocker-btn:hover {
+      background: var(--bg-hover, #F3F4F6);
+      color: var(--text);
+    }
+    .dl-blocker-btn--active {
+      border-color: #374151;
+      background: #374151;
+      color: #fff;
+    }
+    .dl-blocker-item--hard .dl-blocker-btn[data-state="hard"].dl-blocker-btn--active {
+      background: #DC2626;
+      border-color: #DC2626;
+    }
+    .dl-blocker-item--soft .dl-blocker-btn[data-state="soft"].dl-blocker-btn--active {
+      background: #D97706;
+      border-color: #D97706;
+    }
+    .dl-blocker-item--clear .dl-blocker-btn[data-state="clear"].dl-blocker-btn--active {
+      background: #16A34A;
+      border-color: #16A34A;
+    }
+    .dl-blocker-boundary-row {
+      min-height: 18px;
+      margin-top: 6px;
+    }
+    .dl-boundary-indicator {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .dl-boundary-cta {
+      font-size: 11px;
+      color: var(--accent);
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .dl-boundary-cta:hover { opacity: 0.75; }
+    .dl-boundary-cta:disabled { opacity: 0.45; cursor: default; }
+
+    /* ── Decision Layer V1 — Skip reason prompt ──────────────────────────── */
+    .dl-skip-prompt {
+      padding: 14px 18px 16px;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+    }
+    .dl-skip-prompt-header {
+      margin-bottom: 12px;
+    }
+    .dl-skip-prompt-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+    .dl-skip-prompt-hint {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+    .dl-skip-reasons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .dl-skip-reason-btn {
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 6px 13px;
+      border-radius: 6px;
+      border: 1.5px solid var(--border);
+      background: var(--bg);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+      white-space: nowrap;
+    }
+    .dl-skip-reason-btn:hover {
+      background: var(--bg-hover, #F3F4F6);
+      color: var(--text);
+    }
+    /* Suggested reasons (match detected blockers) get a subtle emphasis */
+    .dl-skip-reason-btn--suggested {
+      border-color: #FCA5A5;
+      background: #FEF2F2;
+      color: #B91C1C;
+    }
+    .dl-skip-reason-btn--suggested:hover {
+      background: #FEE2E2;
+    }
+    .dl-skip-reason-btn--selected {
+      background: #374151;
+      color: #fff;
+      border-color: #374151;
+    }
+    .dl-skip-reason-btn--suggested.dl-skip-reason-btn--selected {
+      background: #DC2626;
+      border-color: #DC2626;
+      color: #fff;
+    }
+    .dl-skip-notes {
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 12.5px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      resize: vertical;
+      min-height: 48px;
+      margin-bottom: 12px;
+      font-family: inherit;
+      line-height: 1.45;
+      outline: none;
+    }
+    .dl-skip-notes:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+    .dl-skip-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* ── Decision Layer V1: Decision History Read View ───────────────────── */
+    .dl-history-section {
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      margin-bottom: 12px;
+    }
+
+    .dl-history-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .dl-history-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .dl-history-count {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .dl-history-entries {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .dl-dh-entry {
+      padding: 10px 12px;
+      background: var(--surface, #F9FAFB);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .dl-dh-entry-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .dl-dh-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .dl-dh-badge--skip  { background: #FEF2F2; color: #B91C1C; }
+    .dl-dh-badge--save  { background: #EFF6FF; color: #1D4ED8; }
+    .dl-dh-badge--apply { background: #F0FDF4; color: #15803D; }
+
+    .dl-dh-entry-date {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .dl-dh-entry-blockers {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .dl-dh-blocker-tag {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 10px;
+    }
+
+    .dl-dh-blocker-tag--hard { background: #FEF2F2; color: #B91C1C; }
+    .dl-dh-blocker-tag--soft { background: #FFFBEB; color: #92400E; }
+
+    .dl-dh-entry-reason {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .dl-dh-entry-notes {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* ── Decision Layer V1: Inbox boundary match indicator ────────────────── */
+    .inbox-boundary-match {
+      font-size: 11px;
+      color: #B45309;
+      margin-top: 3px;
+    }
+
+    .inbox-boundary-match::before {
+      content: '⚑ ';
+      opacity: 0.75;
+    }
+
+    /* ── Review view: Decision Layer section ─────────────────────────────── */
+    .review-dl-boundary-type {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: capitalize;
     }
 
     /* ── Role comparison ──────────────────────────────────────────────────── */
@@ -6722,6 +7075,48 @@
     /* ─── Informative analysis step list ────────────────────────────────────── */
     /* Progressive vertical list in the chat timeline during analysis.           */
     /* One step is active at a time; completed steps dim with a tick mark.       */
+    /* ── Analysis trace — modal variant (#add-analysis-trace) ───────────────── */
+    /* Shown inside the Add JD modal while callAnalysisAPI runs. The form body   */
+    /* is hidden via .add-modal-form--hidden; only this trace + the button show. */
+
+    .add-analysis-trace {
+      padding: 24px 4px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      animation: at-fade-in 0.25s ease;
+    }
+    .add-analysis-trace.hidden {
+      display: none;
+    }
+    .add-analysis-trace--done {
+      opacity: 0.7;
+    }
+
+    @keyframes at-fade-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Fade-in for completed analysis output — applied to the rw-overview-wrap
+       after analysis resolves, giving a calm settle rather than an abrupt snap. */
+    .rw-analysis-arrive {
+      animation: rw-analysis-arrive 0.35s ease both;
+    }
+    @keyframes rw-analysis-arrive {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* The trace uses the same .ws-step / .ws-step--active / .ws-step--done
+       classes as the workspace trace, so no duplicate step CSS is needed. */
+
+    /* Hides the form fields while the trace is showing (non-destructive: fields
+       retain their values for error-path restoration). */
+    .add-modal-form--hidden {
+      display: none;
+    }
+
     .ws-analysis-steps {
       padding: 10px 0 6px;
       display: flex;

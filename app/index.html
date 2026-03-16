@@ -23,6 +23,10 @@
       <div class="modal-body">
         <div id="add-error" class="inline-error hidden"></div>
 
+        <!-- Analysis trace — shown during callAnalysisAPI; form body is hidden -->
+        <div id="add-analysis-trace" class="add-analysis-trace hidden" aria-live="polite" aria-label="Analysis progress"></div>
+
+        <div id="add-modal-form-body">
         <div class="field-group">
           <label class="field-label" for="add-jd">Job description</label>
           <div id="jd-truncation-warning" class="jd-truncation-warning hidden">
@@ -161,6 +165,8 @@
             </div>
           </div>
         </details>
+
+        </div><!-- /add-modal-form-body -->
 
         <button class="btn-primary" id="btn-save-add">Save JD</button>
       </div>

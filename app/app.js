@@ -328,6 +328,126 @@
       return data || [];
     }
 
+    // ─── Decision Layer V1 — DB helpers ───────────────────────────────────────
+
+    // Load all blockers for a role (ordered by creation, oldest first).
+    async function _loadRoleBlockers(roleId) {
+      if (!roleId) return [];
+      try {
+        const { data, error } = await db
+          .from('role_blockers')
+          .select('id, blocker_key, label, evidence, user_state, created_at')
+          .eq('role_id', roleId)
+          .order('created_at', { ascending: true });
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.warn('[_loadRoleBlockers]', e);
+        return [];
+      }
+    }
+
+    // Upsert a blocker record. If (role_id, blocker_key) already exists, update
+    // user_state only. Otherwise insert. Returns the record or null on error.
+    async function _upsertRoleBlocker(roleId, blockerKey, label, evidence, userState) {
+      if (!roleId || !blockerKey) return null;
+      try {
+        const { data, error } = await db
+          .from('role_blockers')
+          .upsert(
+            { role_id: roleId, blocker_key: blockerKey, label, evidence: evidence || null, user_state: userState || null },
+            { onConflict: 'role_id,blocker_key' }
+          )
+          .select('id, blocker_key, label, evidence, user_state')
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.warn('[_upsertRoleBlocker]', e);
+        return null;
+      }
+    }
+
+    // Save a decision snapshot — role DNA + confirmed blockers + optional skip
+    // reason and notes. Fire-and-forget; never throws to caller.
+    async function _saveDecisionSnapshot(role, decision, { skipReason = null, skipReasonOther = null, notes = null, confirmedBlockers = [] } = {}) {
+      if (!role?.id || !decision) return;
+      const output = role.latest_match_output || role.analysis || {};
+      const pd     = output.practical_details || {};
+      const roleDna = {
+        role_title:       role.role_title      || null,
+        company_name:     role.company_name    || null,
+        location_text:    role.location_text   || null,
+        work_model:       role.work_model       || null,
+        engagement_type:  role.engagement_type || null,
+        ir35_status:      role.ir35_status      || null,
+        salary_text_raw:  role.salary_text_raw || null,
+        salary_annual:    pd.salary_annual      || null,
+        working_pattern:  pd.working_pattern   || null,
+        contract_type:    pd.contract_type      || null,
+        role_archetype:   output.role_archetype  || null,
+        rolewise_verdict: output.rolewise_verdict || null,
+        source:           role.source           || null,
+      };
+      try {
+        await db.from('role_decision_snapshots').insert({
+          role_id:            role.id,
+          user_decision:      decision,
+          role_dna:           roleDna,
+          confirmed_blockers: confirmedBlockers,
+          skip_reason:        skipReason       || null,
+          skip_reason_other:  skipReasonOther  || null,
+          notes:              notes            || null,
+        });
+      } catch (e) {
+        console.warn('[_saveDecisionSnapshot]', e);
+      }
+    }
+
+    // Load the user's saved personal boundaries.
+    async function _loadUserBoundaries() {
+      try {
+        const { data, error } = await db
+          .from('user_boundaries')
+          .select('id, blocker_key, label, boundary_type, created_at')
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.warn('[_loadUserBoundaries]', e);
+        return [];
+      }
+    }
+
+    // Warms (or refreshes) the module-level _boundaryKeyCache.
+    // Call at startup after refresh() and after any boundary is saved.
+    async function _warmBoundaryCache() {
+      try {
+        const boundaries = await _loadUserBoundaries();
+        _boundaryKeyCache = new Set(boundaries.map(b => b.blocker_key));
+      } catch (_) {
+        _boundaryKeyCache = new Set();
+      }
+    }
+
+    // Upsert a personal boundary (hard or soft). profile_id comes from _profileId.
+    async function _saveUserBoundary(blockerKey, label, boundaryType = 'hard') {
+      if (!blockerKey || !_profileId) return;
+      try {
+        await db.from('user_boundaries').upsert(
+          { profile_id: _profileId, blocker_key: blockerKey, label, boundary_type: boundaryType },
+          { onConflict: 'profile_id,blocker_key' }
+        );
+        // Optimistic cache update so inbox indicators appear immediately
+        if (_boundaryKeyCache) _boundaryKeyCache.add(blockerKey);
+        else _boundaryKeyCache = new Set([blockerKey]);
+      } catch (e) {
+        console.warn('[_saveUserBoundary]', e);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Lightweight workspace-presence check — 4 parallel HEAD queries, no row data fetched.
     // Returns true if the role has ANY record in any of the 4 workspace tables.
     // Used by renderRoleDoc to decide whether to open workspace or legacy view.
@@ -574,6 +694,24 @@
     let userProfile    = null;     // preferences_json from profiles table
     let _profileId     = null;     // profiles.id UUID — used as user_id in usage_events
     let _cachedCvVersions = null; // Loaded once on first use; re-used by computeFitAssessment
+    let _boundaryKeyCache = null; // Set<string> of saved blocker keys; null = not yet loaded
+
+    // ─── Analysis trace stages ────────────────────────────────────────────────
+    // Shared between the workspace paste trace (_wsRunAnalysis), the Add JD modal
+    // trace (saveRole), and the intake panel. Keep labels calm and factual.
+    const _ANALYSIS_STAGES = [
+      'Reading job description',
+      'Extracting practical details',
+      'Identifying likely risks',
+      'Detecting role signals',
+      'Preparing fit summary',
+      'Finalising analysis',
+    ];
+    // Timer offsets (ms) for advancing from stage 1 → 2 → 3 → 4 → 5 → 6.
+    // Stage 1 is active at t=0. These fire stages 2–6.
+    // Calibrated to a typical AI response time of 6–14s; later stages may not
+    // be reached before the API returns — that is correct and expected.
+    const _ANALYSIS_TIMINGS = [1800, 3600, 5400, 7200, 9500];
 
     // ─── Recruiter state ──────────────────────────────────────────────────────
     let allRecruiters        = [];
@@ -637,9 +775,13 @@
       if (!visible) {
         if (railEl)  railEl.innerHTML  = '';
         if (chipsEl) chipsEl.innerHTML = '';
-        // Clear decision capture slot (now inside .rw-overview-wrap)
+        // Clear decision capture, blockers, and history slots (inside .rw-overview-wrap)
         const dcEl = document.getElementById('ws-decision-capture');
         if (dcEl) { dcEl.innerHTML = ''; dcEl.style.display = 'none'; }
+        const bsEl = document.getElementById('ws-blockers-section');
+        if (bsEl) { bsEl.innerHTML = ''; bsEl.style.display = 'none'; }
+        const dhEl = document.getElementById('ws-decision-history-dl');
+        if (dhEl) { dhEl.innerHTML = ''; dhEl.style.display = 'none'; }
         _clearStickyHeader();
         _clearRoleHeader();
         _clearNextAction();
@@ -735,20 +877,22 @@
     }
 
     // ─── Overview lower-card slots ─────────────────────────────────────────────
-    // Ensures the three ordered slot divs (My Verdict, Original JD, Stage/Outcome)
-    // exist inside .rw-overview-wrap, right after the Fit Assessment card.
+    // Ensures the four ordered slot divs (Blockers, My Verdict, Original JD,
+    // Stage/Outcome) exist inside .rw-overview-wrap, right after the Fit Assessment.
     // Idempotent — safe to call multiple times; will not create duplicates.
-    // Must be called before any of the three render functions populate their slot.
+    // Must be called before any of the four render functions populate their slot.
     function _ensureOverviewLowerCards() {
       const wrap = document.querySelector('#col-overview-cards .rw-overview-wrap');
       if (!wrap) return;
       // Already created — nothing to do
-      if (wrap.querySelector('#ws-decision-capture')) return;
+      if (wrap.querySelector('#ws-blockers-section')) return;
 
       const slots = [
-        { id: 'ws-decision-capture', cls: null },
-        { id: 'col-jd-section',      cls: 'col-jd-section' },
-        { id: 'role-chips-section',  cls: 'role-chips-section' },
+        { id: 'ws-blockers-section',    cls: null },           // Decision Layer V1: blockers
+        { id: 'ws-decision-capture',    cls: null },
+        { id: 'ws-decision-history-dl', cls: null },           // Decision Layer V1: history read view
+        { id: 'col-jd-section',         cls: 'col-jd-section' },
+        { id: 'role-chips-section',     cls: 'role-chips-section' },
       ];
 
       // Insert after Fit Assessment card; fall back to end of wrap
@@ -869,14 +1013,19 @@
         // ── State 2: Analysing ───────────────────────────────────────────
         inputWrapEl.setAttribute('hidden', '');
         statusWrapEl.removeAttribute('hidden');
-        if (statusTextEl) statusTextEl.textContent = 'Analysing job description…';
 
-        // Sequential status messages — mirrors _wsRunAnalysis timing
+        // Sequential status messages — mirrors _wsRunAnalysis / _ANALYSIS_STAGES timing
+        if (statusTextEl) statusTextEl.textContent = _ANALYSIS_STAGES[0] + '…';
         let _statusDone = false;
-        const _statusTimers = [
-          setTimeout(() => { if (!_statusDone && statusTextEl?.isConnected) statusTextEl.textContent = 'Extracting role signals…'; }, 2400),
-          setTimeout(() => { if (!_statusDone && statusTextEl?.isConnected) statusTextEl.textContent = 'Building overview…'; }, 5000),
-        ];
+        const _intakeStageTexts = _ANALYSIS_STAGES.slice(1).map(s => s + '…');
+        const _intakeStageTimes = [2000, 4000, 6000, 8500, 11000];
+        const _statusTimers = _intakeStageTimes.map((t, i) =>
+          setTimeout(() => {
+            if (!_statusDone && statusTextEl?.isConnected && _intakeStageTexts[i]) {
+              statusTextEl.textContent = _intakeStageTexts[i];
+            }
+          }, t)
+        );
         intakeEl._clearTimers = () => { _statusDone = true; _statusTimers.forEach(clearTimeout); };
         intakeEl.dataset.cleanupPending = '1';
 
@@ -917,7 +1066,7 @@
                    decision_state, verdict_state, nudge_snoozed_until,
                    outcome_state, outcome_reason, outcome_at, current_stage,
                    role_updates(id, status, event_type, stage_reached, outcome_state, note, created_at),
-                   role_recruiters(recruiter_id, link_source, created_at,
+                   role_recruiters(id, recruiter_id, link_source, created_at,
                      recruiters(id, name, company, email, linkedin_url, recruiter_type, office_phone, mobile_phone, website_url, notes, notes_log, created_at, updated_at))`)
           .order('created_at', { ascending: false }),
         db.from('analyses')
@@ -1467,6 +1616,18 @@
           ? `<div class="inbox-signals">${esc(_intelSig)}</div>`
           : '';
 
+        // ── Boundary match indicator (Decision Layer V1) ───────────────────────
+        // Only shown when boundaries are loaded and the role has analysis data with
+        // at least one detected blocker that matches a saved boundary.
+        const _boundaryMatchHtml = (() => {
+          if (!_boundaryKeyCache || _boundaryKeyCache.size === 0) return '';
+          const _lmo = role.latest_match_output || role.analysis;
+          if (!_lmo) return '';
+          const _matchedBlockers = _detectBlockers(role).filter(b => _boundaryKeyCache.has(b.key));
+          if (!_matchedBlockers.length) return '';
+          return `<div class="inbox-boundary-match">Boundary match</div>`;
+        })();
+
         return `<div class="inbox-role${role.id === selectedRoleId ? ' active' : ''}"${decAttr} data-id="${esc(role.id)}">
           <div class="inbox-company inbox-role-company${company ? '' : ' inbox-company-unknown'}">${attnDot}${esc(company || 'Unknown company')}</div>
           <div class="inbox-title inbox-role-title">${esc(title)}</div>
@@ -1474,6 +1635,7 @@
           ${metaHtml}
           ${hiringBadgeHtml}
           ${miniReasonHtml}
+          ${_boundaryMatchHtml}
         </div>`;
       };
 
@@ -4660,24 +4822,15 @@
     // Safe to call multiple times on the same role without side effects on the timeline
     // (each call creates its own status element and appends a fresh artefact on success).
     async function _wsRunAnalysis(role, text, timelineEl) {
-      // ── Informative analysis step list ────────────────────────────────────────
+      // ── Analysis step list (shared _ANALYSIS_STAGES constant) ────────────────
       // Progressive vertical step list in the chat timeline. Steps advance on
       // timers and are cancelled as soon as the analysis returns. On error the
       // container is repurposed to show the retry message (matches old behaviour).
-      const _stepsData = [
-        'Reading the job description',
-        'Extracting practical details',
-        'Understanding responsibilities',
-        'Checking constraints and risks',
-        'Preparing your analysis',
-      ];
-      const _stepTimings = [1600, 3200, 4800, 6400]; // ms offsets for steps 1–4
-
       const statusEl = document.createElement('div');
       statusEl.className = 'ws-analysis-steps';
       statusEl.dataset.wsEntry = WS_ENTRY.UI_TEMP;
       statusEl.id = 'ws-status-analysing';
-      statusEl.innerHTML = _stepsData.map((s, i) =>
+      statusEl.innerHTML = _ANALYSIS_STAGES.map((s, i) =>
         `<div class="ws-step${i === 0 ? ' ws-step--active' : ''}" data-step="${i}">` +
           `<span class="ws-step-check"></span>` +
           `<span class="ws-step-label">${s}</span>` +
@@ -4694,13 +4847,28 @@
           _stepEls[i]?.classList.remove('ws-step--active');
           _stepEls[i]?.classList.add('ws-step--done');
         }
-        _stepEls[n]?.classList.remove('ws-step--done');
-        _stepEls[n]?.classList.add('ws-step--active');
+        if (n < _stepEls.length) {
+          _stepEls[n]?.classList.remove('ws-step--done');
+          _stepEls[n]?.classList.add('ws-step--active');
+        }
       };
-      const _seqTimers = _stepTimings.map((t, i) =>
+      const _seqTimers = _ANALYSIS_TIMINGS.map((t, i) =>
         setTimeout(() => _advanceStep(i + 1), t)
       );
-      const _clearSeq = () => { _seqDone = true; _seqTimers.forEach(clearTimeout); };
+      // When analysis returns: cancel timers and mark all remaining steps done,
+      // then fade the list out before it is removed from the DOM.
+      const _clearSeq = () => {
+        _seqDone = true;
+        _seqTimers.forEach(clearTimeout);
+        if (statusEl.isConnected) {
+          statusEl.querySelectorAll('.ws-step').forEach(el => {
+            el.classList.remove('ws-step--active');
+            el.classList.add('ws-step--done');
+          });
+          // Brief fade-out so the list doesn't vanish abruptly
+          setTimeout(() => { if (statusEl.isConnected) statusEl.classList.add('ws-analysis-steps--fading'); }, 120);
+        }
+      };
 
       // ── Phase 1: Analysis ──────────────────────────────────────────────────────
       // Metadata extraction + AI analysis only. Failure here is a true analysis
@@ -4868,12 +5036,17 @@
       // Analysis cards render in the overview panel, not the chat timeline.
       const _liveOvCards = document.getElementById('col-overview-cards');
       if (_liveOvCards) {
-        _liveOvCards.innerHTML = `<div class="rw-overview-wrap" data-artifact-id="${esc(_localArtifactId)}" data-artifact-type="analysis">${renderMatchOutput(analysis)}</div>`;
+        // rw-analysis-arrive: brief fade-in so the analysis appears calmly
+        // rather than snapping in. Animation is defined in styles.css.
+        _liveOvCards.innerHTML = `<div class="rw-overview-wrap rw-analysis-arrive" data-artifact-id="${esc(_localArtifactId)}" data-artifact-type="analysis">${renderMatchOutput(analysis)}</div>`;
         _initCompSnapshot(_liveOvCards);
         const _liveRole = allRoles.find(r => r.id === role.id) || role;
         _renderRoleHeader(_liveRole);
         // Refresh decision capture card in case analysis was the first trigger
         _renderDecisionCapture(_liveRole);
+        // Render blocker checklist + decision history (Decision Layer V1)
+        _renderBlockersSection(_liveRole).catch(() => {});
+        _renderDecisionHistoryDL(_liveRole).catch(() => {});
         // Render rail + JD section — wrap was just replaced, slots must be re-created
         renderRail(_liveRole);
         if (_liveRole.job_description_raw) {
@@ -4976,6 +5149,20 @@
                 .then(() => { role._pendingRecruiter = null; console.log('[_doSave] step 3: recruiter link SUCCESS'); })
                 .catch(err => { role._pendingRecruiter = null; console.error('[_doSave] step 3: recruiter link FAILED (non-blocking) —', err); });
             }
+
+            // Auto-detect recruiter/hiring-contact from JD text (and job URL as fallback).
+            // runRecruiterAutoDetection guards internally: exits immediately if the role
+            // already has a role_recruiters row, so this is safe to call unconditionally
+            // even when step 3 ran. This is the PRIMARY wiring point for the workspace
+            // paste flow — saveRole() (Add JD modal) has its own equivalent call.
+            console.log('[_doSave] step 3b: recruiter auto-detect — start', {
+              roleId:      role.id,
+              textLen:     text ? text.length : 0,
+              textSnippet: text ? text.slice(0, 120).replace(/\n/g, '↵') : '(empty)',
+            });
+            runRecruiterAutoDetection(role, text)
+              .then(() => console.log('[_doSave] step 3b: recruiter auto-detect complete'))
+              .catch(err => console.error('[_doSave] step 3b: recruiter auto-detect FAILED (non-blocking) —', err));
 
             // Back-fill the initial JD paste into role_conversations.
             console.log('[_doSave] step 4: wsAddMessage backfill — start');
@@ -6291,6 +6478,9 @@
           let msg;
           if (result.linked) {
             msg = `Recruiter email captured — linked to ${extracted.name || extracted.email}.`;
+            // Refresh recruiter meta in doc header and inbox card immediately
+            _refreshDocRecruiterMeta(role);
+            renderInbox(allRoles);
           } else if (result.reason === 'already_linked') {
             msg = 'Recruiter email captured.';
           } else {
@@ -6317,6 +6507,11 @@
           const msg = result.linked ? `Linked to ${extracted.name}.` : 'Recruiter email captured.';
           const st = _wsStatusLine(timelineEl, msg);
           setTimeout(() => { if (st.isConnected) st.classList.add('ws-status-faded'); }, 4000);
+          // Refresh recruiter meta in doc header and inbox card immediately
+          if (result.linked) {
+            _refreshDocRecruiterMeta(role);
+            renderInbox(allRoles);
+          }
         } catch (_) {}
         _wsRefreshMemorySummary(role.id);
       });
@@ -6402,6 +6597,8 @@
                 // Re-render lower overview cards — the wrap was just replaced, so
                 // any previously created slots were destroyed. Re-create and populate.
                 _renderDecisionCapture(role);
+                _renderBlockersSection(role).catch(() => {});    // Decision Layer V1
+                _renderDecisionHistoryDL(role).catch(() => {});  // Decision Layer V1: history
                 renderRail(role);
                 if (role && role.job_description_raw) {
                   _renderJDSection(role, role.job_description_raw);
@@ -6542,6 +6739,8 @@
 
       // ── Decision Capture card — always shown when a role is loaded ────────────
       _renderDecisionCapture(role);
+      _renderBlockersSection(role).catch(() => {});    // Decision Layer V1
+      _renderDecisionHistoryDL(role).catch(() => {});  // Decision Layer V1: history
 
       // ── Rail + JD section — rendered here so the wrap + slots exist first ─────
       // renderRail is also called from selectRole, but that fires synchronously
@@ -6929,6 +7128,100 @@
     // Roles without a job description get the workspace view.
     // Roles with a JD use the existing renderRoleDoc path.
     // This is the ONLY entry point to the workspace — do not call renderWorkspaceView directly.
+
+    // ─── Recruiter meta line refresh ──────────────────────────────────────────
+    // Populates (or clears) #doc-meta-recruiter from the role's current
+    // role_recruiters data. Safe to call at any time after the role doc HTML
+    // has been rendered. Also called after email-confirm recruiter linking so
+    // the header updates without a full re-render.
+    function _refreshDocRecruiterMeta(role) {
+      const _recMetaEl = document.getElementById('doc-meta-recruiter');
+      if (!_recMetaEl) return;
+      const _recRaw = role.role_recruiters?.[0]?.recruiters || null;
+      if (!_recRaw || !_recRaw.name) {
+        _recMetaEl.style.display = 'none';
+        _recMetaEl.innerHTML = '';
+        return;
+      }
+
+      // Identity line — name (bold; also a link if profile URL exists)
+      const _rNameHtml = _recRaw.linkedin_url
+        ? `<a href="${esc(_recRaw.linkedin_url)}" target="_blank" rel="noopener" class="doc-meta-recruiter-link">${esc(_recRaw.name)}</a>`
+        : `<strong style="font-weight:500;color:var(--text);">${esc(_recRaw.name)}</strong>`;
+      // Company — dot separator matches "Name · Company · Type" scan pattern
+      const _rCompanyHtml = _recRaw.company
+        ? ` <span class="doc-meta-recruiter-company">· ${esc(_recRaw.company)}</span>`
+        : '';
+
+      // Type badge — show stored value (including Unknown when explicit);
+      // only suppress Unknown when it comes from the heuristic fallback.
+      const _storedType = _recRaw.recruiter_type;
+      const _rType      = _storedType
+        || (_recruiterTypeLabel(_recRaw) !== 'Unknown' ? _recruiterTypeLabel(_recRaw) : null);
+      const _rTypeHtml  = _rType
+        ? ` <span class="doc-meta-rec-type">${esc(_rType)}</span>`
+        : '';
+
+      // Email sub-line
+      const _rEmailHtml = _recRaw.email
+        ? `<div class="doc-meta-rec-detail"><a href="mailto:${esc(_recRaw.email)}">${esc(_recRaw.email)}</a></div>`
+        : '';
+
+      // Profile link — explicit visible link (LinkedIn ↗ or Profile ↗)
+      const _rProfileHtml = _recRaw.linkedin_url
+        ? `<div class="doc-meta-rec-detail"><a href="${esc(_recRaw.linkedin_url)}" target="_blank" rel="noopener">${_recRaw.linkedin_url.includes('linkedin.com') ? 'LinkedIn' : 'Profile'} ↗</a></div>`
+        : '';
+
+      // Last interaction — priority: newest role event > recruiter link date > role created_at
+      const _lastEvDate = role.role_updates?.[0]?.created_at
+        || role.role_recruiters?.[0]?.created_at
+        || role.created_at
+        || null;
+      const _rLastHtml = _lastEvDate
+        ? `<div class="doc-meta-rec-detail">Last interaction: ${_rcRelativeDate(_lastEvDate)}</div>`
+        : '';
+
+      // ── History facts — derived from allRecruiters (already in memory) ──
+      const _recFull   = allRecruiters.find(r => r.id === _recRaw.id);
+      const _recRoles  = _recFull?.roles || [];
+      let   _historyHtml = '';
+
+      if (_recRoles.length > 1) {
+        const _total     = _recRoles.length;
+        const _applied   = _recRoles.filter(r => r._appliedDate).length;
+        const _responses = _recRoles.filter(r => r._firstResponseDate).length;
+
+        // Last activity across OTHER linked roles (exclude current)
+        let _lastDate = null;
+        for (const _r of _recRoles) {
+          if (_r.id === role.id) continue;
+          const _d = _r.role_updates?.[0]?.created_at || _r.created_at;
+          if (_d && (!_lastDate || _d > _lastDate)) _lastDate = _d;
+        }
+        const _daysSince = _lastDate
+          ? Math.floor((Date.now() - new Date(_lastDate).getTime()) / 86400000)
+          : null;
+
+        const _facts = [];
+        _facts.push(`${_total} role${_total !== 1 ? 's' : ''}`);
+        if (_applied   > 0) _facts.push(`${_applied} applied`);
+        if (_responses > 0) _facts.push(`${_responses} response${_responses !== 1 ? 's' : ''}`);
+        if (_facts.length < 3 && _daysSince !== null && _daysSince > 1) {
+          _facts.push(`Last active ${_daysSince}d ago`);
+        }
+
+        const _safeId   = esc(_recRaw.id);
+        const _factsStr = _facts.slice(0, 3).join(' · ');
+        _historyHtml = `<div class="doc-meta-rec-history">` +
+          `<span class="doc-meta-rec-history-link" role="button" tabindex="0" ` +
+          `onclick="_openRecruiterById('${_safeId}')" ` +
+          `onkeydown="if(event.key==='Enter')_openRecruiterById('${_safeId}')">` +
+          `${_factsStr}</span></div>`;
+      }
+
+      _recMetaEl.innerHTML = `Recruiter: ${_rNameHtml}${_rCompanyHtml}${_rTypeHtml}${_rEmailHtml}${_rProfileHtml}${_rLastHtml}${_historyHtml}`;
+      _recMetaEl.style.display = '';
+    }
 
     async function renderRoleDoc(role) {
       // Exit intake mode if active (user selected a role while Add JD was open)
@@ -7328,91 +7621,7 @@
       `;
 
       // ── Fill recruiter meta line (synchronous — data already in role.role_recruiters) ──
-      {
-        const _recMetaEl = document.getElementById('doc-meta-recruiter');
-        const _recRaw    = role.role_recruiters?.[0]?.recruiters || null;
-        if (_recMetaEl && _recRaw && _recRaw.name) {
-          // Identity line — name (bold; also a link if profile URL exists)
-          const _rNameHtml = _recRaw.linkedin_url
-            ? `<a href="${esc(_recRaw.linkedin_url)}" target="_blank" rel="noopener" class="doc-meta-recruiter-link">${esc(_recRaw.name)}</a>`
-            : `<strong style="font-weight:500;color:var(--text);">${esc(_recRaw.name)}</strong>`;
-          // Company — dot separator matches "Name · Company · Type" scan pattern
-          const _rCompanyHtml = _recRaw.company
-            ? ` <span class="doc-meta-recruiter-company">· ${esc(_recRaw.company)}</span>`
-            : '';
-
-          // Type badge — show stored value (including Unknown when explicit);
-          // only suppress Unknown when it comes from the heuristic fallback.
-          const _storedType  = _recRaw.recruiter_type;  // null = not set in DB
-          const _rType       = _storedType              // explicit DB value (any, including Unknown)
-            || (_recruiterTypeLabel(_recRaw) !== 'Unknown' ? _recruiterTypeLabel(_recRaw) : null);
-          const _rTypeHtml   = _rType
-            ? ` <span class="doc-meta-rec-type">${esc(_rType)}</span>`
-            : '';
-
-          // Email sub-line
-          const _rEmailHtml = _recRaw.email
-            ? `<div class="doc-meta-rec-detail"><a href="mailto:${esc(_recRaw.email)}">${esc(_recRaw.email)}</a></div>`
-            : '';
-
-          // Profile link — explicit visible link (LinkedIn ↗ or Profile ↗)
-          const _rProfileHtml = _recRaw.linkedin_url
-            ? `<div class="doc-meta-rec-detail"><a href="${esc(_recRaw.linkedin_url)}" target="_blank" rel="noopener">${_recRaw.linkedin_url.includes('linkedin.com') ? 'LinkedIn' : 'Profile'} ↗</a></div>`
-            : '';
-
-          // Last interaction — priority: newest role event > recruiter link date > role created_at
-          const _lastEvDate  = role.role_updates?.[0]?.created_at
-            || role.role_recruiters?.[0]?.created_at
-            || role.created_at
-            || null;
-          const _rLastHtml  = _lastEvDate
-            ? `<div class="doc-meta-rec-detail">Last interaction: ${_rcRelativeDate(_lastEvDate)}</div>`
-            : '';
-
-          // ── History facts — derived from allRecruiters (already in memory) ──
-          const _recFull   = allRecruiters.find(r => r.id === _recRaw.id);
-          const _recRoles  = _recFull?.roles || [];
-          let   _historyHtml = '';
-
-          if (_recRoles.length > 1) {
-            const _total     = _recRoles.length;
-            const _applied   = _recRoles.filter(r => r._appliedDate).length;
-            const _responses = _recRoles.filter(r => r._firstResponseDate).length;
-
-            // Last activity across OTHER linked roles (exclude current)
-            let _lastDate = null;
-            for (const _r of _recRoles) {
-              if (_r.id === role.id) continue;
-              const _d = _r.role_updates?.[0]?.created_at || _r.created_at;
-              if (_d && (!_lastDate || _d > _lastDate)) _lastDate = _d;
-            }
-            const _daysSince = _lastDate
-              ? Math.floor((Date.now() - new Date(_lastDate).getTime()) / 86400000)
-              : null;
-
-            // Build fact tokens (max 3)
-            const _facts = [];
-            _facts.push(`${_total} role${_total !== 1 ? 's' : ''}`);
-            if (_applied   > 0) _facts.push(`${_applied} applied`);
-            if (_responses > 0) _facts.push(`${_responses} response${_responses !== 1 ? 's' : ''}`);
-            if (_facts.length < 3 && _daysSince !== null && _daysSince > 1) {
-              _facts.push(`Last active ${_daysSince}d ago`);
-            }
-
-            // Wrap in a link to the recruiter detail panel
-            const _safeId   = esc(_recRaw.id);
-            const _factsStr = _facts.slice(0, 3).join(' · ');
-            _historyHtml = `<div class="doc-meta-rec-history">` +
-              `<span class="doc-meta-rec-history-link" role="button" tabindex="0" ` +
-              `onclick="_openRecruiterById('${_safeId}')" ` +
-              `onkeydown="if(event.key==='Enter')_openRecruiterById('${_safeId}')">` +
-              `${_factsStr}</span></div>`;
-          }
-
-          _recMetaEl.innerHTML = `Recruiter: ${_rNameHtml}${_rCompanyHtml}${_rTypeHtml}${_rEmailHtml}${_rProfileHtml}${_rLastHtml}${_historyHtml}`;
-          _recMetaEl.style.display = '';
-        }
-      }
+      _refreshDocRecruiterMeta(role);
 
       // ── Fill start timeline meta line (synchronous — data already on role) ──
       {
@@ -8878,6 +9087,360 @@
       });
     }
 
+    // ─── Decision Layer V1 — Blocker detection ────────────────────────────────
+    // Controlled set of blocker types the system can detect from analysis data.
+    const BLOCKER_DEFS = {
+      production_coding: 'Production coding required',
+      salary_missing:    'Salary not stated',
+      hybrid_onsite:     'Hybrid / on-site requirement',
+      scope_unclear:     'Scope unclear',
+      domain_concern:    'Domain or product concern',
+      marketing_heavy:   'Marketing-heavy',
+    };
+
+    // Analyses a role's analysis output to surface likely blockers.
+    // Only produces blockers that can be inferred reliably — never invents.
+    // Returns: Array<{ key, label, evidence: string|null }>
+    function _detectBlockers(role) {
+      if (!role) return [];
+      const output  = role.latest_match_output || role.analysis || {};
+      const pd      = output.practical_details  || {};
+      const fs      = Array.isArray(output.friction_signals)   ? output.friction_signals   : [];
+      const risks   = Array.isArray(output.risks_and_unknowns) ? output.risks_and_unknowns : [];
+      const jdRaw   = (role.job_description_raw || '').toLowerCase();
+      const detected = [];
+
+      // ── 1. Production coding ─────────────────────────────────────────────────
+      const CODING_PHRASES = [
+        'production code', 'production ui', 'write code', 'write production',
+        'frontend code', 'front-end code', 'hands-on code', 'hands-on front-end',
+        'hands-on frontend', 'full-stack designer', 'design and code',
+        'implement ui', 'build the ui', 'engineer the ', 'engineer our',
+      ];
+      const _codingFs = fs.find(f => {
+        const t = ((f.label || '') + ' ' + (f.text || '')).toLowerCase();
+        return CODING_PHRASES.some(p => t.includes(p));
+      });
+      const _codingInJd = CODING_PHRASES.some(p => jdRaw.includes(p));
+      if (_codingFs || _codingInJd) {
+        detected.push({
+          key:      'production_coding',
+          label:    BLOCKER_DEFS.production_coding,
+          evidence: _codingFs ? (_codingFs.label || _codingFs.text || null) : null,
+        });
+      }
+
+      // ── 2. Salary missing ────────────────────────────────────────────────────
+      const _salaryAnnual = (pd.salary_annual || '').toLowerCase();
+      const _salaryMissing = !pd.salary_annual
+        || _salaryAnnual === 'not stated'
+        || _salaryAnnual.includes('not stated')
+        || _salaryAnnual.includes('not specified')
+        || _salaryAnnual.includes('competitive')
+        || _salaryAnnual.includes('tbc')
+        || _salaryAnnual.includes('doe');
+      if (_salaryMissing && !role.salary_text_raw) {
+        detected.push({
+          key:      'salary_missing',
+          label:    BLOCKER_DEFS.salary_missing,
+          evidence: null,
+        });
+      }
+
+      // ── 3. Hybrid / on-site ──────────────────────────────────────────────────
+      const _wm  = (role.work_model || '').toLowerCase();
+      const _loc = (pd.location    || '').toLowerCase();
+      const _pat = (pd.working_pattern || '').toLowerCase();
+      const _isHybridOnsite =
+        _wm === 'hybrid' || _wm === 'onsite' || _wm === 'on-site' ||
+        _loc.includes('hybrid') || _loc.includes('on-site') || _loc.includes('onsite') ||
+        _pat.includes('hybrid') || _pat.includes('in-office') || _pat.includes('on-site') ||
+        _pat.includes('days per week in');
+      if (_isHybridOnsite) {
+        const _evid = [pd.location, pd.working_pattern].filter(Boolean).join(' · ') || null;
+        detected.push({
+          key:      'hybrid_onsite',
+          label:    BLOCKER_DEFS.hybrid_onsite,
+          evidence: _evid,
+        });
+      }
+
+      // ── 4. Scope unclear ─────────────────────────────────────────────────────
+      const _scopeClar = output.scope_clarity || null;
+      const _scopeFs   = fs.find(f => {
+        const t = ((f.label || '') + ' ' + (f.text || '')).toLowerCase();
+        return t.includes('scope') || t.includes('unclear') || t.includes('undefined role');
+      });
+      if (_scopeClar === 'vague' || _scopeFs) {
+        const _evid = _scopeFs
+          ? (_scopeFs.label || _scopeFs.text || null)
+          : null;
+        detected.push({
+          key:      'scope_unclear',
+          label:    BLOCKER_DEFS.scope_unclear,
+          evidence: _evid,
+        });
+      }
+
+      // ── 5. Domain concern (friction signals only — never guess) ──────────────
+      const DOMAIN_PHRASES = [
+        'domain mismatch', 'wrong domain', 'b2c product', 'e-commerce', 'gaming',
+        'brand design', 'marketing design', 'consumer product', 'not b2b',
+      ];
+      const _domainFs = fs.find(f => {
+        const t = ((f.label || '') + ' ' + (f.text || '')).toLowerCase();
+        return DOMAIN_PHRASES.some(p => t.includes(p));
+      });
+      if (_domainFs) {
+        detected.push({
+          key:      'domain_concern',
+          label:    BLOCKER_DEFS.domain_concern,
+          evidence: _domainFs.label || _domainFs.text || null,
+        });
+      }
+
+      // ── 6. Marketing heavy (archetype + friction signals required) ────────────
+      const _arch  = (output.role_archetype?.primary || '').toLowerCase();
+      const _mktFs = fs.find(f => {
+        const t = ((f.label || '') + ' ' + (f.text || '')).toLowerCase();
+        return t.includes('marketing') || t.includes('brand campaign') || t.includes('campaign design');
+      });
+      if (_arch.includes('growth') && _mktFs) {
+        detected.push({
+          key:      'marketing_heavy',
+          label:    BLOCKER_DEFS.marketing_heavy,
+          evidence: _mktFs.label || _mktFs.text || null,
+        });
+      }
+
+      return detected;
+    }
+
+    // ─── Decision Layer V1 — Blockers section UI ─────────────────────────────
+    // Renders "Potential blockers" in the #ws-blockers-section slot.
+    // Detects from analysis, loads any saved user states, renders confirm checklist.
+    async function _renderBlockersSection(role) {
+      const el = document.getElementById('ws-blockers-section');
+      if (!el) return;
+
+      // Require analysis data; hide for temp/unanalysed roles
+      const output = role?.latest_match_output || role?.analysis || null;
+      if (!output || role?._isTemp) {
+        el.style.display = 'none';
+        el.innerHTML = '';
+        return;
+      }
+
+      const detected = _detectBlockers(role);
+      if (detected.length === 0) {
+        el.style.display = 'none';
+        el.innerHTML = '';
+        return;
+      }
+
+      // Load saved states and user boundaries in parallel
+      const [savedBlockers, boundaries] = await Promise.all([
+        _loadRoleBlockers(role.id),
+        _loadUserBoundaries(),
+      ]);
+
+      const blockerStateMap = {};
+      savedBlockers.forEach(b => { blockerStateMap[b.blocker_key] = b; });
+      const boundaryKeys = new Set(boundaries.map(b => b.blocker_key));
+
+      const itemsHtml = detected.map(blocker => {
+        const saved      = blockerStateMap[blocker.key] || null;
+        const state      = saved?.user_state || null;
+        const isBoundary = boundaryKeys.has(blocker.key);
+        const stateClass = state ? ` dl-blocker-item--${state}` : '';
+
+        const evidenceHtml = blocker.evidence
+          ? `<div class="dl-blocker-evidence">${esc(blocker.evidence)}</div>`
+          : '';
+
+        const boundaryHtml = isBoundary
+          ? `<span class="dl-boundary-indicator">&#x25CF; Saved boundary</span>`
+          : (state === 'hard'
+              ? `<button class="dl-boundary-cta" data-bkey="${esc(blocker.key)}" data-blabel="${esc(blocker.label)}">Save as boundary</button>`
+              : '');
+
+        return `
+          <div class="dl-blocker-item${stateClass}"
+               data-bkey="${esc(blocker.key)}"
+               data-blabel="${esc(blocker.label)}"
+               data-bevid="${esc(blocker.evidence || '')}">
+            <div class="dl-blocker-top">
+              <span class="dl-blocker-label">${esc(blocker.label)}</span>
+              ${evidenceHtml}
+            </div>
+            <div class="dl-blocker-actions">
+              <button class="dl-blocker-btn${state === 'hard'  ? ' dl-blocker-btn--active' : ''}" data-state="hard">Hard blocker</button>
+              <button class="dl-blocker-btn${state === 'soft'  ? ' dl-blocker-btn--active' : ''}" data-state="soft">Soft concern</button>
+              <button class="dl-blocker-btn${state === 'clear' ? ' dl-blocker-btn--active' : ''}" data-state="clear">Not an issue</button>
+            </div>
+            <div class="dl-blocker-boundary-row">${boundaryHtml}</div>
+          </div>`;
+      }).join('');
+
+      el.innerHTML = `
+        <div class="dl-blockers-section">
+          <div class="dl-blockers-header">
+            <span class="dl-blockers-title">Potential blockers</span>
+            <span class="dl-blockers-hint">Confirm which apply to you</span>
+          </div>
+          <div class="dl-blockers-list">${itemsHtml}</div>
+        </div>`;
+      el.style.display = '';
+
+      // Wire state buttons
+      el.querySelectorAll('.dl-blocker-item').forEach(itemEl => {
+        const bKey  = itemEl.dataset.bkey;
+        const bLbl  = itemEl.dataset.blabel;
+        const bEvid = itemEl.dataset.bevid || null;
+
+        itemEl.querySelectorAll('.dl-blocker-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const newState        = btn.dataset.state;
+            const isCurrentActive = btn.classList.contains('dl-blocker-btn--active');
+            const stateToSet      = isCurrentActive ? null : newState;
+
+            // Optimistic UI update
+            itemEl.className = 'dl-blocker-item' + (stateToSet ? ` dl-blocker-item--${stateToSet}` : '');
+            itemEl.querySelectorAll('.dl-blocker-btn').forEach(b => {
+              b.classList.toggle('dl-blocker-btn--active', !isCurrentActive && b.dataset.state === newState);
+            });
+
+            // Persist
+            await _upsertRoleBlocker(role.id, bKey, bLbl, bEvid || null, stateToSet);
+
+            // Update boundary row
+            const bRow = itemEl.querySelector('.dl-blocker-boundary-row');
+            if (bRow) {
+              if (boundaryKeys.has(bKey)) {
+                bRow.innerHTML = `<span class="dl-boundary-indicator">&#x25CF; Saved boundary</span>`;
+              } else if (stateToSet === 'hard') {
+                bRow.innerHTML = `<button class="dl-boundary-cta" data-bkey="${esc(bKey)}" data-blabel="${esc(bLbl)}">Save as boundary</button>`;
+                const newCta = bRow.querySelector('.dl-boundary-cta');
+                if (newCta) _wireBoundaryCta(newCta, bKey, bLbl, boundaryKeys, bRow);
+              } else {
+                bRow.innerHTML = '';
+              }
+            }
+          });
+        });
+
+        // Wire any pre-existing boundary CTA
+        const existingCta = itemEl.querySelector('.dl-boundary-cta');
+        if (existingCta) {
+          _wireBoundaryCta(existingCta, bKey, bLbl, boundaryKeys, itemEl.querySelector('.dl-blocker-boundary-row'));
+        }
+      });
+    }
+
+    // Wires the "Save as boundary" button on a blocker item.
+    function _wireBoundaryCta(btn, bKey, bLbl, boundaryKeys, bRowEl) {
+      if (!btn) return;
+      btn.addEventListener('click', async () => {
+        btn.disabled    = true;
+        btn.textContent = 'Saving…';
+        await _saveUserBoundary(bKey, bLbl, 'hard');
+        boundaryKeys.add(bKey);
+        if (bRowEl) bRowEl.innerHTML = `<span class="dl-boundary-indicator">&#x25CF; Boundary saved</span>`;
+      });
+    }
+
+    // ─── Decision Layer V1 — Decision History Read View ───────────────────────
+    // Renders per-role decision history (role_decision_snapshots) into
+    // #ws-decision-history-dl. Shows each snapshot: decision type, timestamp,
+    // confirmed blockers, skip reason, and notes. Hidden when no records exist.
+    async function _renderDecisionHistoryDL(role) {
+      const el = document.getElementById('ws-decision-history-dl');
+      if (!el) return;
+
+      if (!role?.id || role._isTemp) {
+        el.style.display = 'none';
+        el.innerHTML = '';
+        return;
+      }
+
+      let snaps = [];
+      try {
+        const { data, error } = await db
+          .from('role_decision_snapshots')
+          .select('id, user_decision, confirmed_blockers, skip_reason, skip_reason_other, notes, created_at')
+          .eq('role_id', role.id)
+          .order('created_at', { ascending: false });
+        if (!error) snaps = data || [];
+      } catch (_) {}
+
+      if (snaps.length === 0) {
+        el.style.display = 'none';
+        el.innerHTML = '';
+        return;
+      }
+
+      const DEC_LABELS = { skip: 'Skipped', save: 'Saved', apply: 'Applied' };
+      const DEC_CLS    = { skip: 'dl-dh-badge--skip', save: 'dl-dh-badge--save', apply: 'dl-dh-badge--apply' };
+
+      // Build skip reason label map from SKIP_REASONS constant
+      const SKIP_REASON_LABELS = {};
+      SKIP_REASONS.forEach(r => { SKIP_REASON_LABELS[r.key] = r.label; });
+
+      const fmt = iso => {
+        try {
+          return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        } catch (_) { return iso?.slice(0, 10) || '—'; }
+      };
+
+      const entriesHtml = snaps.map(snap => {
+        const decLabel    = DEC_LABELS[snap.user_decision] || snap.user_decision;
+        const decCls      = DEC_CLS[snap.user_decision]    || '';
+        const dateStr     = fmt(snap.created_at);
+        const blockers    = Array.isArray(snap.confirmed_blockers) ? snap.confirmed_blockers : [];
+
+        const blockersHtml = blockers.length
+          ? `<div class="dl-dh-entry-blockers">${
+              blockers.map(b =>
+                `<span class="dl-dh-blocker-tag dl-dh-blocker-tag--${esc(b.state || 'soft')}">${esc(b.label)}</span>`
+              ).join('')
+            }</div>`
+          : '';
+
+        const skipReasonLabel = snap.skip_reason
+          ? (SKIP_REASON_LABELS[snap.skip_reason] || snap.skip_reason)
+          : null;
+        const skipReasonHtml = skipReasonLabel
+          ? `<div class="dl-dh-entry-reason">Reason: ${esc(skipReasonLabel)}${snap.skip_reason_other ? ` — ${esc(snap.skip_reason_other)}` : ''}</div>`
+          : '';
+
+        const notesHtml = snap.notes
+          ? `<div class="dl-dh-entry-notes">${esc(snap.notes)}</div>`
+          : '';
+
+        return `
+          <div class="dl-dh-entry">
+            <div class="dl-dh-entry-header">
+              <span class="dl-dh-badge ${decCls}">${esc(decLabel)}</span>
+              <span class="dl-dh-entry-date">${esc(dateStr)}</span>
+            </div>
+            ${blockersHtml}
+            ${skipReasonHtml}
+            ${notesHtml}
+          </div>`;
+      }).join('');
+
+      el.innerHTML = `
+        <div class="dl-history-section">
+          <div class="dl-history-header">
+            <span class="dl-history-title">Decision history</span>
+            <span class="dl-history-count">${snaps.length} record${snaps.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="dl-history-entries">${entriesHtml}</div>
+        </div>`;
+      el.style.display = '';
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Persists a verdict_state update to DB, syncs local state, logs to timeline.
     async function setDecision(roleId, state) {
       try {
@@ -9337,6 +9900,11 @@
 
     function closeAddModal() {
       document.getElementById('modal-add').classList.add('hidden');
+      // Reset analysis trace state so it's clean on next open
+      const _traceEl = document.getElementById('add-analysis-trace');
+      const _formEl  = document.getElementById('add-modal-form-body');
+      if (_traceEl) { _traceEl.classList.add('hidden'); _traceEl.classList.remove('add-analysis-trace--done'); _traceEl.innerHTML = ''; }
+      if (_formEl)  { _formEl.classList.remove('add-modal-form--hidden'); }
     }
 
     async function saveRole() {
@@ -9415,7 +9983,65 @@
         // ── Step 2: Generate analysis — same path as Match a JD ──────────────
         // callAnalysisAPI() tries AI first, falls back to local automatically.
         btn.textContent = 'Analysing…';
-        const analysis = await callAnalysisAPI(jd);
+
+        // ── Show staged analysis trace in the modal ───────────────────────────
+        // The modal stays open during analysis. Replace the form fields with a
+        // calm step-by-step trace so the user can see what's happening.
+        const _traceEl = document.getElementById('add-analysis-trace');
+        const _modalFormEl = document.getElementById('add-modal-form-body');
+        if (_traceEl) {
+          _traceEl.innerHTML = _ANALYSIS_STAGES.map((s, i) =>
+            `<div class="ws-step${i === 0 ? ' ws-step--active' : ''}" data-step="${i}">` +
+              `<span class="ws-step-check"></span>` +
+              `<span class="ws-step-label">${s}</span>` +
+            `</div>`
+          ).join('');
+          _traceEl.classList.remove('hidden');
+          _traceEl.classList.remove('add-analysis-trace--done');
+        }
+        if (_modalFormEl) _modalFormEl.classList.add('add-modal-form--hidden');
+
+        let _modalTraceDone = false;
+        const _modalTraceTimers = _ANALYSIS_TIMINGS.map((t, i) => setTimeout(() => {
+          if (_modalTraceDone || !_traceEl?.isConnected) return;
+          const _stepEls = _traceEl.querySelectorAll('.ws-step');
+          for (let j = 0; j <= i; j++) {
+            _stepEls[j]?.classList.remove('ws-step--active');
+            _stepEls[j]?.classList.add('ws-step--done');
+          }
+          if (i + 1 < _stepEls.length) {
+            _stepEls[i + 1]?.classList.remove('ws-step--done');
+            _stepEls[i + 1]?.classList.add('ws-step--active');
+          }
+        }, t));
+        const _clearModalTrace = (success = false) => {
+          _modalTraceDone = true;
+          _modalTraceTimers.forEach(clearTimeout);
+          if (!_traceEl?.isConnected) return;
+          // Mark all remaining steps done immediately
+          _traceEl.querySelectorAll('.ws-step').forEach(el => {
+            el.classList.remove('ws-step--active');
+            el.classList.add('ws-step--done');
+          });
+          if (success) {
+            // Add done class briefly for a completion moment, then modal closes
+            _traceEl.classList.add('add-analysis-trace--done');
+          } else {
+            // On error: hide trace and restore the form
+            _traceEl.classList.add('hidden');
+            if (_modalFormEl) _modalFormEl.classList.remove('add-modal-form--hidden');
+          }
+        };
+        // ─────────────────────────────────────────────────────────────────────
+
+        let analysis;
+        try {
+          analysis = await callAnalysisAPI(jd);
+          _clearModalTrace(true);
+        } catch (_analysisErr) {
+          _clearModalTrace(false);
+          throw _analysisErr;
+        }
         const analysisSource = analysis?._source || 'local';
 
         // ── Step 2b: Company/title backfill from AI output ──────────────────
@@ -9529,6 +10155,15 @@
       } catch (e) {
         errEl.textContent = e.message || 'Something went wrong.';
         errEl.classList.remove('hidden');
+        // Ensure trace is hidden and form is restored on any non-analysis error
+        // (analysis errors are handled inside the try block via _clearModalTrace).
+        const _traceElCatch = document.getElementById('add-analysis-trace');
+        const _formElCatch  = document.getElementById('add-modal-form-body');
+        if (_traceElCatch && !_traceElCatch.classList.contains('hidden')) {
+          _traceElCatch.classList.add('hidden');
+          _traceElCatch.classList.remove('add-analysis-trace--done');
+        }
+        if (_formElCatch) _formElCatch.classList.remove('add-modal-form--hidden');
       } finally {
         btn.disabled = false;
         btn.textContent = 'Save JD';
@@ -17777,30 +18412,43 @@
     // ── Recruiter detection from JD text and job URL ─────────────────────────
 
     function detectRecruiterFromJD(jdText) {
-      if (!jdText || jdText.length < 50) return null;
+      const _tag = '[detectRecruiterFromJD]';
+      if (!jdText || jdText.length < 50) {
+        console.log(_tag, 'EARLY EXIT — jdText null or too short', { len: jdText ? jdText.length : 0 });
+        return null;
+      }
 
       let name = null, email = null, linkedin = null;
       let nameConfidence = false;
 
       // === HIGH CONFIDENCE: Explicit recruiter labels ===
+      const labelPatternNames = ['label-colon', 'reach-out-to', 'meet-hiring-team/job-poster'];
       const labelPatterns = [
         // "Recruiter: Jane Smith" / "Contact: Sarah Mitchell" / "TA: Alex Turner"
-        /(?:^|\n)\s*(?:Recruiter|Talent\s+Acquisition|Talent\s+Partner|TA|Hiring\s+Lead|Point\s+of\s+Contact|Contact Person|Hiring\s+Manager)\s*[:\-–]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/m,
+        // Use [ \t]+ (not \s+) in the name capture so it never crosses a line boundary.
+        /(?:^|\n)\s*(?:Recruiter|Talent\s+Acquisition|Talent\s+Partner|TA|Hiring\s+Lead|Point\s+of\s+Contact|Contact Person|Hiring\s+Manager)\s*[:\-–]\s*([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){1,3})/m,
         // "Reach out to Alex Turner" / "Contact Alex Turner"
-        /\bReach\s+out\s+to\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b/,
+        /\bReach\s+out\s+to\s+([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){1,2})\b/,
         // "Meet the hiring team\n\nJane Smith" / "Job poster\nJane Smith"
-        /(?:Meet\s+the\s+hiring\s+team|Job\s+poster|About\s+the\s+recruiter)[^\n]{0,40}\n[\s\n]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})/,
+        // [ \t]+ in the capture group prevents grabbing the job title on the next line
+        // (e.g. "Jane Smith\nRecruiter at Acme" must not capture "Jane Smith\nRecruiter").
+        /(?:Meet\s+the\s+hiring\s+team|Job\s+poster|About\s+the\s+recruiter)[^\n]{0,40}\n[\s\n]*([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){1,2})/,
       ];
-      for (const re of labelPatterns) {
+      for (let pi = 0; pi < labelPatterns.length; pi++) {
+        const re = labelPatterns[pi];
         const m = jdText.match(re);
         if (m && m[1]) {
-          // Reject if name looks like a job title or company (all caps or very long)
           const candidate = m[1].trim();
           if (candidate.length < 50 && !/^[A-Z\s]+$/.test(candidate)) {
             name = candidate;
             nameConfidence = true;
+            console.log(_tag, `label pattern [${labelPatternNames[pi]}] MATCHED — name="${name}"`);
             break;
+          } else {
+            console.log(_tag, `label pattern [${labelPatternNames[pi]}] matched but candidate rejected — candidate="${candidate}"`);
           }
+        } else {
+          console.log(_tag, `label pattern [${labelPatternNames[pi]}] NO MATCH`);
         }
       }
 
@@ -17812,6 +18460,7 @@
         const addr = em[1];
         if (!_genericPre.test(addr.split('@')[0])) {
           email = addr;
+          console.log(_tag, `named email FOUND — "${email}"`);
           // If no name yet, try to derive from email prefix (firstname.lastname only)
           if (!nameConfidence) {
             const dot = addr.split('@')[0].match(/^([a-zA-Z]{2,})\.([a-zA-Z]{2,})$/);
@@ -17820,20 +18469,32 @@
               const ln = dot[2].charAt(0).toUpperCase() + dot[2].slice(1).toLowerCase();
               name = `${fn} ${ln}`;
               nameConfidence = true;
+              console.log(_tag, `name derived from email prefix — name="${name}"`);
             }
           }
           break;
         }
       }
+      if (!email) console.log(_tag, 'named email — NO MATCH');
 
       // === LinkedIn URL ===
       const liM = jdText.match(/https?:\/\/(?:www\.)?linkedin\.com\/in\/([a-zA-Z0-9_-]+)/);
-      if (liM) linkedin = liM[0];
+      if (liM) {
+        linkedin = liM[0];
+        console.log(_tag, `LinkedIn URL FOUND — "${linkedin}"`);
+      } else {
+        console.log(_tag, 'LinkedIn URL — NO MATCH');
+      }
 
       // Only proceed on high confidence
-      if (!nameConfidence && !email && !linkedin) return null;
+      if (!nameConfidence && !email && !linkedin) {
+        console.log(_tag, 'RETURN NULL — no high-confidence signal found');
+        return null;
+      }
 
-      return { name, email, linkedin };
+      const result = { name, email, linkedin };
+      console.log(_tag, 'RETURN', JSON.stringify(result));
+      return result;
     }
 
     // Extracts recruiter signals from the job URL when the JD text contains nothing useful.
@@ -17915,9 +18576,18 @@
     }
 
     async function runRecruiterAutoDetection(role, jdText) {
+      const _tag = '[runRecruiterAutoDetection]';
+      console.log(_tag, 'ENTER', {
+        roleId:      role?.id,
+        companyName: role?.company_name,
+        jobUrl:      role?.job_url,
+        jdTextLen:   jdText ? jdText.length : 0,
+      });
+
       // ── Detect from JD text (primary) and job URL (supporting) ──────────────
       const jdDetected  = detectRecruiterFromJD(jdText);
       const urlDetected = detectRecruiterFromURL(role.job_url);
+      console.log(_tag, 'detection results', { jdDetected, urlDetected });
 
       // Merge: JD text is authoritative for name/email; URL supplements linkedin + company
       const detected = {
@@ -17926,9 +18596,13 @@
         linkedin:    jdDetected?.linkedin || urlDetected?.linkedin    || null,
         companyHint: urlDetected?.companyHint                          || null,
       };
+      console.log(_tag, 'merged detected', detected);
 
       // Require at least one actionable signal before doing any DB work
-      if (!detected.name && !detected.email && !detected.linkedin) return;
+      if (!detected.name && !detected.email && !detected.linkedin) {
+        console.log(_tag, 'EARLY RETURN — no signal (name/email/linkedin all null)');
+        return;
+      }
 
       // Check if role already has a recruiter link — preserve existing, do not overwrite
       try {
@@ -17937,40 +18611,54 @@
           .select('id')
           .eq('role_id', role.id)
           .limit(1);
-        if (existing && existing.length > 0) return;
-      } catch (_) { return; }
+        if (existing && existing.length > 0) {
+          console.log(_tag, 'EARLY RETURN — role already has recruiter link', existing[0]);
+          return;
+        }
+      } catch (checkErr) {
+        console.error(_tag, 'EARLY RETURN — existing-link check threw', checkErr);
+        return;
+      }
 
       // ── Find matching recruiter (priority: email → linkedin → name+company) ──
       let recruiterId = null;
 
       if (detected.email) {
-        const { data: byEmail } = await db
+        const { data: byEmail, error: emailErr } = await db
           .from('recruiters')
           .select('id')
           .ilike('email', detected.email)
           .limit(1);
+        console.log(_tag, 'match by email', { query: detected.email, result: byEmail, err: emailErr });
         if (byEmail && byEmail.length > 0) recruiterId = byEmail[0].id;
       }
 
       if (!recruiterId && detected.linkedin) {
-        const { data: byLi } = await db
+        const { data: byLi, error: liErr } = await db
           .from('recruiters')
           .select('id')
           .eq('linkedin_url', detected.linkedin)
           .limit(1);
+        console.log(_tag, 'match by linkedin', { query: detected.linkedin, result: byLi, err: liErr });
         if (byLi && byLi.length > 0) recruiterId = byLi[0].id;
       }
 
       if (!recruiterId && detected.name) {
-        const company = role.company_name || null;
+        // Narrow by company only when we have the recruiter's OWN company (agency hint from URL).
+        // Do NOT filter by role.company_name — that is the *hiring* company, not the recruiter's
+        // employer, and would incorrectly exclude agency recruiters on every name-match attempt.
         let q = db.from('recruiters').select('id').ilike('name', detected.name);
-        if (company) q = q.ilike('company', `%${company}%`);
-        const { data: byName } = await q.limit(1);
+        if (detected.companyHint) q = q.ilike('company', `%${detected.companyHint}%`);
+        const { data: byName, error: nameErr } = await q.limit(1);
+        console.log(_tag, 'match by name', { query: detected.name, companyHint: detected.companyHint, result: byName, err: nameErr });
         if (byName && byName.length > 0) recruiterId = byName[0].id;
       }
 
+      console.log(_tag, 'match phase complete', { recruiterId });
+
       // ── Create new recruiter if no match ──────────────────────────────────
       if (!recruiterId && detected.name) {
+        console.log(_tag, 'no match — attempting CREATE', { name: detected.name, company: detected.companyHint });
         const { data: newRec, error: re } = await db.from('recruiters').insert({
           name:         detected.name,
           // Use agency company hint if available — this IS the recruiter's employer.
@@ -17979,21 +18667,44 @@
           email:        detected.email    || null,
           linkedin_url: detected.linkedin || null,
         }).select('id').single();
-        if (re || !newRec) return;
+        console.log(_tag, 'CREATE result', { newRec, error: re });
+        if (re || !newRec) {
+          console.error(_tag, 'EARLY RETURN — recruiter INSERT failed', re);
+          return;
+        }
         recruiterId = newRec.id;
       }
 
-      if (!recruiterId) return;
+      if (!recruiterId) {
+        console.log(_tag, 'EARLY RETURN — no recruiter id (no name signal + no match)');
+        return;
+      }
 
       // ── Link role to recruiter ────────────────────────────────────────────
       // GUARD RAIL: recruiters + role_recruiters IS the Person layer for Role Workspace.
       //             Do NOT create role_people or any parallel person storage.
       //             All person objects (recruiters, hiring managers, interviewers) go here.
-      await db.from('role_recruiters').insert({
+      console.log(_tag, 'attempting role_recruiters INSERT', { roleId: role.id, recruiterId });
+      const { error: linkErr } = await db.from('role_recruiters').insert({
         role_id:      role.id,
         recruiter_id: recruiterId,
         link_source:  'auto',
-      }).then(() => {}).catch(() => {});
+      });
+      if (linkErr) {
+        console.error(_tag, 'role_recruiters INSERT failed', linkErr);
+      } else {
+        console.log(_tag, 'role_recruiters INSERT SUCCESS — link created');
+      }
+
+      // Final DB truth check — confirm both rows exist
+      const [recCheck, linkCheck] = await Promise.all([
+        db.from('recruiters').select('id, name').eq('id', recruiterId).single(),
+        db.from('role_recruiters').select('id').eq('role_id', role.id).eq('recruiter_id', recruiterId).single(),
+      ]);
+      console.log(_tag, 'FINAL DB CHECK', {
+        recruiterRow:  recCheck.data  || recCheck.error?.message,
+        linkRow:       linkCheck.data || linkCheck.error?.message,
+      });
 
       // Log event
       const recName = detected.name || detected.email || detected.linkedin || 'recruiter';
@@ -18525,7 +19236,7 @@
             updated_at: new Date().toISOString(),
           }).eq('id', rec.id);
 
-          // Update local cache in-place
+          // Update allRecruiters cache in-place
           const idx = allRecruiters.findIndex(r => r.id === rec.id);
           if (idx !== -1) {
             allRecruiters[idx] = {
@@ -18536,6 +19247,33 @@
               linkedin_url: linkedin_url || null, website_url: website_url || null,
             };
           }
+
+          // Also propagate into allRoles nested role_recruiters data so the doc
+          // header (doc-meta-recruiter) reflects the new name/email immediately.
+          const _updatedRecruiterFields = {
+            name, company: company || null, recruiter_type: rtype,
+            email: email || null, office_phone: office_phone || null,
+            mobile_phone: mobile_phone || null,
+            linkedin_url: linkedin_url || null, website_url: website_url || null,
+          };
+          allRoles = allRoles.map(r => {
+            if (!r.role_recruiters?.some(l => l.recruiter_id === rec.id)) return r;
+            return {
+              ...r,
+              role_recruiters: r.role_recruiters.map(l => {
+                if (l.recruiter_id !== rec.id) return l;
+                return { ...l, recruiters: { ...(l.recruiters || {}), id: rec.id, ..._updatedRecruiterFields } };
+              }),
+            };
+          });
+          // Refresh doc header if this recruiter's role is currently open
+          if (selectedRoleId) {
+            const _openRole = allRoles.find(r => r.id === selectedRoleId);
+            if (_openRole?.role_recruiters?.some(l => l.recruiter_id === rec.id)) {
+              _refreshDocRecruiterMeta(_openRole);
+            }
+          }
+
           renderRecruiterList(allRecruiters);
           const updated = allRecruiters.find(r => r.id === rec.id);
           if (updated) renderRecruiterDetail(updated);
@@ -18611,7 +19349,7 @@
         const office_phone = document.getElementById('rc-new-office-phone').value.trim();
         const mobile_phone = document.getElementById('rc-new-mobile-phone').value.trim();
         const website_url  = document.getElementById('rc-new-website').value.trim();
-        const errEl   = document.getElementById('rc-new-error');
+        const errEl        = document.getElementById('rc-new-error');
 
         if (!name) {
           errEl.textContent = 'Name is required.';
@@ -18626,22 +19364,26 @@
         try {
           const { data: newRec, error: re } = await db.from('recruiters').insert({
             name,
-            company:        company        || null,
-            email:          email          || null,
-            linkedin_url:   li             || null,
+            company:        company      || null,
+            email:          email        || null,
+            linkedin_url:   li           || null,
             recruiter_type: rtype,
-            office_phone:   office_phone   || null,
-            mobile_phone:   mobile_phone   || null,
-            website_url:    website_url    || null,
+            office_phone:   office_phone || null,
+            mobile_phone:   mobile_phone || null,
+            website_url:    website_url  || null,
           }).select().single();
           if (re) throw re;
 
-          // Re-derive allRecruiters from freshly loaded roles (single source of truth)
-          await refresh();
+          // Optimistic update — new recruiter appears instantly without waiting for refresh()
+          const _newRecObj = { ...newRec, roles: [], links: [] };
+          allRecruiters = [_newRecObj, ...allRecruiters];
           selectedRecruiterId = newRec.id;
           renderRecruiterList(allRecruiters);
-          const rec = allRecruiters.find(r => r.id === newRec.id);
-          if (rec) renderRecruiterDetail(rec);
+          renderRecruiterDetail(_newRecObj);
+
+          // Background sync to keep allRoles / allRecruiters consistent with DB
+          refresh().catch(() => {});
+
         } catch (e) {
           errEl.textContent = e.message || 'Could not save recruiter.';
           errEl.classList.remove('hidden');
@@ -18866,9 +19608,13 @@
 
       el.querySelectorAll('.dab-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
-          const dec = btn.dataset.dec;
-          // Toggle off if clicking the already-active decision
+          const dec    = btn.dataset.dec;
           const newDec = (dec === current) ? null : dec;
+          // Skip: show reason prompt before committing (unless toggling off an existing skip)
+          if (dec === 'skip' && newDec === 'skip') {
+            _showSkipReasonPrompt(role);
+            return;
+          }
           await _setUserDecision(role, newDec);
         });
       });
@@ -18938,6 +19684,20 @@
         // Re-render inbox card so decision is reflected in stats/inbox
         renderInbox(allRoles);
 
+        // Decision Layer V1: save enriched snapshot for save/apply decisions.
+        // Skip snapshots are handled by _commitSkip (which has reason + notes).
+        if (decision === 'save' || decision === 'apply') {
+          (async () => {
+            try {
+              const _snapshotBlockers   = await _loadRoleBlockers(role.id);
+              const _confirmedBlockers  = _snapshotBlockers
+                .filter(b => b.user_state === 'hard' || b.user_state === 'soft')
+                .map(b => ({ key: b.blocker_key, label: b.label, state: b.user_state }));
+              await _saveDecisionSnapshot(role, decision, { confirmedBlockers: _confirmedBlockers });
+            } catch (_) {} // non-critical
+          })();
+        }
+
         if (msgEl) {
           msgEl.textContent = 'Saved';
           setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 1500);
@@ -18948,6 +19708,122 @@
         btns.forEach(b => b.disabled = false);
       }
     }
+
+    // ─── Decision Layer V1 — Skip reason prompt ───────────────────────────────
+
+    // Controlled vocabulary of skip reasons. Order matches the spec.
+    const SKIP_REASONS = [
+      { key: 'production_coding', label: 'Production coding required' },
+      { key: 'salary_missing',    label: 'Salary not stated'          },
+      { key: 'salary_too_low',    label: 'Salary too low'             },
+      { key: 'hybrid_onsite',     label: 'Too hybrid / on-site'       },
+      { key: 'domain_mismatch',   label: 'Wrong product / domain'     },
+      { key: 'scope_unclear',     label: 'Scope unclear'              },
+      { key: 'marketing_heavy',   label: 'Too marketing-heavy'        },
+      { key: 'too_junior',        label: 'Too junior'                 },
+      { key: 'other',             label: 'Other'                      },
+    ];
+
+    // Replaces #doc-decision-bar with an inline skip reason picker.
+    // Auto-highlights reasons matching detected blockers.
+    // On confirm → _commitSkip. On cancel → restores the decision bar.
+    function _showSkipReasonPrompt(role) {
+      const el = document.getElementById('doc-decision-bar');
+      if (!el) return;
+
+      const detectedKeys = new Set(_detectBlockers(role).map(b => b.key));
+      // Also flag salary_too_low hint if salary is present but role has low salary signals
+      const output = role.latest_match_output || role.analysis || {};
+      const pd     = output.practical_details || {};
+
+      const reasonsHtml = SKIP_REASONS.map(r => {
+        const suggested = detectedKeys.has(r.key);
+        return `<button class="dl-skip-reason-btn${suggested ? ' dl-skip-reason-btn--suggested' : ''}"
+                        data-reason="${esc(r.key)}">${esc(r.label)}</button>`;
+      }).join('');
+
+      el.innerHTML = `
+        <div class="dl-skip-prompt">
+          <div class="dl-skip-prompt-header">
+            <span class="dl-skip-prompt-label">Why are you skipping this role?</span>
+            <span class="dl-skip-prompt-hint">Optional — helps you track patterns over time.</span>
+          </div>
+          <div class="dl-skip-reasons">${reasonsHtml}</div>
+          <textarea class="dl-skip-notes" id="dl-skip-notes"
+                    placeholder="Any extra context (optional)…"
+                    rows="2" maxlength="500"></textarea>
+          <div class="dl-skip-actions">
+            <button class="btn-primary dl-skip-confirm" id="dl-skip-confirm">Skip role</button>
+            <button class="btn-ghost   dl-skip-cancel"  id="dl-skip-cancel">Cancel</button>
+          </div>
+        </div>`;
+
+      let selectedReason = null;
+
+      el.querySelectorAll('.dl-skip-reason-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          el.querySelectorAll('.dl-skip-reason-btn').forEach(b => b.classList.remove('dl-skip-reason-btn--selected'));
+          btn.classList.add('dl-skip-reason-btn--selected');
+          selectedReason = btn.dataset.reason;
+        });
+      });
+
+      document.getElementById('dl-skip-cancel')?.addEventListener('click', () => {
+        renderDecisionBar(role);
+      });
+
+      document.getElementById('dl-skip-confirm')?.addEventListener('click', async () => {
+        const confirmBtn = document.getElementById('dl-skip-confirm');
+        const cancelBtn  = document.getElementById('dl-skip-cancel');
+        const notes      = (document.getElementById('dl-skip-notes')?.value || '').trim() || null;
+        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Skipping…'; }
+        if (cancelBtn)  { cancelBtn.disabled  = true; }
+        await _commitSkip(role, selectedReason, notes);
+      });
+    }
+
+    // Commits the skip decision with optional reason and notes.
+    // Runs: _setUserDecision (standard path) + wsAppendDecision with reason +
+    //       _saveDecisionSnapshot with full context.
+    async function _commitSkip(role, reasonKey, notes) {
+      try {
+        const reasonLabel = SKIP_REASONS.find(r => r.key === reasonKey)?.label || null;
+
+        // Load confirmed blockers before snapshotting
+        const savedBlockers      = await _loadRoleBlockers(role.id);
+        const confirmedBlockers  = savedBlockers
+          .filter(b => b.user_state === 'hard' || b.user_state === 'soft')
+          .map(b => ({ key: b.blocker_key, label: b.label, state: b.user_state }));
+
+        // Standard user_decision update (updates DB, in-memory, analytics, inbox)
+        await _setUserDecision(role, 'skip');
+
+        // Append to role_decisions ledger with reason label
+        if (reasonLabel) {
+          wsAppendDecision(role.id, 'skip', reasonLabel, notes);
+        }
+
+        // Save enriched decision snapshot
+        await _saveDecisionSnapshot(role, 'skip', {
+          skipReason:      reasonKey || null,
+          skipReasonOther: reasonKey === 'other' ? notes : null,
+          notes:           notes,
+          confirmedBlockers,
+        });
+
+        // Restore decision bar so skip is shown as active
+        renderDecisionBar(role);
+
+        // Refresh decision history slot to show the new snapshot
+        _renderDecisionHistoryDL(role).catch(() => {});
+
+      } catch (e) {
+        console.error('[_commitSkip]', e);
+        // On error, fall back to plain skip so the user isn't stuck
+        renderDecisionBar(role);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // ─── Radar: preference signals from past decisions ────────────────────────
     // ── Radar helpers ─────────────────────────────────────────────────────────
@@ -20921,37 +21797,22 @@ If a field cannot be determined from the message, return null for that field.`,
 
       // ─────────────────────────────────────────────────────────────────────
       // TAB 3: USER TRUST
+      // Not yet active: the user_trust_state table exists in the schema but
+      // no trust-scoring pipeline writes to it. Showing an honest inactive
+      // state rather than a misleading "No records yet" empty table.
       // ─────────────────────────────────────────────────────────────────────
       (() => {
-        const trust = trustRows || [];
-
-        const trustTableRows = trust.length === 0
-          ? `<tr><td colspan="8" class="sg-empty">No trust state records yet.</td></tr>`
-          : trust.map(t => {
-              const todayData  = todayRollupMap[t.user_id] || {};
-              const inCooldown = t.cooldown_until && new Date(t.cooldown_until) > new Date();
-              return `<tr>
-                <td title="${_esc(t.user_id)}">${_esc(_short(t.user_id, 20))}</td>
-                <td>${_badge(t.trust_tier)}</td>
-                <td>${_badge(t.risk_level)}</td>
-                <td>${t.strike_count ?? 0}</td>
-                <td>${inCooldown ? new Date(t.cooldown_until).toLocaleString() : _badge('none', 'normal')}</td>
-                <td>${t.last_signal_at ? _fmtDate(t.last_signal_at) : '—'}</td>
-                <td>${_fmtNum(todayData.request_count)}</td>
-                <td>${_fmtCost(todayData.estimated_cost)}</td>
-              </tr>`;
-            }).join('');
-
         document.getElementById('sg-panel-trust').innerHTML = `
-          <div class="sg-section-label">User trust state</div>
-          <div style="overflow-x:auto;">
-            <table class="sg-table">
-              <thead><tr>
-                <th>User</th><th>Trust Tier</th><th>Risk Level</th><th>Strikes</th>
-                <th>Cooldown Until</th><th>Last Signal</th><th>Req Today</th><th>Cost Today</th>
-              </tr></thead>
-              <tbody>${trustTableRows}</tbody>
-            </table>
+          <div class="sg-inactive-notice">
+            <div class="sg-inactive-notice-title">User Trust — not yet active</div>
+            <div class="sg-inactive-notice-body">
+              The <code>user_trust_state</code> table is part of the schema but no trust-scoring
+              pipeline is wired yet. No trust signals are being captured, and no rows will appear
+              here until trust instrumentation is implemented and enabled.
+              <br><br>
+              This tab will be activated in a future build pass when the trust-signal and
+              tier-scoring logic is ready.
+            </div>
           </div>`;
       })();
 
@@ -21020,11 +21881,18 @@ If a field cannot be determined from the message, return null for that field.`,
         const cPerUser7d  = _div(aiCost7d,  activeProfiles7d);
         const cPerUser30d = _div(aiCost30d, activeProfiles30d);
 
+        // ── Save / shortlist count (tracked separately, not counted as decisions) ─
+        const saves30d = decAll.filter(e => e.metadata?.is_shortlist_action === true);
+        const saves7d  = decAll7d.filter(e => e.metadata?.is_shortlist_action === true);
+
         // ── Summary cards ──────────────────────────────────────────────────
         const cardsHtml = `
           <div style="margin-bottom:6px;font-size:11px;color:var(--text-muted);">
             Metrics describe observed sequences, not causation.
-            "Recorded decisions" excludes bookmarks (Save). "Applied" counts distinct roles (deduplicated by role ID). "Active profile" counts distinct profiles (user_id where present, session_id as fallback).
+            "Recorded decisions" counts Apply, Skip, Withdraw, and similar outcome-direction events.
+            Save (bookmark) is tracked separately and excluded from decision counts and cost ratios.
+            "Applied" counts distinct roles (deduplicated by role ID).
+            "Active profile" counts distinct profiles (user_id where present, session_id as fallback).
           </div>
           <div class="sg-cards" style="flex-wrap:wrap;">
             <div class="sg-card">
@@ -21050,6 +21918,10 @@ If a field cannot be determined from the message, return null for that field.`,
             <div class="sg-card">
               <div class="sg-card-num">${_fmtN(genuine30d.length)}</div>
               <div class="sg-card-label">Recorded decisions (30d)</div>
+            </div>
+            <div class="sg-card" style="opacity:0.7;">
+              <div class="sg-card-num">${_fmtN(saves30d.length)}</div>
+              <div class="sg-card-label">Saves / bookmarks (30d, tracked separately)</div>
             </div>
           </div>`;
 
@@ -21440,6 +22312,8 @@ If a field cannot be determined from the message, return null for that field.`,
 
         ${oiSectionHtml}
 
+        <div id="review-dl-section"></div>
+
         <div class="review-section" id="review-timeline-section">
           <div class="review-section-label">Timeline</div>
           <div class="review-timeline-empty">Loading\u2026</div>
@@ -21447,6 +22321,108 @@ If a field cannot be determined from the message, return null for that field.`,
       </div>`;
 
       document.getElementById('col-rail-section').innerHTML = ''; _setRailVisible(false);
+
+      // ── Decision Layer: skip reason + blocker breakdown (async) ───────────
+      (async () => {
+        try {
+          const dlEl = document.getElementById('review-dl-section');
+          if (!dlEl) return;
+
+          const [skipSnapRes, blockerRes, boundaryRes] = await Promise.all([
+            db.from('role_decision_snapshots')
+              .select('skip_reason')
+              .eq('user_decision', 'skip')
+              .not('skip_reason', 'is', null),
+            db.from('role_blockers')
+              .select('blocker_key, label, user_state')
+              .in('user_state', ['hard', 'soft']),
+            db.from('user_boundaries')
+              .select('blocker_key, label, boundary_type'),
+          ]);
+
+          const skipSnaps  = skipSnapRes.data  || [];
+          const blockers   = blockerRes.data   || [];
+          const boundaries = boundaryRes.data  || [];
+
+          // Nothing to show — skip rendering the section
+          if (!skipSnaps.length && !blockers.length && !boundaries.length) return;
+
+          // Aggregate skip reasons
+          const skipReasonCounts = {};
+          skipSnaps.forEach(s => {
+            if (s.skip_reason) skipReasonCounts[s.skip_reason] = (skipReasonCounts[s.skip_reason] || 0) + 1;
+          });
+          const SKIP_REASON_LABELS_MAP = {};
+          SKIP_REASONS.forEach(r => { SKIP_REASON_LABELS_MAP[r.key] = r.label; });
+
+          const topSkipReasons = Object.entries(skipReasonCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([key, count]) => ({ label: SKIP_REASON_LABELS_MAP[key] || key, count }));
+
+          // Aggregate hard and soft blockers separately
+          const hardCounts = {}, softCounts = {};
+          const hardLabels = {}, softLabels = {};
+          blockers.forEach(b => {
+            if (b.user_state === 'hard') {
+              hardCounts[b.blocker_key] = (hardCounts[b.blocker_key] || 0) + 1;
+              hardLabels[b.blocker_key] = b.label;
+            } else if (b.user_state === 'soft') {
+              softCounts[b.blocker_key] = (softCounts[b.blocker_key] || 0) + 1;
+              softLabels[b.blocker_key] = b.label;
+            }
+          });
+          const topHard = Object.entries(hardCounts)
+            .sort((a, b) => b[1] - a[1]).slice(0, 5)
+            .map(([key, count]) => ({ label: hardLabels[key] || key, count }));
+          const topSoft = Object.entries(softCounts)
+            .sort((a, b) => b[1] - a[1]).slice(0, 5)
+            .map(([key, count]) => ({ label: softLabels[key] || key, count }));
+
+          // Build HTML
+          const _dlRow = (label, count) =>
+            `<div class="review-data-row">
+               <span class="review-data-label">${esc(label)}</span>
+               <span class="review-data-val">${count}</span>
+             </div>`;
+
+          const skipReasonsHtml = topSkipReasons.length
+            ? `<div class="review-section">
+                 <div class="review-section-label">Top skip reasons</div>
+                 ${topSkipReasons.map(r => _dlRow(r.label, r.count)).join('')}
+               </div>`
+            : '';
+
+          const hardBlockersHtml = topHard.length
+            ? `<div class="review-section">
+                 <div class="review-section-label">Most common hard blockers</div>
+                 ${topHard.map(r => _dlRow(r.label, r.count)).join('')}
+               </div>`
+            : '';
+
+          const softBlockersHtml = topSoft.length
+            ? `<div class="review-section">
+                 <div class="review-section-label">Soft concerns</div>
+                 ${topSoft.map(r => _dlRow(r.label, r.count)).join('')}
+               </div>`
+            : '';
+
+          const boundariesHtml = boundaries.length
+            ? `<div class="review-section">
+                 <div class="review-section-label">Saved boundaries</div>
+                 ${boundaries.map(b =>
+                   `<div class="review-data-row">
+                      <span class="review-data-label">${esc(b.label)}</span>
+                      <span class="review-data-val review-dl-boundary-type">${esc(b.boundary_type)}</span>
+                    </div>`
+                 ).join('')}
+               </div>`
+            : '';
+
+          dlEl.innerHTML = skipReasonsHtml + hardBlockersHtml + softBlockersHtml + boundariesHtml;
+
+        } catch (_) { /* non-critical — silently skip */ }
+      })();
 
       // ── Load timeline async ────────────────────────────────────────────────
       const PAGE_SIZE = 25;
@@ -22195,6 +23171,10 @@ If a field cannot be determined from the message, return null for that field.`,
         allRecruiters = _deriveRecruitersFromRoles(allRoles, recruiterBase);
 
         renderInbox(allRoles);
+        // Warm boundary cache, then re-render inbox so boundary match indicators
+        // appear. Without the re-render the first inbox load always shows no
+        // indicators (cache is still null when renderInbox first runs above).
+        _warmBoundaryCache().then(() => { renderInbox(allRoles); }).catch(() => {});
         // Re-render selected role if one was open
         if (selectedRoleId) {
           const role = allRoles.find(r => r.id === selectedRoleId);

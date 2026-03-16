@@ -1,6 +1,6 @@
 # ROLEWISE — Master Build Ledger
 
-> **Last updated:** 2026-03-12 (RM-04 + RM-06 closed — audit-verified as already implemented; RM-13 planning brief produced)
+> **Last updated:** 2026-03-16 (Analysis Trace Pass shipped — ANL-01 done; Add Recruiter fix REC-04 done; rw-analysis-arrive CSS added)
 > **Maintainer:** Ross Mackintosh
 > **Purpose:** Single source of truth for everything built, in progress, and planned.
 > **Rule:** Every feature gets a task ID. Every completion moves to Completed Tasks. Every architectural decision is logged in Build Notes. Every subtask is tracked.
@@ -41,13 +41,33 @@ All features must receive a task ID from this index. All task references through
 | KG-06 | Career Trajectory Engine | Planned |
 | KG-07 | Graph Data Integrity Rules | Planned |
 
+### Recruiter & Data Integrity
+| ID | Name | Status |
+|----|------|--------|
+| REC-01 | Fix role_recruiters.id missing from loadData select | ✅ Done (Integrity Pass) |
+| REC-02 | Wire _refreshDocRecruiterMeta after email confirm link | ✅ Done (Integrity Pass) |
+| REC-03 | Propagate recruiter edits into allRoles nested data | ✅ Done (Integrity Pass) |
+| DI-01 | Fix boundary cache timing — re-render inbox after cache warms | ✅ Done (Integrity Pass) |
+| DI-02 | User Trust tab — replace empty table with honest "not active" state | ✅ Done (Integrity Pass) |
+| DI-03 | Efficiency tab — clarify decision definition, add saves/bookmarks counter | ✅ Done (Integrity Pass) |
+| REC-DB-01 | Clean corrupted recruiter names in DB (Lucas RespondekLucas, Nick CochraneNick) | ✅ Done (Integrity Pass) |
+| REC-04 | Fix Add Recruiter — optimistic state update after insert | ✅ Done |
+
 ### Decision Intelligence Layer
 | ID | Name | Status |
 |----|------|--------|
 | JD-01 | Job description parsing engine | ✅ Built (analyse-jd v9) |
 | DNA-01 | Role DNA card | Planned |
-| KO-01 | Knockout criteria detection | Planned |
-| DEC-01 | Decision snapshot system | Planned |
+| KO-01 | Knockout criteria detection | ✅ Done (Decision Layer V1) |
+| DEC-01 | Decision snapshot system | ✅ Done (Decision Layer V1) |
+| DL-01 | Blocker confirmation UI | ✅ Done (Decision Layer V1) |
+| DL-02 | Skip reason prompt | ✅ Done (Decision Layer V1) |
+| DL-03 | User boundary scaffold | ✅ Done (Decision Layer V1) |
+| DL-04 | DB migration — role_blockers, role_decision_snapshots, user_boundaries | ✅ Done |
+| DL-05 | Review view: skip reason + blocker breakdown section | ✅ Done (Visibility Pass) |
+| DL-06 | Inbox: boundary match indicators on role cards | ✅ Done (Visibility Pass) |
+| DL-07 | Role detail: decision history read view (role_decision_snapshots) | ✅ Done (Visibility Pass) |
+| DEC-01-FOLLOW | Quality fix: _commitSkip renderDecisionBar after success | ✅ Done (Visibility Pass) |
 | SIG-01 | Pattern signals engine | Planned |
 | ARC-01 | Role archetype clustering | Planned |
 | EVD-01 | Evidence card system | Planned |
@@ -59,7 +79,7 @@ All features must receive a task ID from this index. All task references through
 | CHAT-01 | Prompt scaffolding | Planned |
 | CHAT-02 | Slash commands | Planned |
 | CHAT-03 | Context object mentions | Planned |
-| ANL-01 | Analysis trace | Planned |
+| ANL-01 | Analysis trace — staged 6-step loader for all JD analysis flows | ✅ Done (Trace Pass) |
 
 ### System
 | ID | Name | Status |
@@ -422,10 +442,294 @@ During JD analysis, show step-by-step progress: "Extracting role traits…", "De
 | RM-10 | Polish top bar / workspace chrome (CSS) | 2026-03-12 | `reasoning-map.css` | Top bar padding balanced (14px both sides). Right controls gap 6px (was 4). Dividers taller (24px, was 20) and darker (--border, was --border-light). Divider margin 6px (was 4). Centre stats gap 12px (was 10). Canvas inset shadow for depth. Sidebar section bottom padding 8px (was 6). 7 changes, 1 line added. Zero JS changes. |
 | RM-11 | Polish controls / filters (CSS) | 2026-03-12 | `reasoning-map.css` | Sidebar label gap 8px (was 7). Focus pills: gap 5px (was 4), padding 4px 9px (was 3px 8px). Node toggles: gap 3px (was 2), row padding 5px (was 4). Strength: gap 5px (was 4), padding 4px 10px (was 3px 9px), active font-weight 600. Signal toggles: gap 3px (was 2), row padding 5px (was 4). Actions gap 5px (was 4). 11 changes, 1 line added. Zero JS changes. |
 | — | Dead sample cleanup | 2026-03-12 | `reasoning-map.js` | Removed buildSampleGraph (355 lines), loadSampleData (25 lines), #rm-btn-load-sample button + event wiring. −387 lines total. Zero behaviour changes. |
+| DL-04 | DB migration — Decision Layer V1 tables | 2026-03-16 | Supabase (migration: decision_layer_v1) | Created `role_blockers` (UNIQUE role_id+blocker_key), `role_decision_snapshots` (append-only), `user_boundaries` (UNIQUE profile_id+blocker_key). RLS open (matches existing pattern). |
+| KO-01 | Blocker detection engine | 2026-03-16 | `app/app.js` | `_detectBlockers(role)` — 6 blocker types: production_coding, salary_missing, hybrid_onsite, scope_unclear, domain_concern, marketing_heavy. Data-only detection from analysis output, no inference. `BLOCKER_DEFS` constant. |
+| DL-01 | Blocker confirmation UI | 2026-03-16 | `app/app.js`, `app/styles.css` | `_renderBlockersSection(role)` — renders in `#ws-blockers-section` (new slot in `_ensureOverviewLowerCards`, before `#ws-decision-capture`). Hard blocker / Soft concern / Not an issue per item. State persisted to `role_blockers` via `_upsertRoleBlocker`. Wired at 3 call sites alongside `_renderDecisionCapture`. |
+| DL-02 | Skip reason prompt | 2026-03-16 | `app/app.js`, `app/styles.css` | `_showSkipReasonPrompt(role)` — replaces decision bar with inline reason picker (9 reasons + notes). Skip button in `renderDecisionBar` intercepted. Detected blockers auto-highlighted. `_commitSkip(role, reasonKey, notes)` — runs `_setUserDecision`, `wsAppendDecision` (with label), `_saveDecisionSnapshot`. |
+| DEC-01 | Decision snapshot system | 2026-03-16 | `app/app.js` | `_saveDecisionSnapshot(role, decision, opts)` — saves role DNA + confirmed blockers + skip reason to `role_decision_snapshots`. Called from `_commitSkip` (skip) and `_setUserDecision` (save/apply, fire-and-forget). |
+| DL-03 | User boundary scaffold | 2026-03-16 | `app/app.js` | `_saveUserBoundary`, `_loadUserBoundaries`, `_wireBoundaryCta`. "Save as boundary" CTA appears on Hard blocker items. Upserts to `user_boundaries`. Boundary indicator shown on items matching saved boundaries. |
+| DL-05 | Review view: Decision Layer breakdown | 2026-03-16 | `app/app.js` | Async-loaded section in `renderReviewView`. Queries `role_decision_snapshots` (top skip reasons), `role_blockers` (hard + soft aggregation), `user_boundaries` (list). Uses existing `review-section` / `review-data-row` classes. Placeholder `#review-dl-section` injected into skeleton; populated via fire-and-forget IIFE. |
+| DL-06 | Inbox boundary match indicators | 2026-03-16 | `app/app.js`, `app/styles.css` | `_boundaryKeyCache` (module-level `Set<string>`). `_warmBoundaryCache()` — loads all `user_boundaries` and populates the set. Called from `refresh()` after initial load; optimistic add in `_saveUserBoundary`. `renderRoleCard` checks detected blockers against cache and renders `.inbox-boundary-match` pill when matched. |
+| DL-07 | Role detail: decision history read view | 2026-03-16 | `app/app.js`, `app/styles.css` | `_renderDecisionHistoryDL(role)` — loads `role_decision_snapshots` for role (newest first), renders `.dl-history-section` in new `#ws-decision-history-dl` slot. Shows: decision badge (colour-coded), date, confirmed blocker tags, skip reason, notes. Hides when no records. Slot added to `_ensureOverviewLowerCards` after `ws-decision-capture`. Cleared in `_setRailVisible`. Called at same 3 sites as `_renderBlockersSection`. |
+| DEC-01-FOLLOW | Quality fix: _commitSkip bar restore | 2026-03-16 | `app/app.js` | Added `renderDecisionBar(role)` call at end of `_commitSkip` success path. Without this, the skip prompt UI remained visible after committing — the bar was never restored to show Skip as active. Also added `_renderDecisionHistoryDL` refresh after skip commits. |
+| REC-01 | Fix role_recruiters.id missing from loadData select | 2026-03-16 | `app/app.js` | `link.id` was always undefined in `_deriveRecruitersFromRoles` because `id` was not selected in the `role_recruiters(...)` Supabase nested select. Added `id,` to the select string. |
+| REC-02 | Wire _refreshDocRecruiterMeta after email confirm link | 2026-03-16 | `app/app.js` | Both the high-confidence (silent) and medium-confidence (confirm dialog) paths in `_wsHandleEmail` now call `_refreshDocRecruiterMeta(role)` and `renderInbox(allRoles)` on successful link. Previously, the doc header never updated after an email-paste recruiter link. |
+| REC-03 | Propagate recruiter edits into allRoles nested data | 2026-03-16 | `app/app.js` | `renderRecruiterEditForm` save handler now iterates `allRoles` and updates any matching `role.role_recruiters[].recruiters` entry in-place. Also calls `_refreshDocRecruiterMeta` on the currently open role if it has this recruiter linked. Previously edits only updated `allRecruiters`, leaving role doc header stale. |
+| DI-01 | Fix boundary cache timing — inbox re-render after warm | 2026-03-16 | `app/app.js` | Changed `_warmBoundaryCache().catch(() => {})` to `_warmBoundaryCache().then(() => { renderInbox(allRoles); }).catch(() => {})` in `refresh()`. Previously the cache warmed async but triggered no re-render, so the first inbox load never showed boundary match indicators. |
+| DI-02 | User Trust tab — honest inactive state | 2026-03-16 | `app/app.js`, `app/styles.css` | Replaced the `user_trust_state` empty-table display with a `.sg-inactive-notice` section that clearly states the trust pipeline is not yet active. Prevents the tab from appearing broken. |
+| DI-03 | Efficiency tab — decision definition clarity + save counter | 2026-03-16 | `app/app.js` | Expanded the definition note to explicitly state that Apply/Skip/Withdraw count as recorded decisions; Save is excluded. Added a "Saves / bookmarks (30d, tracked separately)" card so the event pipeline is visibly working even when genuine decision count is 0. |
+| REC-DB-01 | Clean corrupted recruiter names in DB | 2026-03-16 | Supabase DB | Corrected two garbled names: "Lucas RespondekLucas" → "Lucas Respondek", "Nick CochraneNick" → "Nick Cochrane". Root cause: early auto-detection from LinkedIn message text duplicated the first name. "MessageAbout" record left as-is (user-addressable via edit form). |
+| ANL-01 | Analysis trace — 6-step staged loader | 2026-03-16 | `app/app.js`, `app/index.html`, `app/styles.css` | Extracted `_ANALYSIS_STAGES` (6 labels) and `_ANALYSIS_TIMINGS` as module-level constants shared across all three analysis flows. Modal: form body hidden behind `#add-analysis-trace` + `add-modal-form--hidden` wrapper; trace injected at submit, cleared on success/error/close. Workspace: `_wsRunAnalysis` updated to use shared 6-stage labels with `_clearSeq` fade-out on complete. Intake: cycling text replaced with `_ANALYSIS_STAGES` labels. `rw-analysis-arrive` CSS animation added to analysis output wrapper for a calm settle-in. `closeAddModal` resets trace state. Error paths restore form on both inner and outer catch. |
+| REC-04 | Fix Add Recruiter — optimistic state update after insert | 2026-03-16 | `app/app.js` | Root cause: save handler called `await refresh()` to update `allRecruiters`, but `refresh()` errors are caught silently (written to `#role-inbox`, which is hidden on the Recruiter view). If `refresh()` failed, `allRecruiters` stayed stale and the new recruiter never appeared. Fix: immediately push `{ ...newRec, roles: [], links: [] }` into `allRecruiters` after insert, call `renderRecruiterList` and `renderRecruiterDetail` synchronously, then kick off a background `refresh()` for global sync. DB schema + RLS verified — schema has no `user_id` requirement; RLS policy `allow_all_recruiters` is permissive for all operations on public. |
 
 ---
 
 ## 6. Build Notes
+
+### 2026-03-16 — Analysis Trace Pass
+
+**Goal:** Make the JD analysis experience calmer, clearer, and more trustworthy while the API call is in flight. No new data fetches. No fake precision. Just structured, honest progress indication.
+
+---
+
+**Root cause / motivation**
+
+All three analysis flows (modal Add JD, workspace paste, intake first-paste) showed minimal or generic loading states — either just "Analysing…" on a button or a cycling text string. No sense of what the product was actually doing. The goal was to add a staged trace that reassures the user structured work is happening, without gamification or inflated confidence.
+
+**Approach**
+
+- Extracted `_ANALYSIS_STAGES` (6 labels) and `_ANALYSIS_TIMINGS` as module-level constants, shared across all three flows
+- Stage labels: "Reading job description", "Extracting practical details", "Identifying likely risks", "Detecting role signals", "Preparing fit summary", "Finalising analysis"
+- All three flows use the same labels; timer offsets (1800 / 3600 / 5400 / 7200 / 9500 ms) advance the active step client-side while the API call runs
+- Frontend-only progress — no true server step reporting available
+
+**Modal flow (Add JD)**
+
+- `index.html`: added `#add-analysis-trace` slot + `#add-modal-form-body` wrapper div inside `modal-add`
+- On submit: form body hidden via `.add-modal-form--hidden`; trace injected and animated in
+- On success: trace marks all steps done, fades to 0.7 opacity (`.add-analysis-trace--done`)
+- On error (inner catch): trace hidden; form body restored; error shown
+- On close: `closeAddModal()` resets all trace state and clears innerHTML
+
+**Workspace flow (`_wsRunAnalysis`)**
+
+- Updated to use `_ANALYSIS_STAGES` (was 5 hardcoded labels, now 6)
+- `_clearSeq()` marks all steps done and adds `ws-analysis-steps--fading` fade-out class
+- `_advanceStep` guard added to prevent advancing past last step
+
+**Intake flow (doIntakeSubmit)**
+
+- Replaced 3-text cycling with `_ANALYSIS_STAGES` using timings [2000, 4000, 6000, 8500, 11000] ms
+
+**Analysis output arrive animation**
+
+- `rw-analysis-arrive` CSS class applied to `rw-overview-wrap` after analysis resolves
+- Keyframe: 0.35s ease, opacity 0 → 1, translateY 6px → 0
+- Gives a calm settle-in rather than an abrupt snap to the completed output
+
+**Files changed:** `app/app.js`, `app/index.html`, `app/styles.css`
+
+---
+
+### 2026-03-16 — Add Recruiter Fix (REC-04)
+
+**Goal:** Fix the + Add recruiter flow — newly created recruiters were not appearing in the list after save.
+
+---
+
+**Root cause**
+
+The save handler called `await refresh()` to update `allRecruiters` after DB insert. `refresh()` catches all its own errors internally and writes them to `#role-inbox` — which is hidden on the Recruiters view. If `refresh()` failed for any reason, `allRecruiters` stayed stale (no new recruiter), and the list re-rendered without it. The error was invisible to the user.
+
+Secondary: even when `refresh()` succeeded, the full round-trip (roles + profile + recruiter base in parallel) was unnecessary overhead for a simple new-recruiter case.
+
+**DB audit (Supabase MCP)**
+
+- Schema: no `user_id` column; only NOT NULL fields are `id`, `name`, `created_at`, `updated_at` (all defaulted or supplied)
+- RLS: single permissive policy `allow_all_recruiters` — ALL ops allowed for public; `qual: true, with_check: true`
+- No constraint that could silently block the insert
+
+**Fix**
+
+Replaced `await refresh()` with an optimistic update:
+1. Build `{ ...newRec, roles: [], links: [] }` — matches the shape `_deriveRecruitersFromRoles` produces for standalone recruiters
+2. Prepend to `allRecruiters` immediately
+3. Call `renderRecruiterList(allRecruiters)` and `renderRecruiterDetail(_newRecObj)` synchronously
+4. Fire background `refresh().catch(() => {})` to keep global state in sync
+
+This makes the list update immediate, removes the dependency on `refresh()` succeeding, and keeps the full-refresh benefit for the rest of the app.
+
+**Files changed:** `app/app.js`
+
+---
+
+### 2026-03-16 — Data Integrity Pass
+
+**Goal:** Audit and fix data-flow reliability across three broken areas: recruiter recording pipeline, Platform Safeguards truthfulness, and inbox boundary indicator timing. No new features. Fix the plumbing.
+
+---
+
+**Recruiter pipeline — root causes and fixes**
+
+Three root causes identified in the recruiter data flow:
+
+1. **`role_recruiters.id` not selected** — `loadData()` selected `role_recruiters(recruiter_id, link_source, created_at, recruiters(...))` without including `id`. In `_deriveRecruitersFromRoles`, `entry.links.push({ id: link.id, ... })` always pushed `undefined`. Fixed: added `id,` to the select string.
+
+2. **`doc-meta-recruiter` never refreshed after email-paste link** — `_wsHandleEmail` parsed and confirmed recruiter links but neither the high-confidence (silent) nor medium-confidence (confirm dialog) success path called any DOM refresh. The role doc header showed no recruiter until the user manually reloaded. Fixed: both paths now call `_refreshDocRecruiterMeta(role)` and `renderInbox(allRoles)` after a successful link.
+
+3. **Recruiter edits don't propagate into `allRoles` nested data** — `renderRecruiterEditForm`'s save handler updated `allRecruiters[idx]` in-place but never touched `allRoles[i].role_recruiters[j].recruiters`. If the role doc was open, `_refreshDocRecruiterMeta(role)` read the old stale data from the nested object. Fixed: save handler now maps over `allRoles` and patches any matching nested recruiters entry, then calls `_refreshDocRecruiterMeta` on the currently open role if applicable.
+
+**DB data fix:** Corrected two corrupted recruiter names created on March 7 via early auto-detection. "Lucas RespondekLucas" → "Lucas Respondek", "Nick CochraneNick" → "Nick Cochrane". Root cause: LinkedIn message text caused first-name duplication during name extraction. Patched directly in DB.
+
+---
+
+**Boundary cache timing — root cause and fix**
+
+`refresh()` called `renderInbox(allRoles)` synchronously, then fired `_warmBoundaryCache().catch(() => {})` with no callback. By the time the DB query resolved and the cache was populated, there was nothing to trigger a re-render. The first inbox load always showed zero boundary match indicators regardless of saved boundaries.
+
+Fixed: changed to `_warmBoundaryCache().then(() => { renderInbox(allRoles); }).catch(() => {})`. The re-render is quick (inbox is already in the DOM) and the boundary indicators now appear correctly on the first session load.
+
+---
+
+**Platform Safeguards: User Trust tab**
+
+Root cause: `user_trust_state` table exists in the schema but nothing in the application writes to it. The tab rendered a full table scaffold with a generic "No trust state records yet." empty state, which looked like a broken/empty list rather than an unimplemented feature.
+
+Fix: replaced the table with a `.sg-inactive-notice` section that plainly states the trust pipeline is not active yet and the tab will be enabled in a future build pass. Added CSS class `.sg-inactive-notice` / `.sg-inactive-notice-title` / `.sg-inactive-notice-body`. No data queries changed.
+
+---
+
+**Platform Safeguards: Efficiency tab — 0 recorded decisions**
+
+Root cause: confirmed by DB audit. The decision event pipeline IS correctly wired (`_setUserDecision` → `_logDecisionEvent` → `_logUsageEvent` → `usage_events`). Only 1 `role_decision` event exists in the DB (from 2026-03-09), and it is a Save/bookmark (`is_shortlist_action: true`), which is correctly excluded from "genuine decisions" counts. The 5 roles with `user_decision = 'save'` predate the analytics event logging and were never logged.
+
+The 0 is accurate. The UI just didn't communicate it well. Fixes:
+- Expanded the definition note to explicitly name which decision types count (Apply, Skip, Withdraw) and which don't (Save).
+- Added a "Saves / bookmarks (30d, tracked separately)" card so the user can see the event pipeline is capturing data even when genuine decision count is 0.
+- No schema changes, no logic changes.
+
+---
+
+**Files changed**
+- `app/app.js` — 5 targeted edits:
+  - `_wsHandleEmail` — high-confidence path: added `_refreshDocRecruiterMeta` + `renderInbox` on link success
+  - `_wsHandleEmail` — medium-confidence confirm handler: added same refresh on link success
+  - `renderRecruiterEditForm` save handler: added `allRoles` nested-data patch + `_refreshDocRecruiterMeta` on open role
+  - `refresh()`: changed boundary cache to re-render inbox after warm
+  - `renderSafeguardsView` TAB 3 (User Trust): replaced table with inactive notice
+  - `renderSafeguardsView` TAB 4 (Efficiency): added saves counter card + expanded definition note
+- `app/styles.css` — 22 lines added:
+  - `.sg-inactive-notice`, `.sg-inactive-notice-title`, `.sg-inactive-notice-body`, code inline style
+- Supabase DB (direct SQL):
+  - Updated 2 recruiter name rows (`Lucas Respondek`, `Nick Cochrane`)
+
+**Schema changes:** None.
+
+**Manual test path:**
+1. Open a role with no recruiter → paste an email with recruiter name → confirm → doc header shows recruiter name immediately ✓
+2. Go to Recruiters → edit a recruiter's name → go back to that role's doc → header shows updated name ✓
+3. Reload app → check inbox → boundary match indicators appear (not delayed until a later interaction) ✓
+4. Open Platform Safeguards → User Trust tab → shows "not active" notice, not an empty table ✓
+5. Efficiency tab → shows saves/bookmarks counter alongside recorded decisions; description explains Save is excluded ✓
+6. Recruiters list → "Lucas Respondek" and "Nick Cochrane" show correctly ✓
+
+**What is fully fixed:** recruiter doc-header refresh, recruiter edit propagation, boundary cache first-render, User Trust tab honesty, Efficiency tab clarity.
+**Intentionally inactive:** User Trust pipeline (table exists, no writes).
+**Still deferred:** `doc-recruiter-row` inline recruiter link/add from role doc (skeleton exists, never populated); follow-up alert verification pass.
+
+---
+
+### 2026-03-16 — Decision Layer Visibility Pass
+
+**Goal:** Surface existing Decision Layer V1 data (blockers, skip reasons, boundaries, snapshots) across the product in a calm, legible way. No new DB tables. No scoring. No hype.
+
+**Quality fix found and shipped**
+- `_commitSkip` had a missing `renderDecisionBar(role)` call after successful skip. The skip prompt UI remained visible indefinitely after the user confirmed — the bar was never restored. Fixed by adding `renderDecisionBar(role)` and `_renderDecisionHistoryDL(role)` at the end of the `try` block.
+
+**Review view: Decision Layer breakdown (DL-05)**
+- Added `<div id="review-dl-section">` placeholder in the `renderReviewView` skeleton, between Outcome Intelligence and the Timeline section.
+- Fire-and-forget IIFE runs 3 parallel queries: `role_decision_snapshots` (skip reasons), `role_blockers` (hard + soft user_states), `user_boundaries` (full list).
+- Groups and counts results in JS, renders up to 5 entries per category using existing `review-section` / `review-data-row` markup pattern.
+- Section is silently skipped if all queries return empty — no empty state shown.
+- CSS: one new utility class `.review-dl-boundary-type` for the boundary type pill.
+
+**Inbox boundary match indicators (DL-06)**
+- Module-level `_boundaryKeyCache = null` (a `Set<string>` or null if not loaded).
+- `_warmBoundaryCache()` loads all `user_boundaries` and populates the Set. Called from `refresh()` (non-blocking) and updates optimistically after `_saveUserBoundary` saves.
+- `renderRoleCard` runs `_detectBlockers(role)` and checks the result against `_boundaryKeyCache`. If any detected blocker key matches, renders a subtle `.inbox-boundary-match` pill reading "Boundary match".
+- Guard: no indicator shown if cache is null (not loaded yet) or empty — never invents signals.
+- Performance: `_detectBlockers` is a pure string-search function. Acceptable cost per card render for realistic inbox sizes.
+
+**Role detail: decision history read view (DL-07 / DEC-01-FOLLOW)**
+- New slot `#ws-decision-history-dl` added to `_ensureOverviewLowerCards` after `ws-decision-capture`. Cleared in `_setRailVisible` with same pattern as other slots.
+- `_renderDecisionHistoryDL(role)` — async, queries `role_decision_snapshots` for the role (newest first). Hides slot if no records.
+- Each snapshot entry shows: decision badge (colour-coded: red skip / blue save / green apply), date, confirmed blocker tags with hard/soft colour variants, skip reason, skip_reason_other, and notes.
+- Uses `SKIP_REASONS` constant (already defined) to resolve reason keys to display labels.
+- Called from all 3 existing call sites alongside `_renderBlockersSection`.
+- Also called after `_commitSkip` succeeds to immediately reflect the new snapshot.
+
+**Files changed**
+- `app/app.js` — 9 targeted edits:
+  - Added `_boundaryKeyCache` module var (line ~697)
+  - Added `_warmBoundaryCache()` function (after `_loadUserBoundaries`)
+  - Updated `_saveUserBoundary` — optimistic cache add after upsert
+  - Updated `_setRailVisible` — clears `#ws-decision-history-dl`
+  - Updated `_ensureOverviewLowerCards` — adds `#ws-decision-history-dl` slot
+  - Added `_renderDecisionHistoryDL(role)` function (after `_wireBoundaryCta`)
+  - Added `_renderDecisionHistoryDL` calls to 3 call sites
+  - Updated `renderRoleCard` — boundary match indicator
+  - Updated `renderReviewView` — DL breakdown section + async load
+  - Fixed `_commitSkip` — added `renderDecisionBar` + history refresh on success
+  - Updated `refresh()` — calls `_warmBoundaryCache()`
+- `app/styles.css` — ~110 lines added:
+  - `.dl-history-section`, `.dl-history-header`, `.dl-history-title`, `.dl-history-count`
+  - `.dl-history-entries`, `.dl-dh-entry`, `.dl-dh-entry-header`
+  - `.dl-dh-badge`, `.dl-dh-badge--skip`, `.dl-dh-badge--save`, `.dl-dh-badge--apply`
+  - `.dl-dh-entry-date`, `.dl-dh-entry-blockers`, `.dl-dh-blocker-tag`, `--hard`, `--soft`
+  - `.dl-dh-entry-reason`, `.dl-dh-entry-notes`
+  - `.inbox-boundary-match` (with `::before` flag glyph)
+  - `.review-dl-boundary-type`
+
+**Schema changes**
+- None. All new features read from existing `role_decision_snapshots`, `role_blockers`, and `user_boundaries` tables.
+
+**Follow-up tasks**
+- Consider re-rendering inbox after `_warmBoundaryCache()` completes (boundary indicators won't show on first render if cache loads after initial `renderInbox`). Current: indicators appear on next inbox refresh (e.g. role selection, filter change).
+- Consider adding a boundary indicator in the role detail view sticky header for immediate visibility on open.
+- Consider a "Clear boundary" action in the profile or boundary settings view.
+
+---
+
+### 2026-03-16 — Decision Layer V1 Shipped
+
+**Goal:** Turn Rolewise from a role analysis tool into a decision-support tool. Five connected components shipped as a single coherent feature set.
+
+**Database (migration: `decision_layer_v1`)**
+- `role_blockers` — per-role blockers with UNIQUE (role_id, blocker_key) constraint. Fields: blocker_key, label, evidence, user_state (hard|soft|clear). Upserts on re-confirmation.
+- `role_decision_snapshots` — append-only rich decision record. Fields: user_decision, role_dna (jsonb), confirmed_blockers (jsonb array), skip_reason, skip_reason_other, notes. Written on every skip/save/apply decision. Multiple snapshots per role allowed (decisions can change).
+- `user_boundaries` — personal hard/soft rules. UNIQUE (profile_id, blocker_key). Lightweight and optional.
+- All three tables: RLS enabled with `USING (true)` matching existing single-user pattern.
+
+**Blocker detection (`_detectBlockers`)**
+- 6 auto-detected blocker types: production_coding, salary_missing, hybrid_onsite, scope_unclear, domain_concern, marketing_heavy.
+- Detection is strictly data-driven: friction_signals, practical_details, role.work_model, output.scope_clarity, role_archetype. No probability or inference.
+- Returns `[]` when no analysis data is present. Never shows false blockers.
+
+**Blocker confirmation UI (`_renderBlockersSection`)**
+- New slot `#ws-blockers-section` added to `_ensureOverviewLowerCards`. Positioned BEFORE `#ws-decision-capture` (after Fit Assessment).
+- Shows blockers only when analysis data is present. Hides cleanly for unanalysed roles.
+- Three states per blocker: Hard blocker (red), Soft concern (amber), Not an issue (green/dimmed).
+- Evidence quote shown beneath label where available.
+- State persisted immediately on click via `_upsertRoleBlocker` upsert.
+- `_setRailVisible(false)` now also clears `#ws-blockers-section`.
+
+**Skip reason prompt (`_showSkipReasonPrompt`, `_commitSkip`)**
+- Skip button click in `renderDecisionBar` intercepted: if clicking Skip (not toggling off), calls `_showSkipReasonPrompt` first.
+- Prompt renders inline within `#doc-decision-bar`. 9 controlled reasons + optional notes textarea.
+- Detected blockers from `_detectBlockers` automatically highlighted as suggested reasons.
+- Cancel restores the normal decision bar via `renderDecisionBar(role)`.
+- Confirm calls `_commitSkip` which chains: `_setUserDecision('skip')` → `wsAppendDecision` (reason label) → `_saveDecisionSnapshot` (full context including confirmed blockers).
+
+**Decision snapshots (`_saveDecisionSnapshot`)**
+- Called from `_commitSkip` for skip decisions (with reason, notes, confirmed blockers).
+- Called fire-and-forget from `_setUserDecision` for save/apply decisions (with confirmed blockers only).
+- Snapshot includes full role DNA (title, company, location, work_model, engagement_type, IR35, salary, archetype, verdict) captured at decision time.
+
+**Boundary scaffold (`_saveUserBoundary`, `_wireBoundaryCta`)**
+- "Save as boundary" button appears inline on Hard blocker items (only if not already saved).
+- On click: upserts to `user_boundaries`, replaces CTA with "Boundary saved" indicator.
+- `_loadUserBoundaries()` called in parallel with `_loadRoleBlockers()` on every render — existing boundaries shown immediately.
+
+**Files changed:**
+- `app/app.js` — ~350 lines added (DB helpers, detection, UI functions, skip prompt, snapshot wiring, call site additions)
+- `app/styles.css` — ~220 lines added (`.dl-blockers-*`, `.dl-skip-*`, `.dl-boundary-*`)
+- `ROLEWISE_MASTER_BUILD_LEDGER.md` — this entry + task index + completed tasks
+
+**Follow-up tasks needed (not yet created):**
+- DL-05: Surface confirmed blocker data in the Review view (skip reason breakdown chart)
+- DL-06: Show boundary indicators in the inbox list (roles matching a hard boundary)
+- DL-07: Weekly patterns summary using `role_decision_snapshots` and `skip_reason` data
+- DEC-01-FOLLOW: Add read path for snapshots (view decision history per role)
 
 ### 2026-03-12 — Ledger Verification Corrections
 - `tokens.css` corrected from ~800 to 1,307 lines
