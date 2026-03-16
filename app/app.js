@@ -18430,22 +18430,34 @@
         // "Reach out to Alex Turner" / "Contact Alex Turner"
         /\bReach\s+out\s+to\s+([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){1,2})\b/,
         // "Meet the hiring team\n\nJane Smith" / "Job poster\nJane Smith"
-        // [ \t]+ in the capture group prevents grabbing the job title on the next line
-        // (e.g. "Jane Smith\nRecruiter at Acme" must not capture "Jane Smith\nRecruiter").
-        /(?:Meet\s+the\s+hiring\s+team|Job\s+poster|About\s+the\s+recruiter)[^\n]{0,40}\n[\s\n]*([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){1,2})/,
+        // Captures the entire first line (up to 60 chars) so names with parenthesised
+        // parts like "Desiree (Mancillas) Loebach" are not silently dropped.
+        // Paren stripping + word-by-word validation happens in the loop below.
+        /(?:Meet\s+the\s+hiring\s+team|Job\s+poster|About\s+the\s+recruiter)[^\n]{0,40}\n[\s\n]*([A-Z][^\n]{1,59})/,
       ];
       for (let pi = 0; pi < labelPatterns.length; pi++) {
         const re = labelPatterns[pi];
         const m = jdText.match(re);
         if (m && m[1]) {
-          const candidate = m[1].trim();
-          if (candidate.length < 50 && !/^[A-Z\s]+$/.test(candidate)) {
+          const raw = m[1].trim();
+          // Strip parenthesised segments (e.g. "(Mancillas)" in "Desiree (Mancillas) Loebach"),
+          // then normalise internal whitespace. Applies harmlessly to patterns 1 + 2 too.
+          const candidate = raw.replace(/\s*\([^)]*\)\s*/g, ' ').trim().replace(/\s+/g, ' ');
+          // Validate: 2–4 title-case words, no all-caps fragments, length < 50.
+          // Allows hyphens and apostrophes (O'Brien, Smith-Jones).
+          const words = candidate.split(' ');
+          const looksLikeName = (
+            words.length >= 2 && words.length <= 4 &&
+            words.every(w => /^[A-Z][a-z'-]+$/.test(w)) &&
+            candidate.length < 50
+          );
+          if (looksLikeName) {
             name = candidate;
             nameConfidence = true;
-            console.log(_tag, `label pattern [${labelPatternNames[pi]}] MATCHED — name="${name}"`);
+            console.log(_tag, `label pattern [${labelPatternNames[pi]}] MATCHED — raw="${raw}" name="${name}"`);
             break;
           } else {
-            console.log(_tag, `label pattern [${labelPatternNames[pi]}] matched but candidate rejected — candidate="${candidate}"`);
+            console.log(_tag, `label pattern [${labelPatternNames[pi]}] matched but candidate rejected — raw="${raw}" cleaned="${candidate}"`);
           }
         } else {
           console.log(_tag, `label pattern [${labelPatternNames[pi]}] NO MATCH`);
