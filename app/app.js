@@ -719,6 +719,7 @@
           <div class="rh-actions">
             <button class="btn-edit-details" id="rh-btn-edit-details" data-role-id="${esc(role.id)}">Edit details</button>
             <button class="btn-share-analysis" id="rh-btn-share-analysis" data-role-id="${esc(role.id)}" style="display:none;">Share analysis</button>
+            ${window.ROLEWISE_REASONING_MAP ? `<button class="btn-reasoning-map" id="rh-btn-reasoning-map" data-role-id="${esc(role.id)}" title="Open Reasoning Map — advanced signal inspection">Reasoning Map ↗</button>` : ''}
           </div>
         </div>`;
 
@@ -22093,6 +22094,16 @@ If a field cannot be determined from the message, return null for that field.`,
       const roleId = btn.dataset.roleId;
       const role   = allRoles.find(r => r.id === roleId);
       if (role) openShareModal(role);
+    });
+
+    // ── Reasoning Map bridge ──────────────────────────────────────────────────
+    // Self-contained. Remove these 3 lines + reasoning-map.js + reasoning-map.css
+    // + the one button line above to fully disable this feature.
+    document.getElementById('col-center').addEventListener('click', e => {
+      const btn = e.target.closest('#rh-btn-reasoning-map');
+      if (!btn || !window.openReasoningMap) return;
+      const role = allRoles.find(r => r.id === btn.dataset.roleId);
+      if (role) window.openReasoningMap(role);
     });
 
     // Edit details modal wiring

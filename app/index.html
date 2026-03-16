@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <!-- Reasoning Map — advanced internal feature. Remove this line + reasoning-map.js to disable. -->
+  <link rel="stylesheet" href="reasoning-map.css">
 </head>
 <body>
 
@@ -485,6 +487,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Prompt layer — must load before app.js so helpers are available globally -->
   <script src="ai/prompts/rolewise-prompts.js"></script>
+  <!-- Reasoning Map — must load after app.js so the bridge click handler fires after ROLEWISE_REASONING_MAP is set -->
   <script src="app.js"></script>
+  <script src="reasoning-map.js"></script>
 </body>
 </html>
