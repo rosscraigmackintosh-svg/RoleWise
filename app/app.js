@@ -1066,7 +1066,7 @@
                    decision_state, verdict_state, nudge_snoozed_until,
                    outcome_state, outcome_reason, outcome_at, current_stage,
                    role_updates(id, status, event_type, stage_reached, outcome_state, note, created_at),
-                   role_recruiters(id, recruiter_id, link_source, created_at,
+                   role_recruiters(id, recruiter_id, link_source, contact_type, created_at,
                      recruiters(id, name, company, email, linkedin_url, recruiter_type, office_phone, mobile_phone, website_url, notes, notes_log, created_at, updated_at))`)
           .order('created_at', { ascending: false }),
         db.from('analyses')
@@ -6412,6 +6412,7 @@
         role_id:      role.id,
         recruiter_id: recruiterId,
         link_source:  'email',
+        contact_type: 'Recruiter',
       });
       if (linkErr) return { linked: false, reason: 'link_failed' };
 
@@ -6419,6 +6420,7 @@
       const _recEntry = {
         recruiter_id: recruiterId,
         link_source:  'email',
+        contact_type: 'Recruiter',
         created_at:   new Date().toISOString(),
         recruiters:   { id: recruiterId, name: extracted.name || null, email: extracted.email || null, company: extracted.company || null },
       };
@@ -7129,98 +7131,217 @@
     // Roles with a JD use the existing renderRoleDoc path.
     // This is the ONLY entry point to the workspace — do not call renderWorkspaceView directly.
 
-    // ─── Recruiter meta line refresh ──────────────────────────────────────────
-    // Populates (or clears) #doc-meta-recruiter from the role's current
-    // role_recruiters data. Safe to call at any time after the role doc HTML
-    // has been rendered. Also called after email-confirm recruiter linking so
-    // the header updates without a full re-render.
-    function _refreshDocRecruiterMeta(role) {
+    // ─── Role Contacts section refresh ────────────────────────────────────────
+    // Populates:
+    //   #doc-meta-recruiter — compact header line showing the first contact only
+    //   #doc-recruiter-row  — full "Role Contacts" section (always visible)
+    // Safe to call at any time after the role doc HTML has been rendered.
+    function _refreshRoleContacts(role) {
+      // ── 1. Compact header meta line (first contact, for at-a-glance) ──────
       const _recMetaEl = document.getElementById('doc-meta-recruiter');
-      if (!_recMetaEl) return;
-      const _recRaw = role.role_recruiters?.[0]?.recruiters || null;
-      if (!_recRaw || !_recRaw.name) {
-        _recMetaEl.style.display = 'none';
-        _recMetaEl.innerHTML = '';
-        return;
+      if (_recMetaEl) {
+        const _firstLink = role.role_recruiters?.[0] || null;
+        const _recRaw    = _firstLink?.recruiters    || null;
+        if (!_recRaw || !_recRaw.name) {
+          _recMetaEl.style.display = 'none';
+          _recMetaEl.innerHTML = '';
+        } else {
+          const _contactType = _firstLink.contact_type || 'Recruiter';
+          const _rNameHtml = _recRaw.linkedin_url
+            ? `<a href="${esc(_recRaw.linkedin_url)}" target="_blank" rel="noopener" class="doc-meta-recruiter-link">${esc(_recRaw.name)}</a>`
+            : `<strong style="font-weight:500;color:var(--text);">${esc(_recRaw.name)}</strong>`;
+          const _rCompanyHtml = _recRaw.company
+            ? ` <span class="doc-meta-recruiter-company">· ${esc(_recRaw.company)}</span>`
+            : '';
+          const _rTypeHtml = `<span class="doc-meta-rec-type">${esc(_contactType)}</span>`;
+          const _rEmailHtml = _recRaw.email
+            ? `<div class="doc-meta-rec-detail"><a href="mailto:${esc(_recRaw.email)}">${esc(_recRaw.email)}</a></div>`
+            : '';
+          const _rProfileHtml = _recRaw.linkedin_url
+            ? `<div class="doc-meta-rec-detail"><a href="${esc(_recRaw.linkedin_url)}" target="_blank" rel="noopener">${_recRaw.linkedin_url.includes('linkedin.com') ? 'LinkedIn' : 'Profile'} ↗</a></div>`
+            : '';
+          const _lastEvDate = role.role_updates?.[0]?.created_at
+            || _firstLink?.created_at || role.created_at || null;
+          const _rLastHtml = _lastEvDate
+            ? `<div class="doc-meta-rec-detail">Last interaction: ${_rcRelativeDate(_lastEvDate)}</div>`
+            : '';
+          // History facts
+          const _recFull = allRecruiters.find(r => r.id === _recRaw.id);
+          const _recRoles = _recFull?.roles || [];
+          let _historyHtml = '';
+          if (_recRoles.length > 1) {
+            const _total = _recRoles.length;
+            const _applied = _recRoles.filter(r => r._appliedDate).length;
+            const _responses = _recRoles.filter(r => r._firstResponseDate).length;
+            let _lastDate = null;
+            for (const _r of _recRoles) {
+              if (_r.id === role.id) continue;
+              const _d = _r.role_updates?.[0]?.created_at || _r.created_at;
+              if (_d && (!_lastDate || _d > _lastDate)) _lastDate = _d;
+            }
+            const _daysSince = _lastDate
+              ? Math.floor((Date.now() - new Date(_lastDate).getTime()) / 86400000)
+              : null;
+            const _facts = [`${_total} role${_total !== 1 ? 's' : ''}`];
+            if (_applied   > 0) _facts.push(`${_applied} applied`);
+            if (_responses > 0) _facts.push(`${_responses} response${_responses !== 1 ? 's' : ''}`);
+            if (_facts.length < 3 && _daysSince !== null && _daysSince > 1) _facts.push(`Last active ${_daysSince}d ago`);
+            const _safeId = esc(_recRaw.id);
+            _historyHtml = `<div class="doc-meta-rec-history"><span class="doc-meta-rec-history-link" role="button" tabindex="0" onclick="_openRecruiterById('${_safeId}')" onkeydown="if(event.key==='Enter')_openRecruiterById('${_safeId}')">${_facts.slice(0, 3).join(' · ')}</span></div>`;
+          }
+          _recMetaEl.innerHTML = `${esc(_contactType)}: ${_rNameHtml}${_rCompanyHtml} ${_rTypeHtml}${_rEmailHtml}${_rProfileHtml}${_rLastHtml}${_historyHtml}`;
+          _recMetaEl.style.display = '';
+        }
       }
 
-      // Identity line — name (bold; also a link if profile URL exists)
-      const _rNameHtml = _recRaw.linkedin_url
-        ? `<a href="${esc(_recRaw.linkedin_url)}" target="_blank" rel="noopener" class="doc-meta-recruiter-link">${esc(_recRaw.name)}</a>`
-        : `<strong style="font-weight:500;color:var(--text);">${esc(_recRaw.name)}</strong>`;
-      // Company — dot separator matches "Name · Company · Type" scan pattern
-      const _rCompanyHtml = _recRaw.company
-        ? ` <span class="doc-meta-recruiter-company">· ${esc(_recRaw.company)}</span>`
-        : '';
+      // ── 2. Full Role Contacts section (always visible) ─────────────────────
+      const _rowEl = document.getElementById('doc-recruiter-row');
+      if (!_rowEl) return;
 
-      // Type badge — show stored value (including Unknown when explicit);
-      // only suppress Unknown when it comes from the heuristic fallback.
-      const _storedType = _recRaw.recruiter_type;
-      const _rType      = _storedType
-        || (_recruiterTypeLabel(_recRaw) !== 'Unknown' ? _recruiterTypeLabel(_recRaw) : null);
-      const _rTypeHtml  = _rType
-        ? ` <span class="doc-meta-rec-type">${esc(_rType)}</span>`
-        : '';
+      const _contacts = role.role_recruiters || [];
 
-      // Email sub-line
-      const _rEmailHtml = _recRaw.email
-        ? `<div class="doc-meta-rec-detail"><a href="mailto:${esc(_recRaw.email)}">${esc(_recRaw.email)}</a></div>`
-        : '';
+      let _rowHtml = `<div class="role-contacts-section">
+        <div class="role-contacts-header">
+          <span class="role-contacts-title">Role Contacts</span>
+          <button class="role-contacts-add-btn" id="btn-add-role-contact">+ Add Contact</button>
+        </div>`;
 
-      // Profile link — explicit visible link (LinkedIn ↗ or Profile ↗)
-      const _rProfileHtml = _recRaw.linkedin_url
-        ? `<div class="doc-meta-rec-detail"><a href="${esc(_recRaw.linkedin_url)}" target="_blank" rel="noopener">${_recRaw.linkedin_url.includes('linkedin.com') ? 'LinkedIn' : 'Profile'} ↗</a></div>`
-        : '';
-
-      // Last interaction — priority: newest role event > recruiter link date > role created_at
-      const _lastEvDate = role.role_updates?.[0]?.created_at
-        || role.role_recruiters?.[0]?.created_at
-        || role.created_at
-        || null;
-      const _rLastHtml = _lastEvDate
-        ? `<div class="doc-meta-rec-detail">Last interaction: ${_rcRelativeDate(_lastEvDate)}</div>`
-        : '';
-
-      // ── History facts — derived from allRecruiters (already in memory) ──
-      const _recFull   = allRecruiters.find(r => r.id === _recRaw.id);
-      const _recRoles  = _recFull?.roles || [];
-      let   _historyHtml = '';
-
-      if (_recRoles.length > 1) {
-        const _total     = _recRoles.length;
-        const _applied   = _recRoles.filter(r => r._appliedDate).length;
-        const _responses = _recRoles.filter(r => r._firstResponseDate).length;
-
-        // Last activity across OTHER linked roles (exclude current)
-        let _lastDate = null;
-        for (const _r of _recRoles) {
-          if (_r.id === role.id) continue;
-          const _d = _r.role_updates?.[0]?.created_at || _r.created_at;
-          if (_d && (!_lastDate || _d > _lastDate)) _lastDate = _d;
+      if (_contacts.length === 0) {
+        _rowHtml += `<div class="role-contacts-empty">No contacts linked to this role yet.</div>`;
+      } else {
+        _rowHtml += `<div class="role-contacts-list">`;
+        for (const _link of _contacts) {
+          const _rec = _link.recruiters;
+          if (!_rec) continue;
+          const _cType  = _link.contact_type || 'Recruiter';
+          const _nameHtml = _rec.linkedin_url
+            ? `<a href="${esc(_rec.linkedin_url)}" target="_blank" rel="noopener" class="role-contact-name-link">${esc(_rec.name || '—')}</a>`
+            : `<span class="role-contact-name">${esc(_rec.name || '—')}</span>`;
+          _rowHtml += `<div class="role-contact-item" data-rec-id="${esc(_rec.id)}">
+            <div class="role-contact-main">
+              ${_nameHtml}
+              <span class="role-contact-type-badge">${esc(_cType)}</span>
+              ${_rec.company ? `<span class="role-contact-company">· ${esc(_rec.company)}</span>` : ''}
+            </div>
+            ${_rec.email ? `<div class="role-contact-detail"><a href="mailto:${esc(_rec.email)}">${esc(_rec.email)}</a></div>` : ''}
+          </div>`;
         }
-        const _daysSince = _lastDate
-          ? Math.floor((Date.now() - new Date(_lastDate).getTime()) / 86400000)
-          : null;
-
-        const _facts = [];
-        _facts.push(`${_total} role${_total !== 1 ? 's' : ''}`);
-        if (_applied   > 0) _facts.push(`${_applied} applied`);
-        if (_responses > 0) _facts.push(`${_responses} response${_responses !== 1 ? 's' : ''}`);
-        if (_facts.length < 3 && _daysSince !== null && _daysSince > 1) {
-          _facts.push(`Last active ${_daysSince}d ago`);
-        }
-
-        const _safeId   = esc(_recRaw.id);
-        const _factsStr = _facts.slice(0, 3).join(' · ');
-        _historyHtml = `<div class="doc-meta-rec-history">` +
-          `<span class="doc-meta-rec-history-link" role="button" tabindex="0" ` +
-          `onclick="_openRecruiterById('${_safeId}')" ` +
-          `onkeydown="if(event.key==='Enter')_openRecruiterById('${_safeId}')">` +
-          `${_factsStr}</span></div>`;
+        _rowHtml += `</div>`;
       }
 
-      _recMetaEl.innerHTML = `Recruiter: ${_rNameHtml}${_rCompanyHtml}${_rTypeHtml}${_rEmailHtml}${_rProfileHtml}${_rLastHtml}${_historyHtml}`;
-      _recMetaEl.style.display = '';
+      _rowHtml += `<div id="role-contact-add-form"></div></div>`;
+      _rowEl.innerHTML = _rowHtml;
+      _rowEl.style.display = '';
+
+      // Wire up Add Contact button
+      document.getElementById('btn-add-role-contact')?.addEventListener('click', () => {
+        _showAddRoleContactForm(role);
+      });
+
+      // Wire up contact item clicks — open in Role Contacts directory
+      _rowEl.querySelectorAll('.role-contact-item[data-rec-id]').forEach(item => {
+        item.style.cursor = 'pointer';
+        item.addEventListener('click', e => {
+          if (e.target.tagName === 'A') return;
+          _openRecruiterById(item.dataset.recId);
+        });
+      });
+    }
+
+    // Backward-compat alias — all existing call sites continue to work
+    function _refreshDocRecruiterMeta(role) { _refreshRoleContacts(role); }
+
+    // ─── Add Contact inline form (role page) ──────────────────────────────────
+    // Shows an inline form in #role-contact-add-form so the user can link a
+    // new contact to the current role without leaving the workspace.
+    function _showAddRoleContactForm(role) {
+      const _formEl = document.getElementById('role-contact-add-form');
+      if (!_formEl) return;
+
+      _formEl.innerHTML = `<div class="role-contact-form">
+        <div class="role-contact-form-title">Add contact to this role</div>
+        <div class="rc-form-row">
+          <label class="rc-form-label" for="rcf-name">Name <span style="color:#c0392b">*</span></label>
+          <input class="rc-form-input" id="rcf-name" type="text" placeholder="e.g. Sarah Mitchell" autocomplete="off">
+        </div>
+        <div class="rc-form-row">
+          <label class="rc-form-label" for="rcf-contact-type">Contact type</label>
+          <select class="rc-form-input" id="rcf-contact-type" style="appearance:auto;">
+            <option value="Recruiter">Recruiter</option>
+            <option value="Hiring Manager">Hiring Manager</option>
+            <option value="Talent Acquisition">Talent Acquisition</option>
+            <option value="Job Poster">Job Poster</option>
+            <option value="Contact">Contact</option>
+            <option value="Unknown">Unknown</option>
+          </select>
+        </div>
+        <div class="rc-form-row">
+          <label class="rc-form-label" for="rcf-company">Company</label>
+          <input class="rc-form-input" id="rcf-company" type="text" placeholder="e.g. Zebra People" autocomplete="off">
+        </div>
+        <div class="rc-form-row">
+          <label class="rc-form-label" for="rcf-email">Email</label>
+          <input class="rc-form-input" id="rcf-email" type="email" placeholder="sarah@example.com" autocomplete="off">
+        </div>
+        <div class="rc-form-row">
+          <label class="rc-form-label" for="rcf-phone">Phone</label>
+          <input class="rc-form-input" id="rcf-phone" type="tel" placeholder="+44 7700 900000" autocomplete="off">
+        </div>
+        <div class="rc-form-row">
+          <label class="rc-form-label" for="rcf-linkedin">LinkedIn</label>
+          <input class="rc-form-input" id="rcf-linkedin" type="url" placeholder="https://linkedin.com/in/..." autocomplete="off">
+        </div>
+        <div class="rc-form-row">
+          <label class="rc-form-label" for="rcf-notes">Notes</label>
+          <input class="rc-form-input" id="rcf-notes" type="text" placeholder="Optional notes" autocomplete="off">
+        </div>
+        <div class="rc-form-actions">
+          <button class="rc-form-save" id="rcf-save">Save contact</button>
+          <button class="rc-form-cancel" id="rcf-cancel">Cancel</button>
+        </div>
+        <div class="rc-form-error hidden" id="rcf-error"></div>
+      </div>`;
+
+      document.getElementById('rcf-cancel').addEventListener('click', () => {
+        _formEl.innerHTML = '';
+      });
+
+      document.getElementById('rcf-save').addEventListener('click', async () => {
+        const name        = document.getElementById('rcf-name').value.trim();
+        const contactType = document.getElementById('rcf-contact-type').value || 'Recruiter';
+        const company     = document.getElementById('rcf-company').value.trim();
+        const email       = document.getElementById('rcf-email').value.trim();
+        const phone       = document.getElementById('rcf-phone').value.trim();
+        const li          = document.getElementById('rcf-linkedin').value.trim();
+        const notes       = document.getElementById('rcf-notes').value.trim();
+        const errEl       = document.getElementById('rcf-error');
+
+        if (!name) {
+          errEl.textContent = 'Name is required.';
+          errEl.classList.remove('hidden');
+          return;
+        }
+        errEl.classList.add('hidden');
+        const _btn = document.getElementById('rcf-save');
+        _btn.disabled = true;
+        _btn.textContent = 'Saving…';
+
+        try {
+          await runManualRecruiterLink(role, {
+            name, company, email,
+            profile_url:  li       || null,
+            office_phone: phone    || null,
+            notes:        notes    || null,
+            contact_type: contactType,
+          });
+          _formEl.innerHTML = '';
+        } catch (e) {
+          errEl.textContent = e.message || 'Could not save contact.';
+          errEl.classList.remove('hidden');
+          _btn.disabled = false;
+          _btn.textContent = 'Save contact';
+        }
+      });
     }
 
     async function renderRoleDoc(role) {
@@ -18701,6 +18822,7 @@
         role_id:      role.id,
         recruiter_id: recruiterId,
         link_source:  'auto',
+        contact_type: 'Recruiter',
       });
       if (linkErr) {
         console.error(_tag, 'role_recruiters INSERT failed', linkErr);
@@ -18714,6 +18836,7 @@
         const _recEntry = {
           recruiter_id: recruiterId,
           link_source:  'auto',
+          contact_type: 'Recruiter',
           created_at:   new Date().toISOString(),
           recruiters: {
             id:           recruiterId,
@@ -18752,21 +18875,18 @@
       });
     }
 
-    // ── Manual recruiter link — used when user fills the recruiter section in Add JD ──────
+    // ── Manual recruiter link — used when user adds a contact from the role page ──────
     // Uses the same match/create/link logic as runRecruiterAutoDetection but takes
     // user-provided data as input. Runs with link_source='manual'.
     async function runManualRecruiterLink(role, data) {
-      // data: { name, company, email, profile_url, type }
-      // type is 'Agency' | 'Internal' | null — only stored when explicitly provided
+      // data: { name, company, email, profile_url, type, contact_type, office_phone, notes }
+      // type is 'Agency' | 'Internal' | null — stored on the recruiters record
+      // contact_type is the role relationship type (Recruiter/Hiring Manager/etc.)
       const hasSignal = !!(data.name || data.email || data.profile_url);
       if (!hasSignal) return;
 
-      // Skip if role already has a recruiter link
-      try {
-        const { data: existing } = await db
-          .from('role_recruiters').select('id').eq('role_id', role.id).limit(1);
-        if (existing && existing.length > 0) return;
-      } catch (_) { return; }
+      // Roles now support multiple contacts — we don't block on existing links.
+      // Duplicate-contact check happens after we resolve the recruiter ID below.
 
       let recruiterId = null;
 
@@ -18818,7 +18938,9 @@
           company:        data.company      || null,
           email:          data.email        || null,
           linkedin_url:   data.profile_url  || null,
-          recruiter_type: data.type         || null,   // store explicit type; null = no preference
+          recruiter_type: data.type         || null,   // Agency | Internal — recruiter's own type
+          office_phone:   data.office_phone || null,
+          notes:          data.notes        || null,
         }).select('id').single();
         if (re || !newRec) return;
         recruiterId = newRec.id;
@@ -18826,10 +18948,16 @@
 
       if (!recruiterId) return;
 
+      // De-duplicate: skip if this exact recruiter is already linked to this role
+      const _alreadyLinked = role.role_recruiters?.some(l => l.recruiter_id === recruiterId);
+      if (_alreadyLinked) return;
+
+      const _contactType = data.contact_type || 'Recruiter';
       const { error: linkErr } = await db.from('role_recruiters').insert({
         role_id:      role.id,
         recruiter_id: recruiterId,
         link_source:  'manual',
+        contact_type: _contactType,
       });
 
       if (linkErr) {
@@ -18844,6 +18972,7 @@
       const _recEntry = {
         recruiter_id: recruiterId,
         link_source:  'manual',
+        contact_type: _contactType,
         created_at:   new Date().toISOString(),
         recruiters: {
           id:           recruiterId,
@@ -18965,7 +19094,7 @@
       const listEl = document.getElementById('rc-list-scroll');
       if (!listEl) return;
       if (recruiters.length === 0) {
-        listEl.innerHTML = `<div class="rc-list-empty">No recruiters added yet.<br>Add one above or let RoleWise detect them from your JDs.</div>`;
+        listEl.innerHTML = `<div class="rc-list-empty">No contacts added yet.<br>Add one above or let RoleWise detect them from your JDs.</div>`;
         return;
       }
 
@@ -19365,7 +19494,7 @@
       const el = document.getElementById('col-overview-cards');
       if (!el) return;
       el.innerHTML = `<div class="rc-detail rc-form">
-        <div class="rc-form-title">Add recruiter</div>
+        <div class="rc-form-title">Add contact</div>
         <div class="rc-form-row">
           <label class="rc-form-label" for="rc-new-name">Name <span style="color:#c0392b">*</span></label>
           <input class="rc-form-input" id="rc-new-name" type="text" placeholder="Sarah Mitchell" autocomplete="off">
@@ -19375,7 +19504,7 @@
           <input class="rc-form-input" id="rc-new-company" type="text" placeholder="Zebra People" autocomplete="off">
         </div>
         <div class="rc-form-row">
-          <label class="rc-form-label" for="rc-new-type">Type</label>
+          <label class="rc-form-label" for="rc-new-type">Recruiter type</label>
           <select class="rc-form-input" id="rc-new-type" style="appearance:auto;">
             <option value="">Unknown</option>
             <option value="Agency">Agency</option>
@@ -19403,7 +19532,7 @@
           <input class="rc-form-input" id="rc-new-website" type="url" placeholder="https://zebrapeople.com" autocomplete="off">
         </div>
         <div class="rc-form-actions">
-          <button class="rc-form-save" id="rc-new-save">Add recruiter</button>
+          <button class="rc-form-save" id="rc-new-save">Add contact</button>
           <button class="rc-form-cancel" id="rc-new-cancel">Cancel</button>
         </div>
         <div class="rc-form-error hidden" id="rc-new-error"></div>
@@ -19412,7 +19541,7 @@
       document.getElementById('rc-new-cancel').addEventListener('click', () => {
         selectedRecruiterId = null;
         document.querySelectorAll('.rc-item').forEach(r => r.classList.remove('active'));
-        el.innerHTML = `<div class="rc-center-empty">Select a recruiter to view details.</div>`;
+        el.innerHTML = `<div class="rc-center-empty">Select a contact to view details.</div>`;
       });
 
       document.getElementById('rc-new-save').addEventListener('click', async () => {
@@ -19460,10 +19589,10 @@
           refresh().catch(() => {});
 
         } catch (e) {
-          errEl.textContent = e.message || 'Could not save recruiter.';
+          errEl.textContent = e.message || 'Could not save contact.';
           errEl.classList.remove('hidden');
           btn.disabled = false;
-          btn.textContent = 'Add recruiter';
+          btn.textContent = 'Add contact';
         }
       });
     }
@@ -19479,11 +19608,11 @@
       listEl.style.display = 'flex';
       listEl.style.flexDirection = 'column';
 
-      // Build recruiter list panel HTML
+      // Build contacts list panel HTML
       listEl.innerHTML = `<div class="rc-list-panel">
         <div class="rc-list-header">
-          <div class="rc-list-title">Recruiters</div>
-          <button class="rc-add-btn" id="rc-add-recruiter-btn">+ Add recruiter</button>
+          <div class="rc-list-title">Role Contacts</div>
+          <button class="rc-add-btn" id="rc-add-recruiter-btn">+ Add contact</button>
         </div>
         <div class="rc-list-scroll" id="rc-list-scroll"></div>
       </div>`;
@@ -19495,7 +19624,7 @@
       });
 
       // Empty state in center
-      centerEl.innerHTML = `<div class="rc-center-empty">Select a recruiter to view details.</div>`;
+      centerEl.innerHTML = `<div class="rc-center-empty">Select a contact to view details.</div>`;
 
       // Clear rail
       document.getElementById('col-rail-section').innerHTML = ''; _setRailVisible(false);
