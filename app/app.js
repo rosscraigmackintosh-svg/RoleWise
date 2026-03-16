@@ -6729,12 +6729,14 @@
               _ovBody.innerHTML = `<div class="rw-overview-wrap">${renderMatchOutput(_aJson)}</div>`;
               _initCompSnapshot(_ovBody);
               _renderRoleHeader(role);
+              _refreshRoleContacts(role);
             } catch (e) {
               _ovBody.innerHTML = '<div class="doc-empty">Could not load analysis</div>';
             }
           } else {
             _ovBody.innerHTML = '<div class="rw-overview-wrap"><div class="doc-empty" style="color:var(--text-light);font-size:13.5px;">Paste a job description to understand whether this role is worth pursuing.</div></div>';
             _renderRoleHeader(role);
+            _refreshRoleContacts(role);
           }
         }
       }
