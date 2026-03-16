@@ -18902,14 +18902,14 @@
         renderInbox(allRoles);
         // Re-render the Recruiters directory list if it's currently visible
         renderRecruiterList(allRecruiters);
-      }
 
-      // Log event
-      const recName = detected.name || detected.email || detected.linkedin || 'recruiter';
-      insertEvent(role.id, {
-        event_type: 'recruiter_linked',
-        title:      `Recruiter linked automatically — ${recName}`,
-      });
+        // Log event — only fires when the role_recruiters link was actually created
+        const recName = detected.name || detected.email || detected.linkedin || 'recruiter';
+        insertEvent(role.id, {
+          event_type: 'recruiter_linked',
+          title:      `Recruiter linked automatically — ${recName}`,
+        });
+      }
     }
 
     // ── Manual recruiter link — used when user adds a contact from the role page ──────
