@@ -12904,256 +12904,9 @@
       }
 
       html += `<div class="rw-card-grid">`;
-
-      // ── Role Briefing card — Archetype + Briefing Header (full width) ──────────
-      let _briefHtml = '';
-      {
-        // Role Archetype
-        const _arch = output.role_archetype;
-        const _comp = output.jd_completeness;
-        if (_arch || _comp) {
-          const _archHtml = _arch
-            ? `<div style="font-size:13.5px;color:var(--text);line-height:1.5;margin-bottom:${_comp ? '8px' : '0'};">${esc(_arch)}</div>`
-            : '';
-          const _compHtml = _comp
-            ? `<div style="font-size:11px;color:var(--text-light);letter-spacing:0.03em;">JD CLARITY &thinsp;&middot;&thinsp; <span style="color:var(--text-muted);font-weight:600;">${esc(_comp.grade)}</span>&thinsp;&middot;&thinsp;${esc(_comp.label)}&ensp;(${_comp.score}/${_comp.total})</div>`
-            : '';
-          _briefHtml += `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-light);">${_archHtml}${_compHtml}</div>`;
-        }
-      }
-
-      // Rolewise Briefing Header — role_summary paragraph + practical quick grid
-      {
-        const _rs  = output.role_summary;
-        const _pd  = output.practical_details || {};
-        const _hs  = output.hiring_system;
-        const _rrs = Array.isArray(output.role_reality_summary) && output.role_reality_summary.length
-          ? output.role_reality_summary : null;
-
-        const hasBrief = (_rs && _rs !== 'Not stated') || _rrs;
-        const _loc    = _pd.location     || null;
-        const _wm     = _pd.remote_model || null;
-        const _sal    = (_pd.salary_annual && _pd.salary_annual !== 'Not stated') ? _pd.salary_annual : null;
-        const _bhHsLabels = {
-          direct_employer:    'Direct employer',
-          recruiter_mediated: 'Recruiter-mediated',
-          high_volume_funnel: 'High-volume funnel',
-          founder_led:        'Founder-led',
-          enterprise_matrix:  'Enterprise / matrix',
-          agency_search:      'Agency search',
-        };
-        const _hsLabel = (_hs && _hs.type) ? (_bhHsLabels[_hs.type] || _hs.type) : null;
-        const hasGrid  = _loc || _wm || _sal || _hsLabel;
-
-        if (hasBrief || hasGrid) {
-          let _bh = '';
-          if (_rs && _rs !== 'Not stated') {
-            _bh += `<div class="rw-bh-paragraph">${esc(_rs)}</div>`;
-          } else if (_rrs) {
-            _bh += `<div class="rw-bh-paragraph">${_rrs.map(s => esc(String(s))).join(' ')}</div>`;
-          }
-          if (hasGrid) {
-            const _bhCells = [
-              _loc     ? ['Location',      _loc]     : null,
-              _wm      ? ['Work model',    _wm]      : null,
-              _sal     ? ['Salary',        _sal]     : null,
-              _hsLabel ? ['Hiring source', _hsLabel] : null,
-            ].filter(Boolean);
-            _bh += `<div class="rw-bh-grid">${_bhCells.map(([k, v]) =>
-              `<div class="rw-bh-cell"><span class="rw-bc-label">${esc(k)}</span><span class="rw-bc-value">${esc(v)}</span></div>`
-            ).join('')}</div>`;
-          }
-          _briefHtml += `<div class="rw-briefing-header">${_bh}</div>`;
-        }
-      }
-      html += sectionHeader('Role Overview', true);
+      html += sectionHeader('Role Briefing', true);
       html += `<div class="rw-card rw-card--full rw-card--narrative" id="section-briefing">${_briefHtml}</div>`;
 
-      // ── Section 2: Practical Details ────────────────────────────────────────
-      html += sectionHeader('Practical Details');
-
-      // Practical Details — factual extracted values table
-      {
-        const pd = output.practical_details || {};
-        const salaryAnnual  = pd.salary_annual  || 'Not stated';
-        const salaryMonthly = pd.salary_monthly || null;
-        const salaryStr = (salaryAnnual !== 'Not stated' && salaryMonthly)
-          ? `${salaryAnnual} (${salaryMonthly})`
-          : salaryAnnual;
-
-        // Build rows — only include company_type and role_seniority when extracted
-        const rows = [
-          ['Location',        pd.location         || 'Not stated'],
-          ['Work model',      pd.remote_model      || 'Not stated'],
-          ['Employment type', pd.employment_type   || 'Not stated'],
-          ['Salary',          salaryStr],
-          ['Reporting to',    pd.reporting_line    || 'Not stated'],
-          ['Visa',            pd.visa              || 'Not stated'],
-        ];
-        // New v2 fields — append only when non-trivial
-        if (pd.company_type && pd.company_type !== 'Not stated') {
-          rows.push(['Company type', pd.company_type]);
-        }
-        if (pd.role_seniority && pd.role_seniority !== 'Not stated') {
-          rows.push(['Seniority', pd.role_seniority]);
-        }
-        if (pd.commute_reality) {
-          rows.push(['Commute', pd.commute_reality]);
-        }
-
-        // Verification callout — surface ambiguous fields inline under the table
-        const _vn = Array.isArray(pd._verification_needed) ? pd._verification_needed : [];
-        const _notes = Array.isArray(pd._extraction_notes) ? pd._extraction_notes : [];
-        const verifyHtml = (_vn.length || _notes.length)
-          ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);">
-               ${_notes.map(n => `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5;margin-bottom:3px;">⚠ ${esc(n)}</div>`).join('')}
-             </div>`
-          : '';
-
-        const table = `<table style="width:100%;border-collapse:collapse;">${rows.map(([k, v], i) => `
-          <tr${i < rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
-            <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(k)}</td>
-            <td style="padding:6px 0;font-size:13px;color:${v === 'Not stated' ? 'var(--text-light)' : 'var(--text)'};">${esc(v)}</td>
-          </tr>`).join('')}
-        </table>${verifyHtml}`;
-        html += card('Practical Details', table, 'section-practical', false, 'rw-card--data');
-      }
-
-
-      // ── Compensation Snapshot (half-width card, pairs with Practical Details) ──
-      {
-        const _csPd  = output.practical_details || {};
-        const _csSal = _csPd.salary_annual;
-        if (_csSal && _csSal !== 'Not stated') {
-          const _csParsed = _parseSalaryRange(_csSal);
-          if (_csParsed) {
-            const { min: _csMin, max: _csMax, symbol: _csSym } = _csParsed;
-            const _csGross = _csMax ? Math.round((_csMin + _csMax) / 2) : _csMin;
-            const _csDefaultPct = parseInt((userProfile && userProfile.pension_pct) || 5, 10);
-            const _csDefaultWks = parseInt((userProfile && userProfile.working_weeks) || 46, 10);
-            const _r0 = calculateUKTakeHome(_csGross, _csDefaultPct);
-            const _fmtCs = n => `${_csSym}${Math.round(n).toLocaleString('en-GB')}`;
-            const _csPctOpts = [5, 7, 10].map(p =>
-              `<button class="cs-pct-btn${p === _csDefaultPct ? ' cs-pct-btn--active' : ''}" data-pct="${p}">${p}%</button>`
-            ).join('');
-            const _csCustomVal = ![5, 7, 10].includes(_csDefaultPct) ? _csDefaultPct : '';
-            const _csDayRate   = parseFloat((userProfile && userProfile.day_rate) || 0);
-            const _hasContract = _csDayRate > 0;
-            const _contractRevenue = _hasContract ? Math.round(_csDayRate * _csDefaultWks * 5) : 0;
-            const _csWksOpts = [44, 46, 48].map(w =>
-              `<button class="cs-wks-btn${w === _csDefaultWks ? ' cs-wks-btn--active' : ''}" data-wks="${w}">${w}w</button>`
-            ).join('');
-            const _csCustomWks = ![44, 46, 48].includes(_csDefaultWks) ? _csDefaultWks : '';
-
-            let _csHtml = `
-              <div class="cs-summary">
-                <div class="cs-takehome">
-                  <span class="cs-th-label">Estimated monthly take-home</span>
-                  <span class="cs-th-value">${_fmtCs(_r0.takeHomeMonthly)}<span class="cs-th-unit">/ month</span></span>
-                </div>
-                <div class="cs-assume">Assumes: ${_csDefaultPct}% pension contribution</div>
-                <div class="cs-pension-row">
-                  <span class="cs-pension-label">Pension</span>
-                  <div class="cs-pct-btns">
-                    ${_csPctOpts}
-                    <input type="number" class="cs-pct-custom" min="0" max="30" step="1" placeholder="%" value="${_csCustomVal}" title="Custom pension %">
-                  </div>
-                </div>
-              </div>
-              <div class="cs-breakdown">
-                <div class="cs-row"><span class="cs-row-label">Gross salary</span><span class="cs-row-value">${_fmtCs(_csGross)}/yr</span></div>
-                <div class="cs-row"><span class="cs-row-label">Pension (<span class="cs-pct-display">${_csDefaultPct}</span>%)</span><span class="cs-row-value cs-row-pension">−${_fmtCs(_r0.pensionAnnual)}/yr</span></div>
-                <div class="cs-row"><span class="cs-row-label">Income tax</span><span class="cs-row-value cs-row-tax">−${_fmtCs(_r0.incomeTaxAnnual)}/yr</span></div>
-                <div class="cs-row"><span class="cs-row-label">National Insurance</span><span class="cs-row-value cs-row-ni">−${_fmtCs(_r0.niAnnual)}/yr</span></div>
-                <div class="cs-row cs-row--total"><span class="cs-row-label">Take-home</span><span class="cs-row-value cs-th-detail">${_fmtCs(_r0.takeHomeAnnual)}/yr · ${_fmtCs(_r0.takeHomeMonthly)}/mo</span></div>
-              </div>
-              <div class="cs-note">2024/25 PAYE estimate · salary sacrifice model · personal allowance £12,570</div>`;
-            if (_csMax && _csMax !== _csMin) {
-              _csHtml += `<div class="cs-note">Based on midpoint of ${esc(_csSal)}</div>`;
-            }
-            if (_hasContract) {
-              const _roleMid = Math.round(_csGross / 12);
-              const _contractMonthly = Math.round(_contractRevenue / 12);
-              const _diffRaw = _contractMonthly - _roleMid;
-              _csHtml += `
-              <div class="cs-contract-block">
-                <div class="cs-contract-header">
-                  <span class="cs-contract-label">Contract equivalent</span>
-                  <span class="cs-contract-revenue cs-contract-rev-value">${_fmtCs(_contractRevenue)}/yr</span>
-                </div>
-                <div class="cs-wks-row">
-                  <span class="cs-wks-label">Working weeks</span>
-                  <div class="cs-wks-btns">
-                    ${_csWksOpts}
-                    <input type="number" class="cs-wks-custom" min="30" max="52" step="1" placeholder="wks" value="${_csCustomWks}" title="Custom working weeks">
-                  </div>
-                </div>
-                <div class="cs-assume cs-wks-assume">Assumes: ${_csDefaultWks} working weeks per year</div>
-                <div class="cs-contract-compare-row">
-                  <span class="cs-row-label">Salary monthly</span><span class="cs-row-value">${_fmtCs(_roleMid)}/mo</span>
-                </div>
-                <div class="cs-contract-compare-row">
-                  <span class="cs-row-label">Contract monthly</span><span class="cs-row-value cs-contract-mo-value">${_fmtCs(_contractMonthly)}/mo</span>
-                </div>
-                <div class="cs-contract-compare-row cs-contract-diff">
-                  <span class="cs-row-label">Difference</span><span class="cs-row-value cs-contract-diff-value">≈${_fmtCs(Math.abs(_diffRaw))}/mo ${_diffRaw >= 0 ? 'higher' : 'lower'}</span>
-                </div>
-              </div>`;
-            }
-            // The Comp Snapshot card pairs with JD Health — insert right after it in the grid.
-            // We insert it before the grid close, but it naturally pairs via CSS grid order.
-            html += `<div class="rw-card rw-card--data cs-panel" id="section-comp-snapshot" data-gross="${_csGross}" data-symbol="${esc(_csSym)}" data-dayrate="${_csDayRate}" data-wks="${_csDefaultWks}">
-              <div class="doc-section-heading">Compensation Snapshot</div>
-              <div class="cs-body">${_csHtml}</div>
-            </div>`;
-          }
-        }
-      }
-
-      // ── Position 3a: Commute Impact ─────────────────────────────────────────
-      {
-        const _coPd     = output.practical_details || {};
-        const _coLoc    = _coPd.location || role.location_text || null;
-        const _coWmRaw  = _coPd.remote_model || role.work_model || '';
-        const _coLocClean = _coLoc && _coLoc !== 'Not stated' ? _coLoc : null;
-
-        if (_coLocClean) {
-          const _homeRaw = (userProfile && userProfile.location)
-                         || _ROLEWISE_USER_PROFILE.location
-                         || 'Egham, Surrey';
-          const _coData = _buildCommuteData(_coLocClean, _coWmRaw, _homeRaw);
-          html += card('Commute Impact', _renderCommuteCard(_coData), 'section-commute', false, 'rw-card--data');
-        }
-      }
-
-      // ── Position 3b: JD Health (half, pairs with Commute Impact) ──
-      // JD Health — clarity and transparency of the JD itself
-      {
-        const _jdh = output.jd_health;
-        if (Array.isArray(_jdh) && _jdh.length > 0) {
-          const _areaLabels = {
-            salary_transparency: 'Salary',
-            team_structure:      'Team structure',
-            scope_definition:    'Scope',
-            role_expectations:   'Expectations',
-            interview_process:   'Interview process',
-            company_context:     'Company context',
-          };
-          const _cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-          const _jdhRows = _jdh.map((item, i) => {
-            const _aLabel = _areaLabels[item.area] || _cap((item.area || '').replace(/_/g, ' '));
-            const border = i < _jdh.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : '';
-            return `<tr${border}>
-              <td style="padding:7px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(_aLabel)}</td>
-              <td style="padding:7px 0;font-size:13px;color:var(--text);line-height:1.5;">${esc(item.observation || '')}</td>
-            </tr>`;
-          }).join('');
-          html += card('JD Health', `<table style="width:100%;border-collapse:collapse;">${_jdhRows}</table>`, 'section-jd-health', false, 'rw-card--data');
-        }
-      }
-
-      // ── Section 3: Role Interpretation ──────────────────────────────────────
-      html += sectionHeader('Role Interpretation');
 
       // Role Shape Signals — structural signals for senior candidate judgement
       {
@@ -13339,6 +13092,193 @@
         html += card('Fit Reality Summary', markerBullets(fitItems.slice(0, 3)), 'section-fit-reality', true, 'rw-card--narrative');
       }
 
+      // ── Practical Reality ────────────────────────────────────────────────────
+      html += sectionHeader('Practical Reality');
+
+      // Practical Details — factual extracted values table
+      {
+        const pd = output.practical_details || {};
+        const salaryAnnual  = pd.salary_annual  || 'Not stated';
+        const salaryMonthly = pd.salary_monthly || null;
+        const salaryStr = (salaryAnnual !== 'Not stated' && salaryMonthly)
+          ? `${salaryAnnual} (${salaryMonthly})`
+          : salaryAnnual;
+
+        // Build rows — only include company_type and role_seniority when extracted
+        const rows = [
+          ['Location',        pd.location         || 'Not stated'],
+          ['Work model',      pd.remote_model      || 'Not stated'],
+          ['Employment type', pd.employment_type   || 'Not stated'],
+          ['Salary',          salaryStr],
+          ['Reporting to',    pd.reporting_line    || 'Not stated'],
+          ['Visa',            pd.visa              || 'Not stated'],
+        ];
+        // New v2 fields — append only when non-trivial
+        if (pd.company_type && pd.company_type !== 'Not stated') {
+          rows.push(['Company type', pd.company_type]);
+        }
+        if (pd.role_seniority && pd.role_seniority !== 'Not stated') {
+          rows.push(['Seniority', pd.role_seniority]);
+        }
+        if (pd.commute_reality) {
+          rows.push(['Commute', pd.commute_reality]);
+        }
+
+        // Verification callout — surface ambiguous fields inline under the table
+        const _vn = Array.isArray(pd._verification_needed) ? pd._verification_needed : [];
+        const _notes = Array.isArray(pd._extraction_notes) ? pd._extraction_notes : [];
+        const verifyHtml = (_vn.length || _notes.length)
+          ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);">
+               ${_notes.map(n => `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5;margin-bottom:3px;">⚠ ${esc(n)}</div>`).join('')}
+             </div>`
+          : '';
+
+        const table = `<table style="width:100%;border-collapse:collapse;">${rows.map(([k, v], i) => `
+          <tr${i < rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
+            <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(k)}</td>
+            <td style="padding:6px 0;font-size:13px;color:${v === 'Not stated' ? 'var(--text-light)' : 'var(--text)'};">${esc(v)}</td>
+          </tr>`).join('')}
+        </table>${verifyHtml}`;
+        html += card('Practical Details', table, 'section-practical', false, 'rw-card--data');
+      }
+
+
+      // ── Compensation Snapshot (half-width card, pairs with Practical Details) ──
+      {
+        const _csPd  = output.practical_details || {};
+        const _csSal = _csPd.salary_annual;
+        if (_csSal && _csSal !== 'Not stated') {
+          const _csParsed = _parseSalaryRange(_csSal);
+          if (_csParsed) {
+            const { min: _csMin, max: _csMax, symbol: _csSym } = _csParsed;
+            const _csGross = _csMax ? Math.round((_csMin + _csMax) / 2) : _csMin;
+            const _csDefaultPct = parseInt((userProfile && userProfile.pension_pct) || 5, 10);
+            const _csDefaultWks = parseInt((userProfile && userProfile.working_weeks) || 46, 10);
+            const _r0 = calculateUKTakeHome(_csGross, _csDefaultPct);
+            const _fmtCs = n => `${_csSym}${Math.round(n).toLocaleString('en-GB')}`;
+            const _csPctOpts = [5, 7, 10].map(p =>
+              `<button class="cs-pct-btn${p === _csDefaultPct ? ' cs-pct-btn--active' : ''}" data-pct="${p}">${p}%</button>`
+            ).join('');
+            const _csCustomVal = ![5, 7, 10].includes(_csDefaultPct) ? _csDefaultPct : '';
+            const _csDayRate   = parseFloat((userProfile && userProfile.day_rate) || 0);
+            const _hasContract = _csDayRate > 0;
+            const _contractRevenue = _hasContract ? Math.round(_csDayRate * _csDefaultWks * 5) : 0;
+            const _csWksOpts = [44, 46, 48].map(w =>
+              `<button class="cs-wks-btn${w === _csDefaultWks ? ' cs-wks-btn--active' : ''}" data-wks="${w}">${w}w</button>`
+            ).join('');
+            const _csCustomWks = ![44, 46, 48].includes(_csDefaultWks) ? _csDefaultWks : '';
+
+            let _csHtml = `
+              <div class="cs-summary">
+                <div class="cs-takehome">
+                  <span class="cs-th-label">Estimated monthly take-home</span>
+                  <span class="cs-th-value">${_fmtCs(_r0.takeHomeMonthly)}<span class="cs-th-unit">/ month</span></span>
+                </div>
+                <div class="cs-assume">Assumes: ${_csDefaultPct}% pension contribution</div>
+                <div class="cs-pension-row">
+                  <span class="cs-pension-label">Pension</span>
+                  <div class="cs-pct-btns">
+                    ${_csPctOpts}
+                    <input type="number" class="cs-pct-custom" min="0" max="30" step="1" placeholder="%" value="${_csCustomVal}" title="Custom pension %">
+                  </div>
+                </div>
+              </div>
+              <div class="cs-breakdown">
+                <div class="cs-row"><span class="cs-row-label">Gross salary</span><span class="cs-row-value">${_fmtCs(_csGross)}/yr</span></div>
+                <div class="cs-row"><span class="cs-row-label">Pension (<span class="cs-pct-display">${_csDefaultPct}</span>%)</span><span class="cs-row-value cs-row-pension">−${_fmtCs(_r0.pensionAnnual)}/yr</span></div>
+                <div class="cs-row"><span class="cs-row-label">Income tax</span><span class="cs-row-value cs-row-tax">−${_fmtCs(_r0.incomeTaxAnnual)}/yr</span></div>
+                <div class="cs-row"><span class="cs-row-label">National Insurance</span><span class="cs-row-value cs-row-ni">−${_fmtCs(_r0.niAnnual)}/yr</span></div>
+                <div class="cs-row cs-row--total"><span class="cs-row-label">Take-home</span><span class="cs-row-value cs-th-detail">${_fmtCs(_r0.takeHomeAnnual)}/yr · ${_fmtCs(_r0.takeHomeMonthly)}/mo</span></div>
+              </div>
+              <div class="cs-note">2024/25 PAYE estimate · salary sacrifice model · personal allowance £12,570</div>`;
+            if (_csMax && _csMax !== _csMin) {
+              _csHtml += `<div class="cs-note">Based on midpoint of ${esc(_csSal)}</div>`;
+            }
+            if (_hasContract) {
+              const _roleMid = Math.round(_csGross / 12);
+              const _contractMonthly = Math.round(_contractRevenue / 12);
+              const _diffRaw = _contractMonthly - _roleMid;
+              _csHtml += `
+              <div class="cs-contract-block">
+                <div class="cs-contract-header">
+                  <span class="cs-contract-label">Contract equivalent</span>
+                  <span class="cs-contract-revenue cs-contract-rev-value">${_fmtCs(_contractRevenue)}/yr</span>
+                </div>
+                <div class="cs-wks-row">
+                  <span class="cs-wks-label">Working weeks</span>
+                  <div class="cs-wks-btns">
+                    ${_csWksOpts}
+                    <input type="number" class="cs-wks-custom" min="30" max="52" step="1" placeholder="wks" value="${_csCustomWks}" title="Custom working weeks">
+                  </div>
+                </div>
+                <div class="cs-assume cs-wks-assume">Assumes: ${_csDefaultWks} working weeks per year</div>
+                <div class="cs-contract-compare-row">
+                  <span class="cs-row-label">Salary monthly</span><span class="cs-row-value">${_fmtCs(_roleMid)}/mo</span>
+                </div>
+                <div class="cs-contract-compare-row">
+                  <span class="cs-row-label">Contract monthly</span><span class="cs-row-value cs-contract-mo-value">${_fmtCs(_contractMonthly)}/mo</span>
+                </div>
+                <div class="cs-contract-compare-row cs-contract-diff">
+                  <span class="cs-row-label">Difference</span><span class="cs-row-value cs-contract-diff-value">≈${_fmtCs(Math.abs(_diffRaw))}/mo ${_diffRaw >= 0 ? 'higher' : 'lower'}</span>
+                </div>
+              </div>`;
+            }
+            // The Comp Snapshot card pairs with JD Health — insert right after it in the grid.
+            // We insert it before the grid close, but it naturally pairs via CSS grid order.
+            html += `<div class="rw-card rw-card--data cs-panel" id="section-comp-snapshot" data-gross="${_csGross}" data-symbol="${esc(_csSym)}" data-dayrate="${_csDayRate}" data-wks="${_csDefaultWks}">
+              <div class="doc-section-heading">Compensation Snapshot</div>
+              <div class="cs-body">${_csHtml}</div>
+            </div>`;
+          }
+        }
+      }
+
+      // ── Position 3a: Commute Impact ─────────────────────────────────────────
+      {
+        const _coPd     = output.practical_details || {};
+        const _coLoc    = _coPd.location || role.location_text || null;
+        const _coWmRaw  = _coPd.remote_model || role.work_model || '';
+        const _coLocClean = _coLoc && _coLoc !== 'Not stated' ? _coLoc : null;
+
+        if (_coLocClean) {
+          const _homeRaw = (userProfile && userProfile.location)
+                         || _ROLEWISE_USER_PROFILE.location
+                         || 'Egham, Surrey';
+          const _coData = _buildCommuteData(_coLocClean, _coWmRaw, _homeRaw);
+          html += card('Commute Impact', _renderCommuteCard(_coData), 'section-commute', false, 'rw-card--data');
+        }
+      }
+
+      // ── Position 3b: JD Health (half, pairs with Commute Impact) ──
+      // JD Health — clarity and transparency of the JD itself
+      {
+        const _jdh = output.jd_health;
+        if (Array.isArray(_jdh) && _jdh.length > 0) {
+          const _areaLabels = {
+            salary_transparency: 'Salary',
+            team_structure:      'Team structure',
+            scope_definition:    'Scope',
+            role_expectations:   'Expectations',
+            interview_process:   'Interview process',
+            company_context:     'Company context',
+          };
+          const _cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+          const _jdhRows = _jdh.map((item, i) => {
+            const _aLabel = _areaLabels[item.area] || _cap((item.area || '').replace(/_/g, ' '));
+            const border = i < _jdh.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : '';
+            return `<tr${border}>
+              <td style="padding:7px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(_aLabel)}</td>
+              <td style="padding:7px 0;font-size:13px;color:var(--text);line-height:1.5;">${esc(item.observation || '')}</td>
+            </tr>`;
+          }).join('');
+          html += card('JD Health', `<table style="width:100%;border-collapse:collapse;">${_jdhRows}</table>`, 'section-jd-health', false, 'rw-card--data');
+        }
+      }
+
+
+      // ── Your Decision Context ─────────────────────────────────────────────
+      html += sectionHeader('Your Decision Context');
+
       // ── Decision Lens — 5-axis synthesis card ────────────────────────────────
       // Synthesises signals into Identity Fit / Role Shape / Economics /
       // Sustainability / Culture lenses + Rolewise Verdict.
@@ -13347,6 +13287,220 @@
         const _dlHtml = _renderDecisionLens(output);
         if (_dlHtml) html += _dlHtml;
       }
+
+      // ── Your Lens ──────────────────────────────────────────────────────────
+      {
+        const _lens = _computeUserLens(allRoles);
+        if (_lens) {
+          const _comparison = _compareRoleToLens(output, _lens);
+          let _lensBody = '';
+
+          // Summary line
+          const _srcNote = _lens.signal_source === 'liked_roles'
+            ? `roles you've saved or applied to`
+            : `roles you've analysed`;
+          _lensBody += `<div class="ul-intro">Based on ${_lens.sample_size} roles you\u2019ve analysed, patterns are emerging.</div>`;
+
+          // Emerging patterns
+          if (_lens.emerging_patterns.length) {
+            _lensBody += `<div class="ul-section-label">You tend toward</div>`;
+            _lensBody += `<div class="ul-patterns">${_lens.emerging_patterns.map(p =>
+              `<span class="ul-chip">${esc(p.label)}</span>`
+            ).join('')}</div>`;
+          }
+
+          // Role comparison
+          if (_comparison) {
+            if (_comparison.matches.length) {
+              _lensBody += `<div class="ul-section-label" style="margin-top:14px;">This role aligns with</div>`;
+              _lensBody += `<div class="ul-matches">${_comparison.matches.map(m =>
+                `<div class="ul-match-row"><span class="ul-match-icon">\u2713</span> ${esc(m.label)}</div>`
+              ).join('')}</div>`;
+            }
+            if (_comparison.tensions.length) {
+              _lensBody += `<div class="ul-section-label ul-tension-label" style="margin-top:14px;">Possible tension</div>`;
+              _lensBody += `<div class="ul-tensions">${_comparison.tensions.map(t =>
+                `<div class="ul-tension-row"><span class="ul-tension-icon">\u2022</span> ${esc(t.label)}</div>`
+              ).join('')}</div>`;
+            }
+          }
+
+          const _lensHtml = `
+            <div class="ul-block">${_lensBody}</div>
+            <style>
+              .ul-block { font-size: 13px; line-height: 1.55; color: var(--text); }
+              .ul-intro { color: var(--text-muted); font-size: 12.5px; margin-bottom: 12px; }
+              .ul-section-label {
+                font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+                letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 8px;
+              }
+              .ul-patterns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+              .ul-chip {
+                display: inline-block; padding: 4px 10px; font-size: 12.5px;
+                background: var(--bg-subtle, #fafaf9); border: 1px solid var(--border-light);
+                border-radius: 14px; color: var(--text);
+              }
+              .ul-match-row {
+                padding: 3px 0; font-size: 13px; color: var(--text);
+              }
+              .ul-match-icon { color: var(--signal-green, #27ae60); font-weight: 600; margin-right: 6px; }
+              .ul-tension-label { color: var(--signal-amber, #b45309); }
+              .ul-tension-row {
+                padding: 3px 0; font-size: 13px; color: var(--text-muted);
+              }
+              .ul-tension-icon { color: var(--signal-amber, #b45309); margin-right: 6px; }
+            </style>
+          `;
+          html += card('Your Lens', _lensHtml, 'section-your-lens', false, 'rw-card--intel');
+        }
+      }
+
+      // ── Hard Constraints ────────────────────────────────────────────────────
+      {
+        const _hc = Array.isArray(output.hard_constraints) ? output.hard_constraints : [];
+        if (_hc.length > 0) {
+          const _hcItems = _hc.map(c => `
+            <div class="hc-item">
+              <div class="hc-item-label">${esc(c.label)}</div>
+              <div class="hc-item-reason">${esc(c.reason)}</div>
+              <div class="hc-item-note">You previously marked this as a non-negotiable.</div>
+            </div>
+          `).join('');
+          const _hcHtml = `
+            <div class="hc-block">
+              ${_hcItems}
+            </div>
+            <style>
+              .hc-block { display:flex; flex-direction:column; gap:10px; }
+              .hc-item {
+                padding: 14px 16px;
+                background: var(--bg-subtle, #fafaf9);
+                border-left: 3px solid var(--signal-red, #c0392b);
+                border-radius: 4px;
+              }
+              .hc-item-label {
+                font-size: 13.5px;
+                font-weight: 600;
+                color: var(--signal-red, #c0392b);
+                margin-bottom: 4px;
+              }
+              .hc-item-reason {
+                font-size: 13px;
+                color: var(--text);
+                line-height: 1.5;
+                margin-bottom: 6px;
+              }
+              .hc-item-note {
+                font-size: 12px;
+                color: var(--text-muted);
+                line-height: 1.4;
+              }
+            </style>
+          `;
+          html += card('Hard Constraints', _hcHtml, 'section-hard-constraints', false, 'rw-card--action');
+        }
+      }
+
+      // Risks & Unknowns — grouped by category (legacy) or flat marker bullets (v8+)
+      {
+        const rawRisks = output.risks_and_unknowns;
+        let risksHtml = '';
+        if (Array.isArray(rawRisks) && rawRisks.length) {
+          const asStrings = rawRisks.map(r => typeof r === 'string' ? r : (r.text || '')).filter(Boolean);
+
+          const _RISK_CATS = [
+            { key: 'compensation',  label: 'Compensation',        re: /salary|pay\b|compensation|benefit|equity|bonus|remuneration|wage|package/i },
+            { key: 'scope',         label: 'Role scope',          re: /scope|responsibilit|expectation|contribut|coding\b|production\b|build\b|ship\b|deliver|ownership|role\b|remit/i },
+            { key: 'domain',        label: 'Domain complexity',   re: /domain|industry|regulat|compliance|clinical|healthcare|legal|fintech|medical|sector|expertise|workflow/i },
+            { key: 'tech',          label: 'Technology',          re: /tech\b|technology|stack|ai\b|agentic|ml\b|platform\b|tool\b|system|infrastructure|migration|software/i },
+            { key: 'team',          label: 'Team structure',      re: /team|manager|report\b|head of|pm\b|product manager|designer|engineer|staffing|hire|headcount|colleague/i },
+            { key: 'org',           label: 'Organisation',        re: /company|organis|organiz|stage\b|startup|culture|process|runway|funding|structure|growth/i },
+            { key: 'other',         label: null,                  re: null },
+          ];
+          const _grouped = {};
+          for (const item of asStrings) {
+            let _matched = 'other';
+            for (const cat of _RISK_CATS) {
+              if (cat.re && cat.re.test(item)) { _matched = cat.key; break; }
+            }
+            if (!_grouped[_matched]) _grouped[_matched] = [];
+            _grouped[_matched].push(item);
+          }
+          const _clusters = _RISK_CATS
+            .filter(c => _grouped[c.key] && _grouped[c.key].length > 0)
+            .map(c => ({ label: c.label, items: _grouped[c.key] }));
+
+          const _hasMarkers = rawRisks.some(r => r && typeof r === 'object' && r.marker);
+          if (_hasMarkers) {
+            risksHtml = markerBullets(rawRisks);
+          } else {
+            const _labelledClusters = _clusters.filter(c => c.label !== null);
+            if (_labelledClusters.length >= 2) {
+              risksHtml = _clusters.map(group => {
+                const prefix = group.label
+                  ? `<div class="risks-group-label">${esc(group.label)}</div>`
+                  : '';
+                return `<div class="risks-group">${prefix}${editorialBullets(group.items)}</div>`;
+              }).join('');
+            } else {
+              risksHtml = editorialBullets(asStrings);
+            }
+          }
+        } else if (typeof rawRisks === 'string' && rawRisks.trim()) {
+          risksHtml = `<div class="doc-prose">${esc(rawRisks)}</div>`;
+        } else {
+          risksHtml = '<ul class="doc-list"><li style="color:var(--text-light);">Not stated</li></ul>';
+        }
+        html += card('Risks &amp; Unknowns', risksHtml, 'section-risks', false, 'rw-card--action');
+      }
+
+
+      // ── Market Reality ──────────────────────────────────────────────────────
+      html += sectionHeader('Market Reality');
+
+      // ── Hiring Reality ─────────────────────────────────────────────────────
+      // Aggregated signals from similar analysed roles in this account only.
+      // Shown even when empty (calm empty state) so users know the feature exists.
+      {
+        const _hiringHtml = _rcHiringRealityHtml(allRoles, selectedRoleId);
+        if (_hiringHtml !== null) {
+          html += card('Hiring Reality', _hiringHtml, 'section-hiring-reality', false, 'rw-card--action');
+        }
+      }
+
+      // ── Hiring Signals (full-width, 30+ outcome roles; delayed until next render) ──
+      {
+        const _allRolesHS = typeof roles !== 'undefined' ? roles : [];
+        const _HS_OUTCOMES = new Set(['waiting', 'responded', 'ghosted', 'no_response', 'interviewing', 'offer', 'offer_accepted', 'rejected', 'withdrew', 'closed', 'skipped']);
+        const _outcomeRoles = _allRolesHS.filter(r => r.outcome_state && _HS_OUTCOMES.has(r.outcome_state));
+        if (_outcomeRoles.length >= 30) {
+          const _hsKey      = 'rw_intel_hs_unlocked';
+          const _hsCountKey = 'rw_intel_hs_count';
+          const _hsGet  = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
+          const _hsSet  = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
+          const _hsUnlocked = _hsGet(_hsKey) === 'true';
+          if (!_hsUnlocked) {
+            _hsSet(_hsKey, 'true');
+          } else {
+            const _hsN      = _outcomeRoles.length;
+            const _hsLastN  = parseInt(_hsGet(_hsCountKey) || '0', 10);
+            const _hsGrowing = _hsLastN > 0 && (_hsN - _hsLastN) >= 5;
+            _hsSet(_hsCountKey, String(_hsN));
+            const _hiringSignals = _computeHiringSignals(_outcomeRoles);
+            if (_hiringSignals && _hiringSignals.length > 0) {
+              const _hsMeta = `<div class="rw-intel-meta">Observed across ${_hsN} hiring outcome${_hsN !== 1 ? 's' : ''}${_hsGrowing ? ' · Updated recently' : ''}</div>`;
+              const _hsHtml2 = _hsMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_hiringSignals.slice(0, 3).map(s =>
+                `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(s)}</div>`
+              ).join('')}</div>`;
+              html += card('Hiring Signals', _hsHtml2, 'section-hiring-signals', true, 'rw-card--intel');
+            }
+          }
+        }
+      }
+
+
+      // ── Career Pattern Intelligence ──────────────────────────────────────────
+      html += sectionHeader('Career Pattern Intelligence');
 
       // ── OARM — Role Memory (full-width, 5+ verdicts; delayed until next render) ──
       // Personal decision summary: how many fits, not-for-me, and undecided verdicts
@@ -13516,36 +13670,6 @@
         }
       }
 
-      // ── Hiring Signals (full-width, 30+ outcome roles; delayed until next render) ──
-      {
-        const _allRolesHS = typeof roles !== 'undefined' ? roles : [];
-        const _HS_OUTCOMES = new Set(['waiting', 'responded', 'ghosted', 'no_response', 'interviewing', 'offer', 'offer_accepted', 'rejected', 'withdrew', 'closed', 'skipped']);
-        const _outcomeRoles = _allRolesHS.filter(r => r.outcome_state && _HS_OUTCOMES.has(r.outcome_state));
-        if (_outcomeRoles.length >= 30) {
-          const _hsKey      = 'rw_intel_hs_unlocked';
-          const _hsCountKey = 'rw_intel_hs_count';
-          const _hsGet  = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
-          const _hsSet  = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
-          const _hsUnlocked = _hsGet(_hsKey) === 'true';
-          if (!_hsUnlocked) {
-            _hsSet(_hsKey, 'true');
-          } else {
-            const _hsN      = _outcomeRoles.length;
-            const _hsLastN  = parseInt(_hsGet(_hsCountKey) || '0', 10);
-            const _hsGrowing = _hsLastN > 0 && (_hsN - _hsLastN) >= 5;
-            _hsSet(_hsCountKey, String(_hsN));
-            const _hiringSignals = _computeHiringSignals(_outcomeRoles);
-            if (_hiringSignals && _hiringSignals.length > 0) {
-              const _hsMeta = `<div class="rw-intel-meta">Observed across ${_hsN} hiring outcome${_hsN !== 1 ? 's' : ''}${_hsGrowing ? ' · Updated recently' : ''}</div>`;
-              const _hsHtml2 = _hsMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_hiringSignals.slice(0, 3).map(s =>
-                `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(s)}</div>`
-              ).join('')}</div>`;
-              html += card('Hiring Signals', _hsHtml2, 'section-hiring-signals', true, 'rw-card--intel');
-            }
-          }
-        }
-      }
-
       // ── Decision Signals (full-width, 100+ analysed AND 40+ outcomes; delayed until next render) ──
       {
         const _allRolesDS = typeof roles !== 'undefined' ? roles : [];
@@ -13578,184 +13702,9 @@
         }
       }
 
-      // ── Section 4: Next Steps ────────────────────────────────────────────────
-      html += sectionHeader('Next Steps');
 
-      // ── Your Lens ──────────────────────────────────────────────────────────
-      {
-        const _lens = _computeUserLens(allRoles);
-        if (_lens) {
-          const _comparison = _compareRoleToLens(output, _lens);
-          let _lensBody = '';
-
-          // Summary line
-          const _srcNote = _lens.signal_source === 'liked_roles'
-            ? `roles you've saved or applied to`
-            : `roles you've analysed`;
-          _lensBody += `<div class="ul-intro">Based on ${_lens.sample_size} roles you\u2019ve analysed, patterns are emerging.</div>`;
-
-          // Emerging patterns
-          if (_lens.emerging_patterns.length) {
-            _lensBody += `<div class="ul-section-label">You tend toward</div>`;
-            _lensBody += `<div class="ul-patterns">${_lens.emerging_patterns.map(p =>
-              `<span class="ul-chip">${esc(p.label)}</span>`
-            ).join('')}</div>`;
-          }
-
-          // Role comparison
-          if (_comparison) {
-            if (_comparison.matches.length) {
-              _lensBody += `<div class="ul-section-label" style="margin-top:14px;">This role aligns with</div>`;
-              _lensBody += `<div class="ul-matches">${_comparison.matches.map(m =>
-                `<div class="ul-match-row"><span class="ul-match-icon">\u2713</span> ${esc(m.label)}</div>`
-              ).join('')}</div>`;
-            }
-            if (_comparison.tensions.length) {
-              _lensBody += `<div class="ul-section-label ul-tension-label" style="margin-top:14px;">Possible tension</div>`;
-              _lensBody += `<div class="ul-tensions">${_comparison.tensions.map(t =>
-                `<div class="ul-tension-row"><span class="ul-tension-icon">\u2022</span> ${esc(t.label)}</div>`
-              ).join('')}</div>`;
-            }
-          }
-
-          const _lensHtml = `
-            <div class="ul-block">${_lensBody}</div>
-            <style>
-              .ul-block { font-size: 13px; line-height: 1.55; color: var(--text); }
-              .ul-intro { color: var(--text-muted); font-size: 12.5px; margin-bottom: 12px; }
-              .ul-section-label {
-                font-size: 11.5px; font-weight: 600; text-transform: uppercase;
-                letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 8px;
-              }
-              .ul-patterns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
-              .ul-chip {
-                display: inline-block; padding: 4px 10px; font-size: 12.5px;
-                background: var(--bg-subtle, #fafaf9); border: 1px solid var(--border-light);
-                border-radius: 14px; color: var(--text);
-              }
-              .ul-match-row {
-                padding: 3px 0; font-size: 13px; color: var(--text);
-              }
-              .ul-match-icon { color: var(--signal-green, #27ae60); font-weight: 600; margin-right: 6px; }
-              .ul-tension-label { color: var(--signal-amber, #b45309); }
-              .ul-tension-row {
-                padding: 3px 0; font-size: 13px; color: var(--text-muted);
-              }
-              .ul-tension-icon { color: var(--signal-amber, #b45309); margin-right: 6px; }
-            </style>
-          `;
-          html += card('Your Lens', _lensHtml, 'section-your-lens', false, 'rw-card--intel');
-        }
-      }
-
-      // ── Hard Constraints ────────────────────────────────────────────────────
-      {
-        const _hc = Array.isArray(output.hard_constraints) ? output.hard_constraints : [];
-        if (_hc.length > 0) {
-          const _hcItems = _hc.map(c => `
-            <div class="hc-item">
-              <div class="hc-item-label">${esc(c.label)}</div>
-              <div class="hc-item-reason">${esc(c.reason)}</div>
-              <div class="hc-item-note">You previously marked this as a non-negotiable.</div>
-            </div>
-          `).join('');
-          const _hcHtml = `
-            <div class="hc-block">
-              ${_hcItems}
-            </div>
-            <style>
-              .hc-block { display:flex; flex-direction:column; gap:10px; }
-              .hc-item {
-                padding: 14px 16px;
-                background: var(--bg-subtle, #fafaf9);
-                border-left: 3px solid var(--signal-red, #c0392b);
-                border-radius: 4px;
-              }
-              .hc-item-label {
-                font-size: 13.5px;
-                font-weight: 600;
-                color: var(--signal-red, #c0392b);
-                margin-bottom: 4px;
-              }
-              .hc-item-reason {
-                font-size: 13px;
-                color: var(--text);
-                line-height: 1.5;
-                margin-bottom: 6px;
-              }
-              .hc-item-note {
-                font-size: 12px;
-                color: var(--text-muted);
-                line-height: 1.4;
-              }
-            </style>
-          `;
-          html += card('Hard Constraints', _hcHtml, 'section-hard-constraints', false, 'rw-card--action');
-        }
-      }
-
-      // Risks & Unknowns — grouped by category (legacy) or flat marker bullets (v8+)
-      {
-        const rawRisks = output.risks_and_unknowns;
-        let risksHtml = '';
-        if (Array.isArray(rawRisks) && rawRisks.length) {
-          const asStrings = rawRisks.map(r => typeof r === 'string' ? r : (r.text || '')).filter(Boolean);
-
-          const _RISK_CATS = [
-            { key: 'compensation',  label: 'Compensation',        re: /salary|pay\b|compensation|benefit|equity|bonus|remuneration|wage|package/i },
-            { key: 'scope',         label: 'Role scope',          re: /scope|responsibilit|expectation|contribut|coding\b|production\b|build\b|ship\b|deliver|ownership|role\b|remit/i },
-            { key: 'domain',        label: 'Domain complexity',   re: /domain|industry|regulat|compliance|clinical|healthcare|legal|fintech|medical|sector|expertise|workflow/i },
-            { key: 'tech',          label: 'Technology',          re: /tech\b|technology|stack|ai\b|agentic|ml\b|platform\b|tool\b|system|infrastructure|migration|software/i },
-            { key: 'team',          label: 'Team structure',      re: /team|manager|report\b|head of|pm\b|product manager|designer|engineer|staffing|hire|headcount|colleague/i },
-            { key: 'org',           label: 'Organisation',        re: /company|organis|organiz|stage\b|startup|culture|process|runway|funding|structure|growth/i },
-            { key: 'other',         label: null,                  re: null },
-          ];
-          const _grouped = {};
-          for (const item of asStrings) {
-            let _matched = 'other';
-            for (const cat of _RISK_CATS) {
-              if (cat.re && cat.re.test(item)) { _matched = cat.key; break; }
-            }
-            if (!_grouped[_matched]) _grouped[_matched] = [];
-            _grouped[_matched].push(item);
-          }
-          const _clusters = _RISK_CATS
-            .filter(c => _grouped[c.key] && _grouped[c.key].length > 0)
-            .map(c => ({ label: c.label, items: _grouped[c.key] }));
-
-          const _hasMarkers = rawRisks.some(r => r && typeof r === 'object' && r.marker);
-          if (_hasMarkers) {
-            risksHtml = markerBullets(rawRisks);
-          } else {
-            const _labelledClusters = _clusters.filter(c => c.label !== null);
-            if (_labelledClusters.length >= 2) {
-              risksHtml = _clusters.map(group => {
-                const prefix = group.label
-                  ? `<div class="risks-group-label">${esc(group.label)}</div>`
-                  : '';
-                return `<div class="risks-group">${prefix}${editorialBullets(group.items)}</div>`;
-              }).join('');
-            } else {
-              risksHtml = editorialBullets(asStrings);
-            }
-          }
-        } else if (typeof rawRisks === 'string' && rawRisks.trim()) {
-          risksHtml = `<div class="doc-prose">${esc(rawRisks)}</div>`;
-        } else {
-          risksHtml = '<ul class="doc-list"><li style="color:var(--text-light);">Not stated</li></ul>';
-        }
-        html += card('Risks &amp; Unknowns', risksHtml, 'section-risks', false, 'rw-card--action');
-      }
-
-      // ── Hiring Reality ─────────────────────────────────────────────────────
-      // Aggregated signals from similar analysed roles in this account only.
-      // Shown even when empty (calm empty state) so users know the feature exists.
-      {
-        const _hiringHtml = _rcHiringRealityHtml(allRoles, selectedRoleId);
-        if (_hiringHtml !== null) {
-          html += card('Hiring Reality', _hiringHtml, 'section-hiring-reality', false, 'rw-card--action');
-        }
-      }
+      // ── Decision Support ──────────────────────────────────────────────────────
+      html += sectionHeader('Decision Support');
 
       // Questions Worth Asking — full-width; closes the spec Row 6 immediately after Risks
       {
@@ -24017,3 +23966,4 @@ If a field cannot be determined from the message, return null for that field.`,
         _reconcileOrphanedMatches();
       });
     }
+
