@@ -12626,6 +12626,110 @@
       return signals;
     }
 
+    // ─── Hiring Reality aggregation ──────────────────────────────────────────
+    // Derives simple hiring-pattern signals from similar roles already analysed
+    // in this Rolewise account. Uses only real stored data; no fabrication.
+    //
+    // Similarity: keyword overlap in role_title (4+ char tokens, excluding stop
+    // words). Requires MIN_SIMILAR analysed roles before showing any data.
+    //
+    // Returns an HTML string ready to embed in a .rw-card, or null when the
+    // current role cannot be identified (e.g. shared-analysis context).
+    function _rcHiringRealityHtml(roles, currentRoleId) {
+      if (!Array.isArray(roles) || !currentRoleId) return null;
+
+      const _current = roles.find(r => r.id === currentRoleId);
+      if (!_current || !_current.role_title) return null;
+
+      // Tokenise the current role's title into meaningful keywords
+      const _STOP = new Set([
+        'the','and','for','with','into','from','this','that','role','position',
+        'head','into','a','an','to','in','at','by','as','of',
+      ]);
+      const _tokens = (_current.role_title || '').toLowerCase()
+        .split(/\W+/)
+        .filter(t => t.length >= 4 && !_STOP.has(t));
+
+      if (_tokens.length === 0) return null;
+
+      // Only include analysed roles other than the current one
+      const _similar = roles.filter(r => {
+        if (r.id === currentRoleId) return false;
+        if (!r.latest_match_output) return false; // must be analysed
+        const _rTitle = (r.role_title || '').toLowerCase();
+        return _tokens.some(t => _rTitle.includes(t));
+      });
+
+      // Minimum data threshold — avoid showing patterns from too few roles
+      const MIN_SIMILAR = 3;
+      if (_similar.length < MIN_SIMILAR) {
+        return `<div class="rc-roles-empty">Not enough Rolewise data yet to show hiring patterns for similar roles.</div>`;
+      }
+
+      // ── Aggregation ───────────────────────────────────────────────────────
+      const _applied = _similar.filter(r => r._appliedDate).length;
+
+      const _INTERVIEW_STAGES = new Set(['Recruiter Screen', 'Hiring Manager', 'Panel', 'Final']);
+      const _interview = _similar.filter(r =>
+        (r.role_updates || []).some(u =>
+          (!u.event_type || u.event_type === 'stage') && _INTERVIEW_STAGES.has(u.stage_reached)
+        )
+      ).length;
+
+      const _offer = _similar.filter(r =>
+        (r.role_updates || []).some(u =>
+          (!u.event_type || u.event_type === 'stage') && u.stage_reached === 'Offer'
+        ) || r.outcome_state === 'offer_accepted'
+      ).length;
+
+      // Typical response window: days from application to first meaningful response
+      const _responseDays = _similar
+        .filter(r => r._appliedDate && r._firstResponseDate)
+        .map(r => Math.round(
+          (new Date(r._firstResponseDate) - new Date(r._appliedDate)) / 86400000
+        ))
+        .filter(d => d > 0 && d <= 120); // sanity bounds
+
+      // ── Build HTML ────────────────────────────────────────────────────────
+      let html = `
+        <div class="rc-contact-row">
+          <span class="rc-contact-label">Similar roles in Rolewise</span>
+          <span class="rc-contact-val">${_similar.length}</span>
+        </div>
+        <div class="rc-contact-row">
+          <span class="rc-contact-label">Applications submitted</span>
+          <span class="rc-contact-val">${_applied}</span>
+        </div>
+        <div class="rc-contact-row">
+          <span class="rc-contact-label">Reached interview stage</span>
+          <span class="rc-contact-val">${_interview}</span>
+        </div>`;
+
+      if (_offer > 0) {
+        html += `
+        <div class="rc-contact-row">
+          <span class="rc-contact-label">Offers recorded</span>
+          <span class="rc-contact-val">${_offer}</span>
+        </div>`;
+      }
+
+      if (_responseDays.length >= 2) {
+        const _sorted = [..._responseDays].sort((a, b) => a - b);
+        const _min    = _sorted[0];
+        const _max    = _sorted[_sorted.length - 1];
+        const _range  = _min === _max
+          ? `${_min} day${_min !== 1 ? 's' : ''}`
+          : `${_min}–${_max} days`;
+        html += `
+        <div class="rc-contact-row">
+          <span class="rc-contact-label">Typical first response</span>
+          <span class="rc-contact-val">${_range}</span>
+        </div>`;
+      }
+
+      return html;
+    }
+
     function renderMatchOutput(output) {
       if (!output || typeof output !== 'object') {
         return '<p class="doc-no-analysis" style="padding:8px 0;">No analysis data.</p>';
@@ -13641,6 +13745,16 @@
           risksHtml = '<ul class="doc-list"><li style="color:var(--text-light);">Not stated</li></ul>';
         }
         html += card('Risks &amp; Unknowns', risksHtml, 'section-risks', false, 'rw-card--action');
+      }
+
+      // ── Hiring Reality ─────────────────────────────────────────────────────
+      // Aggregated signals from similar analysed roles in this account only.
+      // Shown even when empty (calm empty state) so users know the feature exists.
+      {
+        const _hiringHtml = _rcHiringRealityHtml(allRoles, selectedRoleId);
+        if (_hiringHtml !== null) {
+          html += card('Hiring Reality', _hiringHtml, 'section-hiring-reality', false, 'rw-card--action');
+        }
       }
 
       // Questions Worth Asking — full-width; closes the spec Row 6 immediately after Risks
