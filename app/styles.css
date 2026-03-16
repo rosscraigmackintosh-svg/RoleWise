@@ -8358,6 +8358,31 @@
       line-height: 1.3;
     }
 
+    /* ─── Sub-section dividers (used inside merged cards) ────────────────────
+       .rw-sub-section: visual block inside a merged card, separated by a
+       top border. .rw-sub-label: uppercase eyebrow label identifying the
+       sub-section type. */
+    .rw-sub-section {
+      padding-top: 14px;
+      margin-top: 14px;
+      border-top: 1px solid var(--border-light);
+    }
+
+    .rw-sub-section:first-child {
+      padding-top: 0;
+      margin-top: 0;
+      border-top: none;
+    }
+
+    .rw-sub-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.65px;
+      color: var(--text-light);
+      margin-bottom: 10px;
+    }
+
     /* ─── Signal Markers ──────────────────────────────────────────────────────
        1–3 word marker chips shown before each insight in Fit Signals and
        Risks & Unknowns sections. Neutral and descriptive — aids scannability. */
@@ -9571,6 +9596,404 @@
       color: var(--text);
       border-color: var(--border);
       background: var(--surface);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       RW-ROLEPAGE-HIERARCHY-01 — Visual Hierarchy Pass
+       ─────────────────────────────────────────────────────────────────────
+       Goals:
+         · calm, editorial reading flow — role briefing → context → decide
+         · clear priority signal: Rolewise Briefing visually dominant
+         · signal/data tables lighter than narrative interpretation
+         · wider section breaks so groups read as distinct chapters
+       No changes to: colours, tokens, typography scale, component types,
+       section order, or any card logic.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* ── 1. Section breaks: 56px gap between chapters ────────────────────────
+       Previous: margin-top 16px + row-gap 16px = 32px
+       After:    margin-top 40px + row-gap 16px = 56px
+       This turns section headers into clear chapter dividers, creating five
+       readable groups: Role Understanding · Practicals · Personal Decision ·
+       Market Context · Decision Support.                                       */
+    .rw-section-header {
+      margin-top: 40px;
+    }
+
+    .rw-section-header--first {
+      margin-top: 0;           /* opening section still butts against the top  */
+    }
+
+    /* Mobile: compress section breaks on small screens */
+    @media (max-width: 720px) {
+      .rw-section-header {
+        margin-top: 24px;
+      }
+    }
+
+    /* ── 2. Section header label: editorial voice ────────────────────────────
+       Slightly larger, slightly tighter tracking — reads more like a magazine
+       chapter title, less like a system field label.                          */
+    .rw-section-header__label {
+      font-size: 11.5px;
+      letter-spacing: 0.06em;
+    }
+
+    /* ── 3. Rolewise Briefing: primary content block ─────────────────────────
+       The entry point. The most important card on the page. Gets the most
+       generous padding and a slightly firmer border to anchor the page.       */
+    #section-briefing {
+      padding: 32px 36px;
+      border-width: 1.5px;
+    }
+
+    /* Sub-section labels inside Rolewise Briefing: visible but not dominant  */
+    #section-briefing .rw-sub-label {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+    }
+
+    /* Sub-section labels in Role Signals and JD Clarity: lighter weight      */
+    #section-role-signals .rw-sub-label,
+    #section-jd-clarity .rw-sub-label {
+      font-size: 10px;
+      color: var(--text-light);
+      letter-spacing: 0.06em;
+    }
+
+    /* Mobile: restore uniform padding on Rolewise Briefing */
+    @media (max-width: 720px) {
+      #section-briefing {
+        padding: 20px 22px;
+      }
+    }
+
+    /* ── 4. Signal tables: lighter weight than narrative interpretation ──────
+       Role Signals and JD Clarity & Risks are reference/supporting content.
+       Tables inside them use slightly smaller, less heavy type and tighter
+       row padding — they should read like footnotes to the briefing above.   */
+    #section-role-signals table td,
+    #section-jd-clarity table td {
+      font-size: 12px;
+      padding: 5px 0;
+    }
+
+    /* Key (left) column: slightly smaller to increase value contrast */
+    #section-role-signals table td:first-child,
+    #section-jd-clarity table td:first-child {
+      font-size: 11.5px;
+    }
+
+    /* Watch Points items inside JD Clarity: compact without shrinking flag text */
+    #section-red-flags > div {
+      padding-top: 6px;
+      padding-bottom: 6px;
+    }
+
+    #section-red-flags > div > div:first-child {
+      font-size: 12.5px;
+    }
+
+    #section-red-flags > div > div:last-child {
+      font-size: 12px;
+    }
+
+    /* ── 5. Practical Reality cards: retain data tier — no change to rw-card--data */
+    /* .rw-card--data padding (16px 18px) is already compact and correct.      */
+
+    /* ── 6. Decision Support: action layer feels purposeful, not heavy ────────
+       Questions Worth Asking sits above the action strip. Reduce heading weight
+       slightly to signal this is the closing layer.                           */
+    #section-questions > .doc-section-heading {
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       RW-ROLEPAGE-LENS-PANEL-01 — Sticky Decision Lens Side Panel
+       ─────────────────────────────────────────────────────────────────────
+       Converts the Decision Lens from an inline card into a persistent sticky
+       right-column panel. Main analysis content occupies the left column.
+       No changes to colours, tokens, typography, or Decision Lens logic.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* ── Two-column layout wrapper ───────────────────────────────────────────
+       Grid: main content (2fr ≈ 67%) | lens panel (1fr ≈ 33%).
+       align-items: start prevents the panel from stretching to content height,
+       which is required for position:sticky to activate on the inner panel.    */
+    .rw-lens-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+      column-gap: 28px;
+      align-items: start;
+    }
+
+    /* Main column: contains the rw-card-grid */
+    .rw-lens-layout__main {
+      min-width: 0; /* prevent blowout inside parent grid */
+    }
+
+    /* Panel column: the sticky container wrapper */
+    .rw-lens-layout__panel {
+      min-width: 0;
+    }
+
+    /* ── Sticky panel ──────────────────────────────────────────────────────
+       Sticks within the scroll parent (#col-overview-body).
+       top: 20px gives a small gap from the sticky role header above.          */
+    .rw-lens-panel {
+      position: sticky;
+      top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Decision Lens card inside the panel: full width of the panel column,
+       not a grid item — suppress grid-column span that rw-card--full sets.    */
+    .rw-lens-panel .rw-card--full,
+    .rw-lens-panel .rw-decision-lens {
+      grid-column: unset;
+      width: 100%;
+    }
+
+    /* ── Salary nudge ────────────────────────────────────────────────────────
+       Shows the salary figure when known, under the Decision Lens card.       */
+    .rw-lens-panel__salary {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+      padding: 8px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── Quick-action strip ──────────────────────────────────────────────────
+       Two compact buttons: Apply (primary accent) + Skip (neutral).           */
+    .rw-lens-qa-strip {
+      display: flex;
+      gap: 8px;
+    }
+
+    .rw-lens-qa-btn {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: var(--font);
+      letter-spacing: 0.02em;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+      white-space: nowrap;
+    }
+
+    .rw-lens-qa-btn:hover {
+      background: var(--bg-subtle, #f5f4f1);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    /* Apply button: slight positive accent without a hard colour token */
+    .rw-lens-qa-btn--apply {
+      border-color: var(--green, #27ae60);
+      color: var(--green, #27ae60);
+    }
+
+    .rw-lens-qa-btn--apply:hover {
+      background: color-mix(in srgb, var(--green, #27ae60) 8%, var(--bg-card));
+      color: var(--green, #27ae60);
+    }
+
+    /* Skip button: neutral/muted — should feel low-commitment */
+    .rw-lens-qa-btn--skip {
+      border-color: var(--border-light);
+      color: var(--text-light);
+    }
+
+    .rw-lens-qa-btn--skip:hover {
+      background: var(--bg-subtle, #f5f4f1);
+      color: var(--text-muted);
+      border-color: var(--border);
+    }
+
+    /* Dark mode: invert the apply accent slightly */
+    [data-theme="dark"] .rw-lens-qa-btn--apply {
+      border-color: var(--green, #2ecc71);
+      color: var(--green, #2ecc71);
+    }
+
+    [data-theme="dark"] .rw-lens-qa-btn--apply:hover {
+      background: color-mix(in srgb, var(--green, #2ecc71) 12%, var(--bg-card));
+    }
+
+    /* ── Mobile: revert to single column ────────────────────────────────────
+       Below 900px the layout collapses to single column.
+       The panel loses sticky behaviour and the Decision Lens renders inline
+       (its position in the HTML flow is after the main content, so it appears
+       below the analysis — same as before on mobile).                         */
+    @media (max-width: 900px) {
+      .rw-lens-layout {
+        display: block; /* single-column flow */
+      }
+
+      .rw-lens-panel {
+        position: static; /* no sticky on mobile */
+        margin-top: 24px;
+      }
+
+      /* Restore full-width for Decision Lens card on mobile */
+      .rw-lens-panel .rw-card--full,
+      .rw-lens-panel .rw-decision-lens {
+        width: 100%;
+      }
+    }
+
+    /* ── Narrow desktop (900–1100px): tighten the panel column ──────────────
+       At middle widths, panel column minimum shrinks to avoid crowding main.  */
+    @media (min-width: 900px) and (max-width: 1100px) {
+      .rw-lens-layout {
+        grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr);
+        column-gap: 20px;
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       RW-ROLEPAGE-AI-INTERACTION-01 — Inline Ask AI section explanations
+       ─────────────────────────────────────────────────────────────────────
+       Ask AI button appears in section headers and card headings.
+       Clicking it generates a contextual AI explanation shown inline below
+       the header element. No chat UI, no history, no threads.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* ── Ask AI button ──────────────────────────────────────────────────── */
+    .rw-ask-ai-btn {
+      display: inline-flex;
+      align-items: center;
+      font-size: 10px;
+      font-weight: 600;
+      font-family: var(--font);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-light);
+      background: transparent;
+      border: 1px solid var(--border-light);
+      border-radius: 3px;
+      padding: 2px 6px;
+      cursor: pointer;
+      vertical-align: middle;
+      margin-left: 10px;
+      flex-shrink: 0;
+      transition: color 0.12s, border-color 0.12s, opacity 0.12s;
+      line-height: 1.6;
+    }
+    .rw-ask-ai-btn:hover {
+      color: var(--text-muted);
+      border-color: var(--border);
+    }
+    .rw-ask-ai-btn--loading {
+      opacity: 0.45;
+      cursor: default;
+      pointer-events: none;
+    }
+
+    /* ── Section headers and card headings: flex layout for inline button ── */
+    .rw-section-header {
+      display: flex;
+      align-items: center;
+    }
+    .rw-ask-hdr {
+      display: flex;
+      align-items: center;
+    }
+
+    /* ── Inline response panel ──────────────────────────────────────────── */
+    .rw-ask-ai-panel {
+      background: var(--bg-subtle, #fafaf9);
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
+      padding: 14px 18px;
+      margin: 8px 0 16px;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.65;
+      animation: rwAskFadeIn 0.18s ease;
+    }
+    @keyframes rwAskFadeIn {
+      from { opacity: 0; transform: translateY(-3px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Loading state */
+    .rw-ask-ai-panel--loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-light);
+      font-size: 12.5px;
+      padding: 12px 16px;
+    }
+    .rw-ask-ai-spinner {
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--border-light);
+      border-top-color: var(--text-light);
+      border-radius: 50%;
+      animation: rwAskSpin 0.65s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes rwAskSpin {
+      to { transform: rotate(360deg); }
+    }
+    .rw-ask-ai-loading-text {
+      font-size: 12px;
+      color: var(--text-light);
+      font-style: italic;
+    }
+
+    /* Response body */
+    .rw-ask-ai-body p:last-child {
+      margin-bottom: 0 !important;
+    }
+
+    /* Error state */
+    .rw-ask-ai-error {
+      color: var(--text-light);
+      font-style: italic;
+      font-size: 12.5px;
+    }
+
+    /* Footer with dismiss */
+    .rw-ask-ai-foot {
+      margin-top: 10px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .rw-ask-ai-dismiss {
+      font-size: 11px;
+      font-weight: 500;
+      font-family: var(--font);
+      letter-spacing: 0.02em;
+      color: var(--text-light);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 4px;
+      transition: color 0.12s;
+    }
+    .rw-ask-ai-dismiss:hover {
+      color: var(--text-muted);
     }
 
     /* ═══════════════════════════════════════════════════════════════════════

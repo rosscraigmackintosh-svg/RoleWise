@@ -695,6 +695,7 @@
     let _profileId     = null;     // profiles.id UUID — used as user_id in usage_events
     let _cachedCvVersions = null; // Loaded once on first use; re-used by computeFitAssessment
     let _boundaryKeyCache = null; // Set<string> of saved blocker keys; null = not yet loaded
+    let _rwAiOutputCache  = null; // Rendered analysis output — used by Ask AI inline (RW-ROLEPAGE-AI-INTERACTION-01)
 
     // ─── Analysis trace stages ────────────────────────────────────────────────
     // Shared between the workspace paste trace (_wsRunAnalysis), the Add JD modal
@@ -6359,6 +6360,184 @@
           }
         } finally {
           resetBtn();
+        }
+      });
+    }
+
+    // ── Lens panel quick-action delegator (RW-ROLEPAGE-LENS-PANEL-01) ──────────
+    // Handles data-ws-quick="applied" | "skipped" buttons inside #rw-lens-layout-panel.
+    // Uses markStage (applied) and markOutcome (skipped) — same functions used by the
+    // rail stepper. No new logic: purely new UI wiring to existing handlers.
+    function _wsInitLensPanelActions() {
+      const _ovCards = document.getElementById('col-overview-cards');
+      if (!_ovCards || _ovCards.dataset.lensPanelWired) return;
+      _ovCards.dataset.lensPanelWired = '1';
+
+      _ovCards.addEventListener('click', async e => {
+        const btn = e.target.closest('[data-ws-quick]');
+        if (!btn) return;
+        const action = btn.dataset.wsQuick;
+        if (!selectedRoleId) return;
+        const _r = allRoles.find(r => r.id === selectedRoleId);
+        if (!_r || _r._isTemp) return;
+
+        if (btn.dataset.lensBusy) return;
+        btn.dataset.lensBusy = '1';
+        btn.style.opacity = '0.5';
+        try {
+          if (action === 'applied') {
+            // Advance stage to Applied using the same path as the rail stepper
+            await markStage(selectedRoleId, 'applied', 'Applied');
+          } else if (action === 'skipped') {
+            // Mark outcome as Skipped — terminal; role leaves active pipeline
+            await markStage(selectedRoleId, 'skipped', 'Skipped');
+          }
+        } finally {
+          delete btn.dataset.lensBusy;
+          btn.style.opacity = '';
+        }
+      });
+    }
+
+    // ── Ask AI inline section explanations (RW-ROLEPAGE-AI-INTERACTION-01) ────
+    // Build a focused prompt for a specific section key.
+    function _rwBuildAskPrompt(sectionKey) {
+      const _prompts = {
+        'briefing':       'Based on the role briefing signals — the role summary, why this role exists, what they are really looking for, the hiring context, and fit reality — give me a 3–4 sentence plain-English explanation of what this role is really about, why it probably exists, and what I should be thinking about before pursuing it.',
+        'role-signals':   'Based on the structural and operational signals detected in this job description, what do they suggest about the day-to-day reality of working in this role? Be specific about what stands out and what I should probe in an interview.',
+        'jd-clarity':     'Based on the JD transparency signals, watch points, and missing information, what does this job posting reveal — or conceal — about the role? What are the most important things I should verify or ask about before applying?',
+        'market-reality': 'Based on the hiring reality data for this type of role, what should I expect from the hiring process and timeline? What patterns are worth knowing about when deciding whether to apply?',
+        'career-pattern': 'Based on the career pattern intelligence and decision signals visible in the analysis, what patterns are worth paying attention to? What does this role suggest about my search trajectory, and is there anything I should weigh carefully?',
+      };
+      return _prompts[sectionKey] || `Explain the key signals in the ${sectionKey} section of this role analysis in 3–4 sentences.`;
+    }
+
+    // Build a minimal context object for a section-specific Ask AI call.
+    function _rwBuildAskContext(sectionKey, output) {
+      if (!output || typeof output !== 'object') return {};
+      const ctx = {};
+      // Role basics — always included
+      if (output.role_summary && output.role_summary !== 'Not stated') ctx.role_summary = output.role_summary;
+      if (output.role_archetype) ctx.role_archetype = output.role_archetype;
+      if (output.practical_details) ctx.practical_details = output.practical_details;
+      // Section-specific fields
+      if (sectionKey === 'briefing') {
+        if (output.why_this_role_exists) ctx.why_this_role_exists = output.why_this_role_exists;
+        if (Array.isArray(output.what_they_are_really_looking_for) && output.what_they_are_really_looking_for.length)
+          ctx.what_they_are_really_looking_for = output.what_they_are_really_looking_for.slice(0, 5);
+        if (output.hiring_system && output.hiring_system.type) ctx.hiring_system = output.hiring_system;
+        if (Array.isArray(output.fit_reality_summary) && output.fit_reality_summary.length)
+          ctx.fit_reality_summary = output.fit_reality_summary.slice(0, 4);
+      } else if (sectionKey === 'role-signals') {
+        if (output.role_shape_signals && typeof output.role_shape_signals === 'object')
+          ctx.role_shape_signals = output.role_shape_signals;
+        // v2 operational signals
+        const _v2Keys = ['scope_clarity','ownership_level','stakeholder_density','delivery_pressure',
+                         'domain_complexity','user_proximity','success_metric_maturity','seniority_authenticity'];
+        _v2Keys.forEach(k => { if (output[k] && output[k] !== 'unclear' && output[k] !== 'unknown') ctx[k] = output[k]; });
+      } else if (sectionKey === 'jd-clarity') {
+        if (Array.isArray(output.jd_health) && output.jd_health.length) ctx.jd_health = output.jd_health;
+        if (Array.isArray(output.watch_points) && output.watch_points.length)
+          ctx.watch_points = output.watch_points.slice(0, 5);
+        if (Array.isArray(output.not_stated_in_jd) && output.not_stated_in_jd.length)
+          ctx.not_stated_in_jd = output.not_stated_in_jd.slice(0, 5);
+        if (output.jd_completeness) ctx.jd_completeness = output.jd_completeness;
+      } else if (sectionKey === 'market-reality') {
+        // Market reality is computed from allRoles patterns; no output fields needed
+        if (output.hiring_system && output.hiring_system.type) ctx.hiring_system = output.hiring_system;
+      } else if (sectionKey === 'career-pattern') {
+        if (Array.isArray(output.what_you_would_actually_do) && output.what_you_would_actually_do.length)
+          ctx.what_you_would_actually_do = output.what_you_would_actually_do.slice(0, 4);
+        if (Array.isArray(output.risks_and_unknowns) && output.risks_and_unknowns.length)
+          ctx.risks_and_unknowns = output.risks_and_unknowns.slice(0, 4);
+      }
+      return ctx;
+    }
+
+    // Delegated handler for Ask AI buttons and dismiss buttons.
+    // Buttons are created inside renderMatchOutput HTML so delegation on #col-overview-cards
+    // is required (content is replaced on each role selection).
+    function _wsInitAskAIActions() {
+      const _ovCards = document.getElementById('col-overview-cards');
+      if (!_ovCards || _ovCards.dataset.askAiWired) return;
+      _ovCards.dataset.askAiWired = '1';
+
+      _ovCards.addEventListener('click', async e => {
+        // ── Dismiss ──────────────────────────────────────────────────────────
+        const _dismissBtn = e.target.closest('[data-ws-ask-dismiss]');
+        if (_dismissBtn) {
+          _dismissBtn.closest('.rw-ask-ai-panel')?.remove();
+          return;
+        }
+
+        // ── Ask AI ───────────────────────────────────────────────────────────
+        const btn = e.target.closest('[data-ws-ask]');
+        if (!btn) return;
+        const sectionKey = btn.dataset.wsAsk;
+        if (!sectionKey) return;
+        if (btn.dataset.askBusy) return; // prevent double-trigger
+
+        // The button lives inside either .rw-section-header or .doc-section-heading.
+        // The response panel is inserted immediately after whichever element contains the button.
+        const _headerEl = btn.parentElement;
+        if (!_headerEl) return;
+
+        // If a panel already exists immediately after this header, remove it (acts as toggle/refresh)
+        const _existing = _headerEl.nextElementSibling;
+        if (_existing && _existing.classList.contains('rw-ask-ai-panel')) {
+          _existing.remove();
+          // If button was just a refresh, remove and stop (toggle off)
+          if (btn.dataset.askShown) {
+            delete btn.dataset.askShown;
+            return;
+          }
+        }
+
+        // Show loading panel
+        const _panel = document.createElement('div');
+        _panel.className = 'rw-ask-ai-panel rw-ask-ai-panel--loading';
+        _panel.innerHTML = '<div class="rw-ask-ai-spinner"></div><span class="rw-ask-ai-loading-text">Thinking…</span>';
+        _headerEl.insertAdjacentElement('afterend', _panel);
+
+        // Update button state
+        btn.dataset.askBusy = '1';
+        const _origText = btn.textContent;
+        btn.textContent = '…';
+        btn.classList.add('rw-ask-ai-btn--loading');
+
+        try {
+          const _output = _rwAiOutputCache;
+          if (!_output) throw new Error('no output cache');
+          const _prompt = _rwBuildAskPrompt(sectionKey);
+          const _ctx    = _rwBuildAskContext(sectionKey, _output);
+          const _result = await callWorkspaceChatAPI(_prompt, _ctx);
+
+          _panel.classList.remove('rw-ask-ai-panel--loading');
+          if (_result && _result.reply) {
+            // Convert newlines to paragraphs
+            const _paras = _result.reply.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+            const _bodyHtml = _paras.map(p =>
+              `<p style="margin:0 0 8px;">${p.replace(/\n/g, '<br>')}</p>`
+            ).join('');
+            _panel.innerHTML =
+              `<div class="rw-ask-ai-body">${_bodyHtml}</div>` +
+              `<div class="rw-ask-ai-foot"><button class="rw-ask-ai-dismiss" data-ws-ask-dismiss>Dismiss</button></div>`;
+            btn.dataset.askShown = '1';
+          } else {
+            _panel.innerHTML =
+              '<div class="rw-ask-ai-error">Couldn’t get a response — try again.</div>' +
+              '<div class="rw-ask-ai-foot"><button class="rw-ask-ai-dismiss" data-ws-ask-dismiss>Dismiss</button></div>';
+          }
+        } catch (_err) {
+          console.warn('[_wsInitAskAIActions] error', _err);
+          _panel.classList.remove('rw-ask-ai-panel--loading');
+          _panel.innerHTML =
+            '<div class="rw-ask-ai-error">Something went wrong — try again.</div>' +
+            '<div class="rw-ask-ai-foot"><button class="rw-ask-ai-dismiss" data-ws-ask-dismiss>Dismiss</button></div>';
+        } finally {
+          delete btn.dataset.askBusy;
+          btn.textContent = _origText;
+          btn.classList.remove('rw-ask-ai-btn--loading');
         }
       });
     }
@@ -12745,6 +12924,7 @@
       }
 
       let html = '';
+      _rwAiOutputCache = output; // RW-ROLEPAGE-AI-INTERACTION-01
 
       // Helpers
       const secAlways = (title, content, id) =>
@@ -12752,13 +12932,19 @@
       // Card wrapper — produces a .rw-card module for the card grid layout.
       // full=true → grid-column span both columns; false → half-width column
       // extraClass → optional additional CSS class string (e.g. 'rw-card--intel')
-      const card = (title, content, id, full, extraClass) =>
-        `<div class="rw-card${full !== false ? ' rw-card--full' : ''}${extraClass ? ' ' + extraClass : ''}"${id ? ` id="${id}"` : ''}><div class="doc-section-heading">${title}</div>${content || '<div class="doc-prose" style="color:var(--text-light);">Not stated</div>'}</div>`;
+      const card = (title, content, id, full, extraClass, askKey) => {
+        const _hdr = askKey
+          ? `<div class="doc-section-heading rw-ask-hdr">${title}<button class="rw-ask-ai-btn" data-ws-ask="${askKey}" aria-label="Ask AI about ${title}">Ask AI</button></div>`
+          : `<div class="doc-section-heading">${title}</div>`;
+        return `<div class="rw-card${full !== false ? ' rw-card--full' : ''}${extraClass ? ' ' + extraClass : ''}"${id ? ` id="${id}"` : ''}>${_hdr}${content || '<div class="doc-prose" style="color:var(--text-light);">Not stated</div>'}</div>`;
+      };
 
       // Section divider — chapter break for the overview briefing.
       // isFirst = true omits the extra top margin (used on the opening section).
-      const sectionHeader = (label, isFirst) =>
-        `<div class="rw-section-header${isFirst ? ' rw-section-header--first' : ''}"><span class="rw-section-header__label">${label}</span></div>`;
+      const sectionHeader = (label, isFirst, askKey) => {
+        const _askBtn = askKey ? `<button class="rw-ask-ai-btn" data-ws-ask="${askKey}" aria-label="Ask AI about ${label}">Ask AI</button>` : '';
+        return `<div class="rw-section-header${isFirst ? ' rw-section-header--first' : ''}"><span class="rw-section-header__label">${label}</span>${_askBtn}</div>`;
+      };
 
       const bullets = arr => Array.isArray(arr) && arr.length
         ? `<ul class="doc-list">${arr.map(s => `<li>${esc(String(s))}</li>`).join('')}</ul>`
@@ -12903,6 +13089,9 @@
         }
       }
 
+      // ── Two-column layout: main analysis left, sticky Decision Lens right ──────
+      html += `<div class="rw-lens-layout">`;
+      html += `<div class="rw-lens-layout__main">`;
       html += `<div class="rw-card-grid">`;
 
       // ── Role Briefing card — Archetype + Briefing Header (full width) ──────────
@@ -12966,193 +13155,231 @@
           _briefHtml += `<div class="rw-briefing-header">${_bh}</div>`;
         }
       }
-      html += sectionHeader('Role Briefing', true);
-      html += `<div class="rw-card rw-card--full rw-card--narrative" id="section-briefing">${_briefHtml}</div>`;
+      html += sectionHeader('Role Briefing', true, 'briefing');
 
-
-      // Role Shape Signals — structural signals for senior candidate judgement
+      // ── ROLEWISE BRIEFING — merged: role summary + why role exists + what they want + hiring context + fit reality ──
       {
-        const rss = output.role_shape_signals;
-        if (rss && typeof rss === 'object') {
-          const _cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-          const rows = [];
+        let _rbHtml = '';
 
-          const _ev  = (rss && rss._evidence) || {};
+        // ── Role Summary ──
+        if (_briefHtml) {
+          _rbHtml += `<div class="rw-sub-section"><div class="rw-sub-label">Role Summary</div>${_briefHtml}</div>`;
+        }
 
+        // ── Why This Role Exists ──
+        {
+          const _why = output.why_this_role_exists;
+          if (_why && _why !== 'Not recorded in this format.' && _why !== 'Unknown' && _why !== 'Not stated') {
+            _rbHtml += `<div class="rw-sub-section"><div class="rw-sub-label">Why This Role Exists</div><div class="doc-prose" style="font-size:13.5px;color:var(--text);line-height:1.6;">${esc(_why)}</div></div>`;
+          }
+        }
+
+        // ── What The Company Is Trying To Solve ──
+        {
+          const _wtrlf = Array.isArray(output.what_they_are_really_looking_for)
+            ? output.what_they_are_really_looking_for.filter(s => s && s !== 'Not stated' && s !== 'Not recorded \u2014 see original JD for detail.')
+            : [];
+          if (_wtrlf.length > 0) {
+            _rbHtml += `<div class="rw-sub-section"><div class="rw-sub-label">What They\u2019re Looking For</div>${bullets(_wtrlf)}</div>`;
+          }
+        }
+
+        // ── Hiring Context — from Hiring System Insight ──
+        {
+          const _hs = output.hiring_system;
+          if (_hs && _hs.type) {
+            const _hsLabels = {
+              direct_employer:    'Direct employer',
+              recruiter_mediated: 'Recruiter-mediated',
+              high_volume_funnel: 'High-volume funnel',
+              founder_led:        'Founder-led',
+              enterprise_matrix:  'Enterprise / matrix',
+              agency_search:      'Agency search',
+            };
+            const _hsTypeDesc = {
+              direct_employer:    'The company is hiring directly. Expect first-person communication and fewer intermediary steps.',
+              recruiter_mediated: 'A recruitment agency is advertising on behalf of a client. There are two layers to navigate: the agency and the employer.',
+              high_volume_funnel: 'This appears to be a high-volume, ATS-driven process. Expect screening tests, slower response times, and less personalisation.',
+              founder_led:        'Signals suggest a founder or early senior team is directly involved. Expect faster, more personal, and higher-variance interactions.',
+              enterprise_matrix:  'This looks like a large corporate with committee-based hiring. Expect a longer process, multiple stakeholders, and formal approval stages.',
+              agency_search:      'A boutique or specialist recruiter appears to be leading this search. The process is likely more personalised, and the search may be confidential.',
+            };
+            const _hsLabel    = _hsLabels[_hs.type] || _hs.type;
+            const _hsConf     = _hs.confidence === 'high' ? '' : ` <span style="color:var(--text-light);font-weight:400;">(${_hs.confidence} confidence)</span>`;
+            const _hsDesc     = _hsTypeDesc[_hs.type] || null;
+            const _hsSig      = Array.isArray(_hs.signals) && _hs.signals.length
+              ? _hs.signals.join(' \u00b7 ') : null;
+            let _hsHtml2 = `<div style="font-size:13.5px;font-weight:600;color:var(--text);margin-bottom:${_hsDesc ? '6px' : '0'};">${esc(_hsLabel)}${_hsConf}</div>`;
+            if (_hsDesc) {
+              _hsHtml2 += `<div class="doc-prose" style="margin-bottom:${_hsSig ? '6px' : '0'};">${esc(_hsDesc)}</div>`;
+            }
+            if (_hsSig) {
+              _hsHtml2 += `<div style="font-size:11.5px;color:var(--text-light);font-style:italic;line-height:1.4;">\u201c${esc(_hsSig)}\u201d</div>`;
+            }
+            _rbHtml += `<div class="rw-sub-section" id="section-hiring-system"><div class="rw-sub-label">Hiring Context</div>${_hsHtml2}</div>`;
+          }
+        }
+
+        // ── Fit Reality ──
+        {
+          const _fr = Array.isArray(output.fit_reality_summary) ? output.fit_reality_summary.filter(Boolean) : [];
+          if (_fr.length > 0) {
+            _rbHtml += `<div class="rw-sub-section" id="section-fit-reality"><div class="rw-sub-label">Fit Reality</div>${markerBullets(_fr.slice(0, 3))}</div>`;
+          }
+        }
+
+        if (_rbHtml) {
+          html += `<div class="rw-card rw-card--full rw-card--narrative" id="section-briefing">${_rbHtml}</div>`;
+        }
+      }
+
+      // ── ROLE SIGNALS — Structural Signals + Operational Signals ──────────────
+      {
+        let _roleSignalsHtml = '';
+        let _roleSignalsHas = false;
+
+        // ── Structural Signals — from role_shape_signals ──
+        {
+          const rss = output.role_shape_signals;
           if (rss && typeof rss === 'object') {
-            // ── Structural ────────────────────────────────────────────────────
-            const _wm = rss.work_model || (output.practical_details && output.practical_details.remote_model) || null;
-            if (_wm && _wm !== 'unknown') {
-              const _wmLabels = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
-              rows.push(['Work model', _wmLabels[_wm] || _cap(_wm), null]);
+            const _cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+            const rows = [];
+
+            const _ev  = (rss && rss._evidence) || {};
+
+            if (rss && typeof rss === 'object') {
+              // ── Structural ────────────────────────────────────────────────────
+              const _wm = rss.work_model || (output.practical_details && output.practical_details.remote_model) || null;
+              if (_wm && _wm !== 'unknown') {
+                const _wmLabels = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+                rows.push(['Work model', _wmLabels[_wm] || _cap(_wm), null]);
+              }
+
+              const _rt = rss.role_type || (output.practical_details && output.practical_details.employment_type) || null;
+              if (_rt && _rt !== 'unknown' && _rt !== 'Not stated') {
+                const _rtLabels = { contract: 'Contract', permanent: 'Permanent' };
+                rows.push(['Role type', _rtLabels[_rt] || _cap(_rt), null]);
+              }
+
+              const _salaryVal = rss.salary_signal || null;
+              if (_salaryVal) {
+                const _salLabels = { range: 'Range stated', stated: 'Stated', not_stated: 'Not stated' };
+                rows.push(['Salary transparency', _salLabels[_salaryVal] || _cap(_salaryVal), null]);
+              }
+
+              // ── Role shape ────────────────────────────────────────────────────
+              if (rss.squad_model === true)
+                rows.push(['Squad model', 'Yes', _ev.squad_model]);
+
+              if (rss.craft_strategy_balance) {
+                const _balanceLabels = { craft_heavy: 'Craft-heavy', strategy_heavy: 'Strategy-heavy', balanced: 'Balanced' };
+                rows.push(['Craft vs strategy', _balanceLabels[rss.craft_strategy_balance] || _cap(rss.craft_strategy_balance), _ev.craft_strategy_balance]);
+              }
+
+              if (rss.design_system_ownership === true)
+                rows.push(['Design system ownership', 'Yes', _ev.design_system_ownership]);
+
+              if (rss.product_mode) {
+                const _modeLabels = { greenfield: 'Greenfield', mixed: 'Mixed', iteration: 'Iteration' };
+                rows.push(['Product mode', _modeLabels[rss.product_mode] || _cap(rss.product_mode), _ev.product_mode]);
+              }
+
+              // ── Cultural ──────────────────────────────────────────────────────
+              const _dc = rss.decision_culture || null;
+              if (_dc) rows.push(['Decision culture', _cap(_dc), _ev.decision_culture]);
+
+              const _cs = rss.company_stage || rss.company_stage_signal || null;
+              if (_cs && _cs !== 'unknown') {
+                const _stageLabels = { scaleup: 'Scale-up', startup: 'Start-up', enterprise: 'Enterprise' };
+                rows.push(['Company stage', _stageLabels[_cs] || _cap(_cs), null]);
+              }
+
+              if (rss.office_culture_signal === true)
+                rows.push(['Office culture signal', 'Yes', _ev.office_culture_signal]);
+
+              const _hp = rss.hiring_philosophy || rss.hiring_philosophy_signal || null;
+              if (_hp) rows.push(['Hiring philosophy', _cap(_hp), _ev.hiring_philosophy]);
+
+              // ── Legacy-only signals (shown when present, not duplicated above) ──
+              if (rss.ai_tooling_signal === true)
+                rows.push(['AI tooling signal', 'Yes', _ev.ai_tooling_signal]);
             }
 
-            const _rt = rss.role_type || (output.practical_details && output.practical_details.employment_type) || null;
-            if (_rt && _rt !== 'unknown' && _rt !== 'Not stated') {
-              const _rtLabels = { contract: 'Contract', permanent: 'Permanent' };
-              rows.push(['Role type', _rtLabels[_rt] || _cap(_rt), null]);
+            if (rows.length > 0) {
+              const _structTable = `<table style="width:100%;border-collapse:collapse;">${rows.map(([k, v, ev], i) => `
+                <tr${i < rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
+                  <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(k)}</td>
+                  <td style="padding:6px 0;font-size:13px;color:var(--text);">${esc(v)}${ev ? `<div style="font-size:11px;color:var(--text-light);font-style:italic;margin-top:2px;line-height:1.35;">\u201c${esc(ev)}\u201d</div>` : ''}</td>
+                </tr>`).join('')}
+              </table>`;
+              _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-shape"><div class="rw-sub-label">Structural Signals</div>${_structTable}</div>`;
+              _roleSignalsHas = true;
             }
+          }
+        }
 
-            const _salaryVal = rss.salary_signal || null;
-            if (_salaryVal) {
-              const _salLabels = { range: 'Range stated', stated: 'Stated', not_stated: 'Not stated' };
-              rows.push(['Salary transparency', _salLabels[_salaryVal] || _cap(_salaryVal), null]);
+        // ── Operational Signals — v2 deeper role-interpretation signals ──
+        {
+          const _v2Labels = {
+            scope_clarity:            'Scope clarity',
+            ownership_level:          'Ownership level',
+            stakeholder_density:      'Stakeholder density',
+            delivery_pressure:        'Delivery pressure',
+            domain_complexity:        'Domain complexity',
+            user_proximity:           'User proximity',
+            success_metric_maturity:  'Metric maturity',
+            seniority_authenticity:   'Seniority',
+          };
+          const _v2ValueLabels = {
+            clear:   'Clear',  mixed:  'Mixed',   vague: 'Vague',
+            company_level: 'Company-wide', platform: 'Platform', product_area: 'Product area',
+            feature: 'Feature', unclear: 'Unclear',
+            low: 'Low', medium: 'Medium', high: 'High',
+            sustainable: 'Sustainable', fast: 'Fast', intense: 'Intense',
+            strong: 'Strong', moderate: 'Moderate', weak: 'Weak',
+            authentic: 'Authentic', inflated: 'Inflated', understated: 'Understated',
+          };
+          const _v2Accents = {
+            inflated:    'color:var(--red,#c0392b)',
+            intense:     'color:var(--amber,#d68910)',
+            vague:       'color:var(--amber,#d68910)',
+            weak:        'color:var(--text-muted)',
+            unclear:     'color:var(--text-muted)',
+            sustainable: 'color:var(--green,#27ae60)',
+            strong:      'color:var(--green,#27ae60)',
+            authentic:   'color:var(--green,#27ae60)',
+            understated: 'color:var(--amber,#d68910)',
+          };
+
+          const v2Keys = Object.keys(_v2Labels);
+          const v2Rows = [];
+          for (const key of v2Keys) {
+            const val = output[key];
+            if (val && val !== 'unclear' && val !== 'unknown') {
+              const label     = _v2Labels[key];
+              const valLabel  = _v2ValueLabels[val] || (val.charAt(0).toUpperCase() + val.slice(1).replace(/_/g, ' '));
+              const accentCss = _v2Accents[val] ? ';' + _v2Accents[val] : '';
+              v2Rows.push([label, valLabel, accentCss]);
             }
-
-            // ── Role shape ────────────────────────────────────────────────────
-            if (rss.squad_model === true)
-              rows.push(['Squad model', 'Yes', _ev.squad_model]);
-
-            if (rss.craft_strategy_balance) {
-              const _balanceLabels = { craft_heavy: 'Craft-heavy', strategy_heavy: 'Strategy-heavy', balanced: 'Balanced' };
-              rows.push(['Craft vs strategy', _balanceLabels[rss.craft_strategy_balance] || _cap(rss.craft_strategy_balance), _ev.craft_strategy_balance]);
-            }
-
-            if (rss.design_system_ownership === true)
-              rows.push(['Design system ownership', 'Yes', _ev.design_system_ownership]);
-
-            if (rss.product_mode) {
-              const _modeLabels = { greenfield: 'Greenfield', mixed: 'Mixed', iteration: 'Iteration' };
-              rows.push(['Product mode', _modeLabels[rss.product_mode] || _cap(rss.product_mode), _ev.product_mode]);
-            }
-
-            // ── Cultural ──────────────────────────────────────────────────────
-            const _dc = rss.decision_culture || null;
-            if (_dc) rows.push(['Decision culture', _cap(_dc), _ev.decision_culture]);
-
-            const _cs = rss.company_stage || rss.company_stage_signal || null;
-            if (_cs && _cs !== 'unknown') {
-              const _stageLabels = { scaleup: 'Scale-up', startup: 'Start-up', enterprise: 'Enterprise' };
-              rows.push(['Company stage', _stageLabels[_cs] || _cap(_cs), null]);
-            }
-
-            if (rss.office_culture_signal === true)
-              rows.push(['Office culture signal', 'Yes', _ev.office_culture_signal]);
-
-            const _hp = rss.hiring_philosophy || rss.hiring_philosophy_signal || null;
-            if (_hp) rows.push(['Hiring philosophy', _cap(_hp), _ev.hiring_philosophy]);
-
-            // ── Legacy-only signals (shown when present, not duplicated above) ──
-            if (rss.ai_tooling_signal === true)
-              rows.push(['AI tooling signal', 'Yes', _ev.ai_tooling_signal]);
           }
 
-          // Hiring process row removed — now rendered as standalone Hiring System Insight section (3a).
-
-          if (rows.length > 0) {
-            const table = `<table style="width:100%;border-collapse:collapse;">${rows.map(([k, v, ev], i) => `
-              <tr${i < rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
+          if (v2Rows.length > 0) {
+            const _opTable = `<table style="width:100%;border-collapse:collapse;">${v2Rows.map(([k, v, accentCss], i) => `
+              <tr${i < v2Rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
                 <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(k)}</td>
-                <td style="padding:6px 0;font-size:13px;color:var(--text);">${esc(v)}${ev ? `<div style="font-size:11px;color:var(--text-light);font-style:italic;margin-top:2px;line-height:1.35;">\u201c${esc(ev)}\u201d</div>` : ''}</td>
+                <td style="padding:6px 0;font-size:13px;color:var(--text)${accentCss};">${esc(v)}</td>
               </tr>`).join('')}
             </table>`;
-            html += card('Role Shape Signals', table, 'section-role-shape', true, 'rw-card--narrative');
-          }
-        }
-      }
-
-
-      // Hiring System Insight — AI-detected hiring process type with context
-      {
-        const _hs = output.hiring_system;
-        if (_hs && _hs.type) {
-          const _hsLabels = {
-            direct_employer:    'Direct employer',
-            recruiter_mediated: 'Recruiter-mediated',
-            high_volume_funnel: 'High-volume funnel',
-            founder_led:        'Founder-led',
-            enterprise_matrix:  'Enterprise / matrix',
-            agency_search:      'Agency search',
-          };
-          const _hsTypeDesc = {
-            direct_employer:    'The company is hiring directly. Expect first-person communication and fewer intermediary steps.',
-            recruiter_mediated: 'A recruitment agency is advertising on behalf of a client. There are two layers to navigate: the agency and the employer.',
-            high_volume_funnel: 'This appears to be a high-volume, ATS-driven process. Expect screening tests, slower response times, and less personalisation.',
-            founder_led:        'Signals suggest a founder or early senior team is directly involved. Expect faster, more personal, and higher-variance interactions.',
-            enterprise_matrix:  'This looks like a large corporate with committee-based hiring. Expect a longer process, multiple stakeholders, and formal approval stages.',
-            agency_search:      'A boutique or specialist recruiter appears to be leading this search. The process is likely more personalised, and the search may be confidential.',
-          };
-          const _hsLabel    = _hsLabels[_hs.type] || _hs.type;
-          const _hsConf     = _hs.confidence === 'high' ? '' : ` <span style="color:var(--text-light);font-weight:400;">(${_hs.confidence} confidence)</span>`;
-          const _hsDesc     = _hsTypeDesc[_hs.type] || null;
-          const _hsSig      = Array.isArray(_hs.signals) && _hs.signals.length
-            ? _hs.signals.join(' \u00b7 ') : null;
-
-          let _hsHtml = `<div style="font-size:13.5px;font-weight:600;color:var(--text);margin-bottom:${_hsDesc ? '6px' : '0'};">${esc(_hsLabel)}${_hsConf}</div>`;
-          if (_hsDesc) {
-            _hsHtml += `<div class="doc-prose" style="margin-bottom:${_hsSig ? '6px' : '0'};">${esc(_hsDesc)}</div>`;
-          }
-          if (_hsSig) {
-            _hsHtml += `<div style="font-size:11.5px;color:var(--text-light);font-style:italic;line-height:1.4;">\u201c${esc(_hsSig)}\u201d</div>`;
-          }
-          html += card('Hiring System Insight', _hsHtml, 'section-hiring-system', true);
-        }
-      }
-
-      // Role Reality Signals — v2 deeper role-interpretation signals
-      {
-        const _v2Labels = {
-          scope_clarity:            'Scope clarity',
-          ownership_level:          'Ownership level',
-          stakeholder_density:      'Stakeholder density',
-          delivery_pressure:        'Delivery pressure',
-          domain_complexity:        'Domain complexity',
-          user_proximity:           'User proximity',
-          success_metric_maturity:  'Metric maturity',
-          seniority_authenticity:   'Seniority',
-        };
-        const _v2ValueLabels = {
-          clear:   'Clear',  mixed:  'Mixed',   vague: 'Vague',
-          company_level: 'Company-wide', platform: 'Platform', product_area: 'Product area',
-          feature: 'Feature', unclear: 'Unclear',
-          low: 'Low', medium: 'Medium', high: 'High',
-          sustainable: 'Sustainable', fast: 'Fast', intense: 'Intense',
-          strong: 'Strong', moderate: 'Moderate', weak: 'Weak',
-          authentic: 'Authentic', inflated: 'Inflated', understated: 'Understated',
-        };
-        const _v2Accents = {
-          inflated:    'color:var(--red,#c0392b)',
-          intense:     'color:var(--amber,#d68910)',
-          vague:       'color:var(--amber,#d68910)',
-          weak:        'color:var(--text-muted)',
-          unclear:     'color:var(--text-muted)',
-          sustainable: 'color:var(--green,#27ae60)',
-          strong:      'color:var(--green,#27ae60)',
-          authentic:   'color:var(--green,#27ae60)',
-          understated: 'color:var(--amber,#d68910)',
-        };
-
-        const v2Keys = Object.keys(_v2Labels);
-        const v2Rows = [];
-        for (const key of v2Keys) {
-          const val = output[key];
-          if (val && val !== 'unclear' && val !== 'unknown') {
-            const label     = _v2Labels[key];
-            const valLabel  = _v2ValueLabels[val] || (val.charAt(0).toUpperCase() + val.slice(1).replace(/_/g, ' '));
-            const accentCss = _v2Accents[val] ? ';' + _v2Accents[val] : '';
-            v2Rows.push([label, valLabel, accentCss]);
+            _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-reality-signals"><div class="rw-sub-label">Operational Signals</div>${_opTable}</div>`;
+            _roleSignalsHas = true;
           }
         }
 
-        if (v2Rows.length > 0) {
-          const v2Table = `<table style="width:100%;border-collapse:collapse;">${v2Rows.map(([k, v, accentCss], i) => `
-            <tr${i < v2Rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
-              <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(k)}</td>
-              <td style="padding:6px 0;font-size:13px;color:var(--text)${accentCss};">${esc(v)}</td>
-            </tr>`).join('')}
-          </table>`;
-          html += card('Role Reality Signals', v2Table, 'section-role-reality-signals', true);
+        if (_roleSignalsHas) {
+          html += card('Role Signals', _roleSignalsHtml, 'section-role-signals', true, 'rw-card--narrative', 'role-signals');
         }
       }
 
-
-      // ─── Interpretation ──────────────────────────────────────────────────
-
-      // Fit Signals — up to 3 analyst bullets with signal markers (v8+) or editorial (legacy)
-      {
-        const fitItems = Array.isArray(output.fit_reality_summary) ? output.fit_reality_summary.filter(Boolean) : [];
-        html += card('Fit Reality Summary', markerBullets(fitItems.slice(0, 3)), 'section-fit-reality', true, 'rw-card--narrative');
-      }
 
       // ── Practical Reality ────────────────────────────────────────────────────
       html += sectionHeader('Practical Reality');
@@ -13311,29 +13538,67 @@
         }
       }
 
-      // ── Position 3b: JD Health (half, pairs with Commute Impact) ──
-      // JD Health — clarity and transparency of the JD itself
+      // ── JD CLARITY & RISKS — merged: transparency signals + watch points + missing information ──
       {
-        const _jdh = output.jd_health;
-        if (Array.isArray(_jdh) && _jdh.length > 0) {
-          const _areaLabels = {
-            salary_transparency: 'Salary',
-            team_structure:      'Team structure',
-            scope_definition:    'Scope',
-            role_expectations:   'Expectations',
-            interview_process:   'Interview process',
-            company_context:     'Company context',
-          };
-          const _cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-          const _jdhRows = _jdh.map((item, i) => {
-            const _aLabel = _areaLabels[item.area] || _cap((item.area || '').replace(/_/g, ' '));
-            const border = i < _jdh.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : '';
-            return `<tr${border}>
-              <td style="padding:7px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(_aLabel)}</td>
-              <td style="padding:7px 0;font-size:13px;color:var(--text);line-height:1.5;">${esc(item.observation || '')}</td>
-            </tr>`;
-          }).join('');
-          html += card('JD Health', `<table style="width:100%;border-collapse:collapse;">${_jdhRows}</table>`, 'section-jd-health', false, 'rw-card--data');
+        let _jcrHtml = '';
+        let _jcrHas = false;
+
+        // ── Transparency Signals — from jd_health ──
+        {
+          const _jdh = output.jd_health;
+          if (Array.isArray(_jdh) && _jdh.length > 0) {
+            const _areaLabels = {
+              salary_transparency: 'Salary',
+              team_structure:      'Team structure',
+              scope_definition:    'Scope',
+              role_expectations:   'Expectations',
+              interview_process:   'Interview process',
+              company_context:     'Company context',
+            };
+            const _cap2 = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+            const _jdhRows = _jdh.map((item, i) => {
+              const _aLabel = _areaLabels[item.area] || _cap2((item.area || '').replace(/_/g, ' '));
+              const border = i < _jdh.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : '';
+              return `<tr${border}>
+                <td style="padding:7px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(_aLabel)}</td>
+                <td style="padding:7px 0;font-size:13px;color:var(--text);line-height:1.5;">${esc(item.observation || '')}</td>
+              </tr>`;
+            }).join('');
+            _jcrHtml += `<div class="rw-sub-section" id="section-jd-health"><div class="rw-sub-label">Transparency Signals</div><table style="width:100%;border-collapse:collapse;">${_jdhRows}</table></div>`;
+            _jcrHas = true;
+          }
+        }
+
+        // ── Watch Points — from red_flags ──
+        {
+          const _rf = output.red_flags;
+          if (Array.isArray(_rf) && _rf.length > 0) {
+            const _rfHtml = _rf.map((item, i) => {
+              const border = i < _rf.length - 1 ? 'border-bottom:1px solid var(--border-light);' : '';
+              return `<div style="padding:8px 0;${border}">
+                <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:3px;">${esc(item.flag)}</div>
+                <div style="font-size:12.5px;color:var(--text-muted);line-height:1.5;">${esc(item.detail)}</div>
+              </div>`;
+            }).join('');
+            _jcrHtml += `<div class="rw-sub-section" id="section-red-flags"><div class="rw-sub-label">Watch Points</div>${_rfHtml}</div>`;
+            _jcrHas = true;
+          }
+        }
+
+        // ── Missing Information — from missing_info ──
+        {
+          const _mi = output.missing_info;
+          if (Array.isArray(_mi) && _mi.length > 0) {
+            const _miItems = _mi.map(item =>
+              `<li style="padding:4px 0;font-size:13px;color:var(--text-light);">${esc(item)}</li>`
+            ).join('');
+            _jcrHtml += `<div class="rw-sub-section" id="section-missing-info"><div class="rw-sub-label">Missing Information</div><ul style="list-style:none;margin:0;padding:0;">${_miItems}</ul></div>`;
+            _jcrHas = true;
+          }
+        }
+
+        if (_jcrHas) {
+          html += card('JD Clarity & Risks', _jcrHtml, 'section-jd-clarity', false, 'rw-card--data rw-card--narrative', 'jd-clarity');
         }
       }
 
@@ -13341,13 +13606,13 @@
       // ── Your Decision Context ─────────────────────────────────────────────
       html += sectionHeader('Your Decision Context');
 
-      // ── Decision Lens — 5-axis synthesis card ────────────────────────────────
-      // Synthesises signals into Identity Fit / Role Shape / Economics /
-      // Sustainability / Culture lenses + Rolewise Verdict.
-      // Only renders when at least 2 lenses have a concrete (non-unclear) signal.
+      // ── Decision Lens — captured for sticky side panel (RW-ROLEPAGE-LENS-PANEL-01) ──
+      // Rendering logic is unchanged; the card is placed in the right sticky panel
+      // rather than inline in the card flow. _lensHtml is inserted after grid-close.
+      let _lensHtml = '';
       {
         const _dlHtml = _renderDecisionLens(output);
-        if (_dlHtml) html += _dlHtml;
+        if (_dlHtml) _lensHtml = _dlHtml;
       }
 
       // ── Your Lens ──────────────────────────────────────────────────────────
@@ -13518,7 +13783,7 @@
 
 
       // ── Market Reality ──────────────────────────────────────────────────────
-      html += sectionHeader('Market Reality');
+      html += sectionHeader('Market Reality', false, 'market-reality');
 
       // ── Hiring Reality ─────────────────────────────────────────────────────
       // Aggregated signals from similar analysed roles in this account only.
@@ -13562,7 +13827,7 @@
 
 
       // ── Career Pattern Intelligence ──────────────────────────────────────────
-      html += sectionHeader('Career Pattern Intelligence');
+      html += sectionHeader('Career Pattern Intelligence', false, 'career-pattern');
 
       // ── OARM — Role Memory (full-width, 5+ verdicts; delayed until next render) ──
       // Personal decision summary: how many fits, not-for-me, and undecided verdicts
@@ -13776,39 +14041,7 @@
         html += card('Questions Worth Asking', bullets(_sq), 'section-questions', true, 'rw-card--action');
       }
 
-      // ── Supplementary detail cards (appear below the primary briefing layout) ──
-
-      // Watch Points — contradictions, warnings, explicit red flags
-      {
-        const _rf = output.red_flags;
-        if (Array.isArray(_rf) && _rf.length > 0) {
-          const _rfHtml = _rf.map((item, i) => {
-            const border = i < _rf.length - 1 ? 'border-bottom:1px solid var(--border-light);' : '';
-            return `<div style="padding:8px 0;${border}">
-              <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:3px;">${esc(item.flag)}</div>
-              <div style="font-size:12.5px;color:var(--text-muted);line-height:1.5;">${esc(item.detail)}</div>
-            </div>`;
-          }).join('');
-          html += card('Watch Points', _rfHtml, 'section-red-flags', false, 'rw-card--action');
-        }
-      }
-
-      // Missing Information — explicit list of what the JD does not state
-      {
-        const _mi = output.missing_info;
-        if (Array.isArray(_mi) && _mi.length > 0) {
-          const _miItems = _mi.map(item =>
-            `<li style="padding:4px 0;font-size:13px;color:var(--text-light);">${esc(item)}</li>`
-          ).join('');
-          html += card(
-            'Not stated in this JD',
-            `<ul style="list-style:none;margin:0;padding:0;">${_miItems}</ul>`,
-            'section-missing-info',
-            false,
-            'rw-card--action',
-          );
-        }
-      }
+      // Watch Points and Missing Information moved to JD Clarity & Risks (Practical Reality section)
 
       // ── Section 5: Role Action Cards ─────────────────────────────────────────
       // Clickable action buttons that trigger deeper workflows from the overview.
@@ -13846,6 +14079,49 @@
       </div>`;
 
       html += `</div>`; // close rw-card-grid
+      html += `</div>`; // close rw-lens-layout__main
+
+      // ── Right panel: sticky Decision Lens + quick role actions ──────────────
+      {
+        const _hasSalary = !!(output.practical_details && output.practical_details.salary_annual &&
+          output.practical_details.salary_annual !== 'Not stated');
+
+        // Compact salary nudge shown in panel when salary is known
+        const _salNudge = _hasSalary
+          ? `<div class="rw-lens-panel__salary">${esc(output.practical_details.salary_annual)}</div>`
+          : '';
+
+        // Quick-action buttons: Apply · Skip
+        // data-ws-quick is handled by the panel action delegator (_wsInitLensPanelActions).
+        const _qaHtml = `<div class="rw-lens-qa-strip">
+          <button class="rw-lens-qa-btn rw-lens-qa-btn--apply" data-ws-quick="applied"
+            aria-label="Mark as Applied" title="Mark this role as Applied">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Apply
+          </button>
+          <button class="rw-lens-qa-btn rw-lens-qa-btn--skip" data-ws-quick="skipped"
+            aria-label="Skip this role" title="Skip — not pursuing this role">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            Skip
+          </button>
+        </div>`;
+
+        html += `<div class="rw-lens-layout__panel" id="rw-lens-layout-panel">`;
+        html += `<div class="rw-lens-panel">`;
+        if (_lensHtml) {
+          html += _lensHtml;
+          html += _salNudge;
+          html += _qaHtml;
+        }
+        html += `</div>`; // close rw-lens-panel
+        html += `</div>`; // close rw-lens-layout__panel
+      }
+
+      html += `</div>`; // close rw-lens-layout
 
       return html;
     }
@@ -24022,6 +24298,8 @@ If a field cannot be determined from the message, return null for that field.`,
       // Wire persistent action card delegation before first render so it's ready
       // as soon as the overview panel populates.
       _wsInitActionCardDelegation();
+      _wsInitLensPanelActions(); // RW-ROLEPAGE-LENS-PANEL-01
+      _wsInitAskAIActions();     // RW-ROLEPAGE-AI-INTERACTION-01
       refresh().then(() => {
         // Background cleanup: reconcile orphaned jd_matches rows.
         // Runs once per session after initial load. Never blocks the UI.
