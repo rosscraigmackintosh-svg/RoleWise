@@ -19320,6 +19320,109 @@
       return rows;
     }
 
+    // ─── Market Patterns aggregation ─────────────────────────────────────────
+    // Derives up to 4 descriptive, neutral signals from all roles linked to a
+    // contact. Uses only real stored data; no scoring, ranking, or predictions.
+    //
+    // Each signal fires only when:
+    //   - the role pool meets MIN_ROLES
+    //   - the dominant value reaches the DOMINANCE threshold (60%)
+    //   - or enough data points exist for a range (response timing)
+    //
+    // Returns an HTML string, or null when signals cannot be derived
+    // (section is hidden entirely in that case).
+    function _rcMarketPatternsHtml(roles) {
+      const MIN_ROLES  = 3;   // minimum pool size to derive any signal
+      const DOMINANCE  = 0.6; // 60% share required to surface a pattern
+
+      if (!Array.isArray(roles) || roles.length < MIN_ROLES) return null;
+
+      const signals = [];
+
+      // ── Signal 1: Typical work model ────────────────────────────────────
+      const wmCounts = {};
+      let wmTotal = 0;
+      roles.forEach(r => {
+        const wm = r.work_model && r.work_model.toLowerCase() !== 'unknown'
+          ? r.work_model.toLowerCase() : null;
+        if (wm) { wmCounts[wm] = (wmCounts[wm] || 0) + 1; wmTotal++; }
+      });
+      if (wmTotal >= MIN_ROLES) {
+        const topWm = Object.entries(wmCounts).sort((a, b) => b[1] - a[1])[0];
+        if (topWm && topWm[1] / wmTotal >= DOMINANCE) {
+          signals.push(`Mostly ${topWm[0]} roles`);
+        }
+      }
+
+      // ── Signal 2: Common role level / title family ───────────────────────
+      const SENIORITY_PATTERNS = [
+        { re: /\b(vp|vice\s+president)\b/i,    label: 'VP-level' },
+        { re: /\bdirector\b/i,                  label: 'director-level' },
+        { re: /\bhead\s+of\b/i,                 label: 'Head of' },
+        { re: /\bprincipal\b/i,                 label: 'principal-level' },
+        { re: /\bstaff\b/i,                     label: 'staff-level' },
+        { re: /\blead\b/i,                      label: 'lead-level' },
+        { re: /\b(senior|sr\.?)\b/i,            label: 'senior' },
+        { re: /\bmanager\b/i,                   label: 'manager-level' },
+        { re: /\b(junior|jr\.?|associate)\b/i,  label: 'junior' },
+      ];
+      const senCounts = {};
+      let senTotal = 0;
+      roles.forEach(r => {
+        for (const pat of SENIORITY_PATTERNS) {
+          if (pat.re.test(r.role_title || '')) {
+            senCounts[pat.label] = (senCounts[pat.label] || 0) + 1;
+            senTotal++;
+            break;
+          }
+        }
+      });
+      if (senTotal >= MIN_ROLES) {
+        const topSen = Object.entries(senCounts).sort((a, b) => b[1] - a[1])[0];
+        if (topSen && topSen[1] / senTotal >= DOMINANCE) {
+          signals.push(`Usually ${topSen[0]} roles`);
+        }
+      }
+
+      // ── Signal 3: Salary transparency ───────────────────────────────────
+      // Only fire when pool is large enough to be meaningful
+      if (roles.length >= 4) {
+        const withSalary = roles.filter(r =>
+          r.salary_text_raw && r.salary_text_raw.trim()
+        ).length;
+        const ratio = withSalary / roles.length;
+        if (ratio < 0.25) {
+          signals.push('Salary is often not stated');
+        } else if (ratio >= 0.7) {
+          signals.push('Roles often include salary details');
+        }
+      }
+
+      // ── Signal 4: Response timing ────────────────────────────────────────
+      const responseDays = roles
+        .filter(r => r._appliedDate && r._firstResponseDate)
+        .map(r => Math.round(
+          (new Date(r._firstResponseDate) - new Date(r._appliedDate)) / 86400000
+        ))
+        .filter(d => d > 0 && d <= 120); // sanity bounds
+
+      if (responseDays.length >= 2) {
+        const sorted = [...responseDays].sort((a, b) => a - b);
+        const min    = sorted[0];
+        const max    = sorted[sorted.length - 1];
+        const range  = min === max
+          ? `~${min} day${min !== 1 ? 's' : ''}`
+          : `${min}–${max} days`;
+        signals.push(`First responses tend to arrive within ${range}`);
+      }
+
+      if (signals.length === 0) return null;
+
+      return signals.map(s =>
+        `<div class="rc-market-signal">${esc(s)}</div>`
+      ).join('');
+    }
+
     function renderRecruiterList(recruiters) {
       const listEl = document.getElementById('rc-list-scroll');
       if (!listEl) return;
@@ -19488,6 +19591,19 @@
         html += `<div class="rc-roles-empty">No response pattern yet.</div>`;
       }
       html += `</div>`;
+
+      // ── 5b. Market Patterns ────────────────────────────────────────────────
+      // Descriptive, neutral patterns derived from all linked roles.
+      // Section is hidden entirely when not enough signals can be derived.
+      {
+        const _mpHtml = _rcMarketPatternsHtml(rec.roles || []);
+        if (_mpHtml) {
+          html += `<div class="rc-section">
+            <div class="rc-section-label">Market patterns</div>
+            ${_mpHtml}
+          </div>`;
+        }
+      }
 
       // ── 6. Timeline ────────────────────────────────────────────────────────
       // Build from role_updates (stage changes) and recruiter link records.

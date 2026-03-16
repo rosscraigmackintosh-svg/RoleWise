@@ -2223,6 +2223,15 @@
       color: var(--text-light);
     }
 
+    /* Market pattern signals — neutral, descriptive, one per line */
+    .rc-market-signal {
+      font-size: 13px;
+      color: var(--text);
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .rc-market-signal:last-child { border-bottom: none; }
+
     /* Add / edit form */
     .rc-form { max-width: 480px; }
     .rc-form-title {
