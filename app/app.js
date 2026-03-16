@@ -18866,12 +18866,36 @@
         // Update local role object (used immediately by _refreshDocRecruiterMeta)
         if (!role.role_recruiters) role.role_recruiters = [];
         role.role_recruiters.push(_recEntry);
-        // Add to allRecruiters so the Recruiters directory shows the new entry without reload
-        if (!allRecruiters.find(r => r.id === recruiterId)) {
-          allRecruiters = [...allRecruiters, { id: recruiterId, name: detected.name || null,
-            email: detected.email || null, company: detected.companyHint || null,
-            linkedin_url: detected.linkedin || null, roles: [], links: [],
-            created_at: new Date().toISOString() }];
+        // Update allRecruiters so Recruiters directory + detail "Roles Discussed" stay in sync.
+        // Must handle both cases: recruiter was just created (not yet in allRecruiters) and
+        // recruiter already existed (in allRecruiters but missing this role/link).
+        const _rawAutoLink = {
+          id:           'link-' + Date.now(),
+          role_id:      role.id,
+          recruiter_id: recruiterId,
+          link_source:  'auto',
+          created_at:   new Date().toISOString(),
+        };
+        const _autoRecIdx = allRecruiters.findIndex(r => r.id === recruiterId);
+        if (_autoRecIdx === -1) {
+          // Brand-new recruiter — seed roles and links with the current role
+          allRecruiters = [...allRecruiters, {
+            id:           recruiterId,
+            name:         detected.name        || null,
+            email:        detected.email       || null,
+            company:      detected.companyHint || null,
+            linkedin_url: detected.linkedin    || null,
+            roles:        [role],
+            links:        [_rawAutoLink],
+            created_at:   new Date().toISOString(),
+          }];
+        } else {
+          // Existing recruiter — append the newly linked role and link record
+          allRecruiters = allRecruiters.map((r, i) => i !== _autoRecIdx ? r : {
+            ...r,
+            roles: [...(r.roles || []), role],
+            links: [...(r.links || []), _rawAutoLink],
+          });
         }
         // Re-render the recruiter row in the doc header and the inbox card
         _refreshDocRecruiterMeta(role);
@@ -19000,11 +19024,36 @@
       );
       if (!role.role_recruiters) role.role_recruiters = [];
       role.role_recruiters.push(_recEntry);
-      if (!allRecruiters.find(r => r.id === recruiterId)) {
-        allRecruiters = [...allRecruiters, { id: recruiterId, name: data.name || null,
-          email: data.email || null, company: data.company || null,
-          linkedin_url: data.profile_url || null, roles: [], links: [],
-          created_at: new Date().toISOString() }];
+      // Update allRecruiters so Recruiters directory + detail "Roles Discussed" stay in sync.
+      // Must handle both cases: recruiter was just created (not yet in allRecruiters) and
+      // recruiter already existed (in allRecruiters but missing this role/link).
+      const _rawManualLink = {
+        id:           'link-' + Date.now(),
+        role_id:      role.id,
+        recruiter_id: recruiterId,
+        link_source:  'manual',
+        created_at:   new Date().toISOString(),
+      };
+      const _manualRecIdx = allRecruiters.findIndex(r => r.id === recruiterId);
+      if (_manualRecIdx === -1) {
+        // Brand-new recruiter — seed roles and links with the current role
+        allRecruiters = [...allRecruiters, {
+          id:           recruiterId,
+          name:         data.name        || null,
+          email:        data.email       || null,
+          company:      data.company     || null,
+          linkedin_url: data.profile_url || null,
+          roles:        [role],
+          links:        [_rawManualLink],
+          created_at:   new Date().toISOString(),
+        }];
+      } else {
+        // Existing recruiter — append the newly linked role and link record
+        allRecruiters = allRecruiters.map((r, i) => i !== _manualRecIdx ? r : {
+          ...r,
+          roles: [...(r.roles || []), role],
+          links: [...(r.links || []), _rawManualLink],
+        });
       }
       _refreshDocRecruiterMeta(role);
       renderInbox(allRoles);
