@@ -18823,11 +18823,45 @@
 
       if (!recruiterId) return;
 
-      await db.from('role_recruiters').insert({
+      const { error: linkErr } = await db.from('role_recruiters').insert({
         role_id:      role.id,
         recruiter_id: recruiterId,
         link_source:  'manual',
-      }).then(() => {}).catch(() => {});
+      });
+
+      if (linkErr) {
+        console.error('[runManualRecruiterLink] role_recruiters INSERT failed', linkErr);
+        return;
+      }
+
+      // ── Update in-memory state so the UI reflects the link immediately ──────
+      // The modal path calls refresh() afterward which would also pick this up,
+      // but updating here means the recruiter row appears instantly and future
+      // non-modal callers get the same behaviour without needing a full reload.
+      const _recEntry = {
+        recruiter_id: recruiterId,
+        link_source:  'manual',
+        created_at:   new Date().toISOString(),
+        recruiters: {
+          id:           recruiterId,
+          name:         data.name         || null,
+          email:        data.email        || null,
+          company:      data.company      || null,
+          linkedin_url: data.profile_url  || null,
+        },
+      };
+      allRoles = allRoles.map(r =>
+        r.id !== role.id ? r : { ...r, role_recruiters: [...(r.role_recruiters || []), _recEntry] }
+      );
+      if (!role.role_recruiters) role.role_recruiters = [];
+      role.role_recruiters.push(_recEntry);
+      if (!allRecruiters.find(r => r.id === recruiterId)) {
+        allRecruiters = [...allRecruiters, { id: recruiterId, name: data.name || null,
+          email: data.email || null, company: data.company || null,
+          linkedin_url: data.profile_url || null, roles: [] }];
+      }
+      _refreshDocRecruiterMeta(role);
+      renderInbox(allRoles);
 
       insertEvent(role.id, {
         event_type: 'recruiter_linked',
