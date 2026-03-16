@@ -6596,6 +6596,7 @@
                 _initCompSnapshot(_histOvCards);
                 _fillFitAssessmentCV();
                 _renderRoleHeader(role);
+                _refreshRoleContacts(role);
                 // Re-render lower overview cards — the wrap was just replaced, so
                 // any previously created slots were destroyed. Re-create and populate.
                 _renderDecisionCapture(role);
