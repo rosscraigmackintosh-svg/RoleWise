@@ -18706,17 +18706,40 @@
         console.error(_tag, 'role_recruiters INSERT failed', linkErr);
       } else {
         console.log(_tag, 'role_recruiters INSERT SUCCESS — link created');
-      }
 
-      // Final DB truth check — confirm both rows exist
-      const [recCheck, linkCheck] = await Promise.all([
-        db.from('recruiters').select('id, name').eq('id', recruiterId).single(),
-        db.from('role_recruiters').select('id').eq('role_id', role.id).eq('recruiter_id', recruiterId).single(),
-      ]);
-      console.log(_tag, 'FINAL DB CHECK', {
-        recruiterRow:  recCheck.data  || recCheck.error?.message,
-        linkRow:       linkCheck.data || linkCheck.error?.message,
-      });
+        // ── Update in-memory state so the UI reflects the link immediately ──────
+        // Mirrors _wsLinkRecruiterFromEmail: update allRoles, the local role object,
+        // allRecruiters, then re-render the recruiter row in the doc header + inbox.
+        // Without this the recruiter card stays invisible until the user reloads.
+        const _recEntry = {
+          recruiter_id: recruiterId,
+          link_source:  'auto',
+          created_at:   new Date().toISOString(),
+          recruiters: {
+            id:           recruiterId,
+            name:         detected.name        || null,
+            email:        detected.email       || null,
+            company:      detected.companyHint || null,
+            linkedin_url: detected.linkedin    || null,
+          },
+        };
+        // Update allRoles cache
+        allRoles = allRoles.map(r =>
+          r.id !== role.id ? r : { ...r, role_recruiters: [...(r.role_recruiters || []), _recEntry] }
+        );
+        // Update local role object (used immediately by _refreshDocRecruiterMeta)
+        if (!role.role_recruiters) role.role_recruiters = [];
+        role.role_recruiters.push(_recEntry);
+        // Add to allRecruiters so the Recruiters directory shows the new entry without reload
+        if (!allRecruiters.find(r => r.id === recruiterId)) {
+          allRecruiters = [...allRecruiters, { id: recruiterId, name: detected.name || null,
+            email: detected.email || null, company: detected.companyHint || null,
+            linkedin_url: detected.linkedin || null, roles: [] }];
+        }
+        // Re-render the recruiter row in the doc header and the inbox card
+        _refreshDocRecruiterMeta(role);
+        renderInbox(allRoles);
+      }
 
       // Log event
       const recName = detected.name || detected.email || detected.linkedin || 'recruiter';
