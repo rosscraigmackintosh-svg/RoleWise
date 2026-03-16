@@ -7195,8 +7195,18 @@
       }
 
       // ── 2. Full Role Contacts section (always visible) ─────────────────────
-      const _rowEl = document.getElementById('doc-recruiter-row');
-      if (!_rowEl) return;
+      // #doc-recruiter-row only exists in the legacy doc view HTML template.
+      // In workspace view it is absent, so we create it on-demand and append
+      // it to .rw-overview-wrap so contacts always render.
+      let _rowEl = document.getElementById('doc-recruiter-row');
+      if (!_rowEl) {
+        const _wrap = document.querySelector('#col-overview-cards .rw-overview-wrap');
+        if (!_wrap) return;
+        _rowEl = document.createElement('div');
+        _rowEl.id = 'doc-recruiter-row';
+        _rowEl.className = 'doc-recruiter-row';
+        _wrap.appendChild(_rowEl);
+      }
 
       const _contacts = role.role_recruiters || [];
 
