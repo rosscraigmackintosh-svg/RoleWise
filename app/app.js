@@ -18734,11 +18734,14 @@
         if (!allRecruiters.find(r => r.id === recruiterId)) {
           allRecruiters = [...allRecruiters, { id: recruiterId, name: detected.name || null,
             email: detected.email || null, company: detected.companyHint || null,
-            linkedin_url: detected.linkedin || null, roles: [] }];
+            linkedin_url: detected.linkedin || null, roles: [], links: [],
+            created_at: new Date().toISOString() }];
         }
         // Re-render the recruiter row in the doc header and the inbox card
         _refreshDocRecruiterMeta(role);
         renderInbox(allRoles);
+        // Re-render the Recruiters directory list if it's currently visible
+        renderRecruiterList(allRecruiters);
       }
 
       // Log event
@@ -18858,10 +18861,13 @@
       if (!allRecruiters.find(r => r.id === recruiterId)) {
         allRecruiters = [...allRecruiters, { id: recruiterId, name: data.name || null,
           email: data.email || null, company: data.company || null,
-          linkedin_url: data.profile_url || null, roles: [] }];
+          linkedin_url: data.profile_url || null, roles: [], links: [],
+          created_at: new Date().toISOString() }];
       }
       _refreshDocRecruiterMeta(role);
       renderInbox(allRoles);
+      // Re-render the Recruiters directory list if it's currently visible
+      renderRecruiterList(allRecruiters);
 
       insertEvent(role.id, {
         event_type: 'recruiter_linked',
