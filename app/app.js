@@ -19152,6 +19152,60 @@
       return currentStageLabel(role);
     }
 
+    // ─── Contact intelligence helpers ────────────────────────────────────────
+    // Returns an array of {label, value} rows for the Contact Pattern section.
+    // Uses simple count-based aggregation over linked role data only.
+    // Returns [] when there is not enough data to show anything useful.
+    function _rcContactPattern(roles) {
+      if (!roles || roles.length === 0) return [];
+      const rows = [];
+
+      // Work model — most common non-null/non-unknown value
+      const wmCounts = {};
+      roles.forEach(r => {
+        const wm = r.work_model && r.work_model.toLowerCase() !== 'unknown' ? r.work_model : null;
+        if (wm) wmCounts[wm] = (wmCounts[wm] || 0) + 1;
+      });
+      const topWm = Object.entries(wmCounts).sort((a, b) => b[1] - a[1])[0];
+      if (topWm) rows.push({ label: 'Work model', value: topWm[0].charAt(0).toUpperCase() + topWm[0].slice(1) });
+
+      // Engagement type — most common non-Unknown value
+      const etCounts = {};
+      roles.forEach(r => {
+        const et = r.engagement_type && r.engagement_type !== 'Unknown' ? r.engagement_type : null;
+        if (et) etCounts[et] = (etCounts[et] || 0) + 1;
+      });
+      const topEt = Object.entries(etCounts).sort((a, b) => b[1] - a[1])[0];
+      if (topEt) rows.push({ label: 'Role type', value: topEt[0] });
+
+      // Seniority cluster — pattern-matched from role titles
+      const SENIORITY_PATTERNS = [
+        { re: /\b(vp|vice\s+president)\b/i,       label: 'VP level' },
+        { re: /\bdirector\b/i,                     label: 'Director level' },
+        { re: /\bhead\s+of\b/i,                    label: 'Head of' },
+        { re: /\bprincipal\b/i,                    label: 'Principal level' },
+        { re: /\bstaff\b/i,                        label: 'Staff level' },
+        { re: /\blead\b/i,                         label: 'Lead level' },
+        { re: /\b(senior|sr\.?)\b/i,               label: 'Senior level' },
+        { re: /\bmanager\b/i,                      label: 'Manager level' },
+        { re: /\b(junior|jr\.?|associate)\b/i,     label: 'Junior level' },
+      ];
+      const senCounts = {};
+      roles.forEach(r => {
+        const title = r.role_title || '';
+        for (const pat of SENIORITY_PATTERNS) {
+          if (pat.re.test(title)) {
+            senCounts[pat.label] = (senCounts[pat.label] || 0) + 1;
+            break; // first match wins per role
+          }
+        }
+      });
+      const topSen = Object.entries(senCounts).sort((a, b) => b[1] - a[1])[0];
+      if (topSen) rows.push({ label: 'Seniority', value: topSen[0] });
+
+      return rows;
+    }
+
     function renderRecruiterList(recruiters) {
       const listEl = document.getElementById('rc-list-scroll');
       if (!listEl) return;
@@ -19264,40 +19318,96 @@
       }
       html += `</div>`;
 
-      // ── 3. Interaction Timeline ────────────────────────────────────────────
-      // Build timeline from role_updates of linked roles, recruiter link events
+      // ── 3. Contact Pattern ─────────────────────────────────────────────────
+      const _patternRows = _rcContactPattern(rec.roles || []);
+      if (_patternRows.length > 0) {
+        html += `<div class="rc-section">
+          <div class="rc-section-label">Contact pattern</div>`;
+        html += _patternRows.map(row =>
+          `<div class="rc-contact-row">
+            <span class="rc-contact-label">${esc(row.label)}</span>
+            <span class="rc-contact-val">${esc(row.value)}</span>
+          </div>`
+        ).join('');
+        html += `</div>`;
+      }
+
+      // ── 4. Interaction Signals ─────────────────────────────────────────────
+      const _RC_INTERVIEW_STAGES = new Set(['Recruiter Screen', 'Hiring Manager', 'Panel', 'Final', 'Offer']);
+      const _rcLinked    = (rec.roles || []).length;
+      const _rcApplied   = (rec.roles || []).filter(r => r._appliedDate).length;
+      const _rcInterview = (rec.roles || []).filter(r =>
+        (r.role_updates || []).some(u =>
+          (!u.event_type || u.event_type === 'stage') && _RC_INTERVIEW_STAGES.has(u.stage_reached)
+        )
+      ).length;
+      html += `<div class="rc-section">
+        <div class="rc-section-label">Interaction signals</div>
+        <div class="rc-contact-row">
+          <span class="rc-contact-label">Roles linked</span>
+          <span class="rc-contact-val">${_rcLinked}</span>
+        </div>
+        <div class="rc-contact-row">
+          <span class="rc-contact-label">Applied to</span>
+          <span class="rc-contact-val">${_rcApplied}</span>
+        </div>
+        <div class="rc-contact-row">
+          <span class="rc-contact-label">Reached interview</span>
+          <span class="rc-contact-val">${_rcInterview}</span>
+        </div>
+      </div>`;
+
+      // ── 5. Response Pattern ────────────────────────────────────────────────
+      const _rcResponses = (rec.roles || []).filter(r => r._firstResponseDate).length;
+      html += `<div class="rc-section">
+        <div class="rc-section-label">Response pattern</div>`;
+      if (_rcApplied > 0) {
+        html += `<div class="rc-contact-row">
+          <span class="rc-contact-label">Applications sent</span>
+          <span class="rc-contact-val">${_rcApplied}</span>
+        </div>
+        <div class="rc-contact-row">
+          <span class="rc-contact-label">Responses received</span>
+          <span class="rc-contact-val">${_rcResponses}</span>
+        </div>`;
+      } else {
+        html += `<div class="rc-roles-empty">No response pattern yet.</div>`;
+      }
+      html += `</div>`;
+
+      // ── 6. Timeline ────────────────────────────────────────────────────────
+      // Build from role_updates (stage changes) and recruiter link records.
+      // Newest first. Wording is kept neutral and user-facing.
       const timelineEvents = [];
+      // Contact linked events (one per role_recruiters link)
       (rec.links || []).forEach(l => {
+        const r = (rec.roles || []).find(ro => ro.id === l.role_id);
         timelineEvents.push({
-          date: l.created_at,
-          label: `Role shared`,
-          meta:  (() => {
-            const r = (rec.roles || []).find(ro => ro.id === l.role_id);
-            return r ? `${r.role_title || 'Role'}${r.company_name ? ' — ' + r.company_name : ''}` : '';
-          })(),
+          date:  l.created_at,
+          label: 'Contact linked to role',
+          meta:  r ? `${r.role_title || 'Role'}${r.company_name ? ' — ' + r.company_name : ''}` : '',
         });
       });
+      // Stage-change events from each linked role
+      const _stageEventMap = {
+        'Applied':          'Application submitted',
+        'Recruiter Screen': 'Recruiter screen reached',
+        'Hiring Manager':   'Interview stage reached',
+        'Panel':            'Interview stage reached',
+        'Final':            'Interview stage reached',
+        'Offer':            'Offer stage reached',
+      };
       (rec.roles || []).forEach(role => {
         const nameStr = `${role.role_title || 'Role'}${role.company_name ? ' — ' + role.company_name : ''}`;
         (role.role_updates || []).forEach(u => {
-          const stg = u.stage_reached || '';
-          const stageEventMap = {
-            'Applied':          'Application submitted',
-            'Recruiter Screen': 'Recruiter replied',
-            'Hiring Manager':   'Interview scheduled',
-            'Panel':            'Interview scheduled',
-            'Final':            'Interview scheduled',
-            'Offer':            'Offer received',
-          };
-          if (stageEventMap[stg]) {
-            timelineEvents.push({ date: u.created_at, label: stageEventMap[stg], meta: nameStr });
-          }
+          const label = _stageEventMap[u.stage_reached || ''];
+          if (label) timelineEvents.push({ date: u.created_at, label, meta: nameStr });
         });
       });
       timelineEvents.sort((a, b) => new Date(b.date) - new Date(a.date));
 
       html += `<div class="rc-section">
-        <div class="rc-section-label">Interaction timeline</div>`;
+        <div class="rc-section-label">Timeline</div>`;
       if (timelineEvents.length > 0) {
         html += `<div class="review-timeline">`;
         html += timelineEvents.slice(0, 20).map(ev => {
@@ -19309,11 +19419,11 @@
         }).join('');
         html += `</div>`;
       } else {
-        html += `<div class="rc-roles-empty">No interactions recorded yet.</div>`;
+        html += `<div class="rc-roles-empty">No activity linked to this contact yet.</div>`;
       }
       html += `</div>`;
 
-      // ── 4. Contact details ─────────────────────────────────────────────────
+      // ── 7. Contact details ─────────────────────────────────────────────────
       const _hasContact = rec.email || rec.office_phone || rec.mobile_phone || rec.website_url || rec.linkedin_url;
       html += `<div class="rc-section">
         <div class="rc-section-label-row">
@@ -19331,7 +19441,7 @@
       }
       html += `</div>`;
 
-      // ── 5. Notes log ──────────────────────────────────────────────────────
+      // ── 8. Notes log ──────────────────────────────────────────────────────
       const _notesLog = Array.isArray(rec.notes_log) ? rec.notes_log : [];
       const _logDesc  = [..._notesLog].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       html += `<div class="rc-section">
