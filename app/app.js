@@ -901,8 +901,8 @@
         { id: 'ws-decision-history-dl' },        // Decision Layer V1: history read view
       ];
       const _lowerSlots = [
-        { id: 'col-jd-section',     cls: 'col-jd-section' },
-        { id: 'role-chips-section', cls: 'role-chips-section' },
+        { id: 'col-jd-section', cls: 'col-jd-section' },
+        // role-chips-section is now embedded in Role Briefing HTML (RW-TOP-CLEANUP-08)
       ];
 
       // Append decision slots into the summary wrapper (or after fit-assessment as fallback)
@@ -13294,13 +13294,39 @@
         }
       }
 
-      // Analysis quality indicator — shown at the top of every analysis artefact.
-      // 'Limited' when _weakSignal is true (partial paste, low role signal).
-      // 'Good' when the analysis ran on a well-formed job description.
+      // ── Quick-action strip: Apply + Skip (RW-TOP-CLEANUP-08) ────────────────
+      // Salary (when known) rendered as inline context text inside the strip —
+      // not a separate card element. data-ws-quick delegation unchanged.
       {
-        const _qlabel = output._weakSignal ? 'Limited' : 'Good';
-        html += `<div style="font-size:12px;color:var(--text-light);margin-bottom:14px;">Analysis quality: <span style="font-weight:600;color:${output._weakSignal ? '#B45309' : 'var(--text-muted)'};">${_qlabel}</span></div>`;
+        const _hasSalary = !!(output.practical_details && output.practical_details.salary_annual &&
+          output.practical_details.salary_annual !== 'Not stated');
+
+        // Salary as lightweight inline context span inside the strip
+        const _salInline = _hasSalary
+          ? `<span class="rw-qa-salary">${esc(output.practical_details.salary_annual)}</span>`
+          : '';
+
+        // Quick-action buttons: Apply · Skip
+        // data-ws-quick is handled by the panel action delegator (_wsInitLensPanelActions).
+        html += `<div class="rw-lens-qa-strip">${_salInline}<button class="rw-lens-qa-btn rw-lens-qa-btn--apply" data-ws-quick="applied"
+            aria-label="Mark as Applied" title="Mark this role as Applied">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Apply
+          </button>
+          <button class="rw-lens-qa-btn rw-lens-qa-btn--skip" data-ws-quick="skipped"
+            aria-label="Skip this role" title="Skip — not pursuing this role">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            Skip
+          </button>
+        </div>`;
       }
+
+      // Analysis quality: indicator removed (RW-TOP-CLEANUP-08).
+      // Only the weak-signal notice (below) is shown when signal is limited.
 
       // Weak signal notice — shown when the pasted text lacked job description signals.
       // Typically means a partial page paste rather than a focused job description copy.
@@ -13401,21 +13427,25 @@
         }
       }
       html += sectionHeader('Role Briefing', true, 'briefing');
+      // ── Stage/Outcome chips slot (RW-TOP-CLEANUP-08) ────────────────────────
+      // role-chips-section lives here (Role Briefing area) instead of being
+      // inserted by _ensureOverviewLowerCards() near the top of the wrap.
+      html += `<div id="role-chips-section" class="role-chips-section" style="display:none;"></div>`;
 
       // ── ROLEWISE BRIEFING — merged: role summary + why role exists + what they want + hiring context + fit reality ──
       {
-        let _rbHtml = '';
+        let _leftHtml = ''; let _rightHtml = ''; // RW-ROLEPAGE-LAYOUT-02: two-column briefing
 
         // ── Role Summary ──
         if (_briefHtml) {
-          _rbHtml += `<div class="rw-sub-section"><div class="rw-sub-label">Role Summary</div>${_briefHtml}</div>`;
+          _leftHtml += `<div class="rw-sub-section"><div class="rw-sub-label">Role Summary</div>${_briefHtml}</div>`;
         }
 
         // ── Why This Role Exists ──
         {
           const _why = output.why_this_role_exists;
           if (_why && _why !== 'Not recorded in this format.' && _why !== 'Unknown' && _why !== 'Not stated') {
-            _rbHtml += `<div class="rw-sub-section"><div class="rw-sub-label">Why This Role Exists</div><div class="doc-prose" style="font-size:13.5px;color:var(--text);line-height:1.6;">${esc(_why)}</div></div>`;
+            _leftHtml += `<div class="rw-sub-section"><div class="rw-sub-label">Why This Role Exists</div><div class="doc-prose" style="font-size:13.5px;color:var(--text);line-height:1.6;">${esc(_why)}</div></div>`;
           }
         }
 
@@ -13425,7 +13455,7 @@
             ? output.what_they_are_really_looking_for.filter(s => s && s !== 'Not stated' && s !== 'Not recorded \u2014 see original JD for detail.')
             : [];
           if (_wtrlf.length > 0) {
-            _rbHtml += `<div class="rw-sub-section"><div class="rw-sub-label">What They\u2019re Looking For</div>${bullets(_wtrlf)}</div>`;
+            _leftHtml += `<div class="rw-sub-section"><div class="rw-sub-label">What They\u2019re Looking For</div>${bullets(_wtrlf)}</div>`;
           }
         }
 
@@ -13461,7 +13491,7 @@
             if (_hsSig) {
               _hsHtml2 += `<div style="font-size:11.5px;color:var(--text-light);font-style:italic;line-height:1.4;">\u201c${esc(_hsSig)}\u201d</div>`;
             }
-            _rbHtml += `<div class="rw-sub-section" id="section-hiring-system"><div class="rw-sub-label">Hiring Context</div>${_hsHtml2}</div>`;
+            _leftHtml += `<div class="rw-sub-section" id="section-hiring-system"><div class="rw-sub-label">Hiring Context</div>${_hsHtml2}</div>`;
           }
         }
 
@@ -13684,11 +13714,22 @@
         }
 
         if (_roleSignalsHas) {
-          _rbHtml += `<div class="rw-sub-section" id="section-role-signals"><div class="rw-sub-label">Key Signals</div>${_roleSignalsHtml}</div>`;
+          _rightHtml += `<div class="rw-sub-section" id="section-role-signals"><div class="rw-sub-label">Key Signals</div>${_roleSignalsHtml}</div>`;
         }
 
-        if (_rbHtml) {
-          html += `<div class="rw-card rw-card--full rw-card--narrative" id="section-briefing">${_rbHtml}</div>`;
+        // RW-ROLEPAGE-LAYOUT-02: two-column grid when both columns have content
+        {
+          let _rbHtml = '';
+          if (_leftHtml && _rightHtml) {
+            _rbHtml = `<div class="rw-briefing-grid"><div class="rw-briefing-left">${_leftHtml}</div><div class="rw-briefing-right">${_rightHtml}</div></div>`;
+          } else if (_leftHtml) {
+            _rbHtml = _leftHtml;
+          } else if (_rightHtml) {
+            _rbHtml = _rightHtml;
+          }
+          if (_rbHtml) {
+            html += `<div class="rw-card rw-card--full rw-card--narrative" id="section-briefing">${_rbHtml}</div>`;
+          }
         }
       }
 
@@ -14050,7 +14091,35 @@
         } else {
           risksHtml = '<ul class="doc-list"><li style="color:var(--text-light);">Not stated</li></ul>';
         }
-        html += card('Risks &amp; Unknowns', risksHtml, 'section-risks', false, 'rw-card--action');
+        // RW-ROLEPAGE-LAYOUT-02: wrap risk items in expandable checklist
+        {
+          // Convert flat bullet/group HTML into expandable <details> items.
+          // Walk rawRisks array to build headline + detail pairs.
+          let _risksOut = '';
+          if (Array.isArray(rawRisks) && rawRisks.length) {
+            const _asStr = rawRisks.map(r => typeof r === 'string' ? r : (r.text || '')).filter(Boolean);
+            _risksOut = _asStr.map((txt, i) => {
+              // Headline: first sentence or first 80 chars, whichever is shorter
+              const _firstDot = txt.indexOf('. ');
+              const _headline = (_firstDot > 0 && _firstDot < 80)
+                ? txt.slice(0, _firstDot)
+                : txt.slice(0, 80) + (txt.length > 80 ? '…' : '');
+              const _hasDetail = txt.length > _headline.length + 1;
+              const _uid = `rw-risk-${i}`;
+              if (_hasDetail) {
+                return `<details class="rw-risk-item" id="${_uid}">`
+                  + `<summary class="rw-risk-summary">${esc(_headline)}</summary>`
+                  + `<div class="rw-risk-detail">${esc(txt)}</div>`
+                  + `</details>`;
+              } else {
+                return `<div class="rw-risk-item rw-risk-item--simple">${esc(txt)}</div>`;
+              }
+            }).join('');
+          } else {
+            _risksOut = risksHtml; // fallback: render existing HTML as-is
+          }
+          html += card('Risks &amp; Unknowns', `<div class="rw-risk-list">${_risksOut}</div>`, 'section-risks', false, 'rw-card--action');
+        }
       }
 
 
@@ -14326,15 +14395,25 @@
         // ── Emit section only when at least one card has unlocked ───────────────────────
         // RW-ROLEPAGE-CAREER-05: suppress header + section entirely for low-data users.
         if (_cpiCards) {
-          html += sectionHeader('Career Pattern Intelligence', false, 'career-pattern');
-          html += _cpiCards;
+          // RW-ROLEPAGE-LAYOUT-02: CPI collapsed by default
+          html += `<details class="rw-section-collapse" id="section-cpi-collapse">`;
+          html += `<summary class="rw-section-collapse__hdr">`
+            + sectionHeader('Career Pattern Intelligence', false) // RW-ROLEPAGE-STABILITY-04: no askKey inside <summary>
+            + `</summary>`;
+          html += `<div class="rw-section-collapse__body">${_cpiCards}</div>`;
+          html += `</details>`;
         }
         // When _cpiCards is empty: section is fully suppressed — no header, no placeholder.
       }
 
 
       // ── Decision Support ──────────────────────────────────────────────────────
-      html += sectionHeader('Decision Support');
+      // RW-ROLEPAGE-LAYOUT-02: Decision Support collapsed by default
+      html += `<details class="rw-section-collapse" id="section-ds-collapse">`;
+      html += `<summary class="rw-section-collapse__hdr">`
+        + sectionHeader('Decision Support')
+        + `</summary>`;
+      html += `<div class="rw-section-collapse__body">`;
 
       // Questions Worth Asking — full-width; closes the spec Row 6 immediately after Risks
       {
@@ -14343,6 +14422,8 @@
           : (output.questions_worth_asking || []);
         html += card('Questions Worth Asking', bullets(_sq), 'section-questions', true, 'rw-card--action');
       }
+
+      html += `</div></details>`; // close rw-section-collapse__body + details
 
       // Watch Points and Missing Information moved to JD Clarity & Risks (Practical Reality section)
 
@@ -14382,40 +14463,6 @@
       </div>`;
 
       html += `</div>`; // close rw-card-grid
-
-      // ── Quick-action strip: Apply + Skip (RW-ROLEPAGE-LAYOUT-01) ─────────────
-      // Rendered below the card grid; data-ws-quick handled by _wsInitLensPanelActions.
-      {
-        const _hasSalary = !!(output.practical_details && output.practical_details.salary_annual &&
-          output.practical_details.salary_annual !== 'Not stated');
-
-        // Compact salary line when salary is known
-        const _salNudge = _hasSalary
-          ? `<div class="rw-lens-panel__salary">${esc(output.practical_details.salary_annual)}</div>`
-          : '';
-
-        // Quick-action buttons: Apply · Skip
-        // data-ws-quick is handled by the panel action delegator (_wsInitLensPanelActions).
-        const _qaHtml = `<div class="rw-lens-qa-strip">
-          <button class="rw-lens-qa-btn rw-lens-qa-btn--apply" data-ws-quick="applied"
-            aria-label="Mark as Applied" title="Mark this role as Applied">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Apply
-          </button>
-          <button class="rw-lens-qa-btn rw-lens-qa-btn--skip" data-ws-quick="skipped"
-            aria-label="Skip this role" title="Skip — not pursuing this role">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-            </svg>
-            Skip
-          </button>
-        </div>`;
-
-        if (_salNudge) html += _salNudge;
-        html += _qaHtml;
-      }
 
       return html;
     }
