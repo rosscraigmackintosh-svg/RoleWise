@@ -742,9 +742,9 @@
       const app = document.querySelector('.app');
       if (!app) return;
       const fw = (listPanelVisible && filterPanelOpen) ? '220px' : '0px';
-      const lw = listPanelVisible ? '260px' : '0px';
+      const lw = listPanelVisible ? '310px' : '0px'; // RW-LAYOUT-WIDTH-01: list +50px
       const rw = rightPanelVisible ? '360px' : '0px';
-      app.style.gridTemplateColumns = `204px ${fw} ${lw} 1fr ${rw}`;
+      app.style.gridTemplateColumns = `254px ${fw} ${lw} 1fr ${rw}`; // RW-LAYOUT-WIDTH-01: nav +50px
     }
 
     // Reset the chat panel to its empty state (no role selected).
@@ -888,29 +888,50 @@
       // Already created — nothing to do
       if (wrap.querySelector('#ws-blockers-section')) return;
 
-      const slots = [
-        { id: 'ws-blockers-section',    cls: null },           // Decision Layer V1: blockers
-        { id: 'ws-decision-capture',    cls: null },
-        { id: 'ws-decision-history-dl', cls: null },           // Decision Layer V1: history read view
-        { id: 'col-jd-section',         cls: 'col-jd-section' },
-        { id: 'role-chips-section',     cls: 'role-chips-section' },
+      // ── Decision Summary-aware slot insertion (RW-ROLEPAGE-TOP-01) ────────
+      // Decision slots (blockers, verdict, history) are appended inside
+      // #section-decision-summary so they render as sub-sections of the card.
+      // Lower slots (JD, chips) are inserted after the summary wrapper.
+      const _dsWrap = wrap.querySelector('#section-decision-summary');
+      const faCard  = wrap.querySelector('#section-fit-assessment');
+
+      const _decisionSlots = [
+        { id: 'ws-blockers-section' },           // Decision Layer V1: blockers
+        { id: 'ws-decision-capture' },
+        { id: 'ws-decision-history-dl' },        // Decision Layer V1: history read view
+      ];
+      const _lowerSlots = [
+        { id: 'col-jd-section',     cls: 'col-jd-section' },
+        { id: 'role-chips-section', cls: 'role-chips-section' },
       ];
 
-      // Insert after Fit Assessment card; fall back to end of wrap
-      const faCard = wrap.querySelector('#section-fit-assessment');
-      let anchor = faCard || null;
+      // Append decision slots into the summary wrapper (or after fit-assessment as fallback)
+      for (const slot of _decisionSlots) {
+        const el = document.createElement('div');
+        el.id = slot.id;
+        el.style.display = 'none';
+        if (_dsWrap) {
+          _dsWrap.appendChild(el);
+        } else if (faCard) {
+          faCard.insertAdjacentElement('afterend', el);
+        } else {
+          wrap.appendChild(el);
+        }
+      }
 
-      for (const slot of slots) {
+      // Lower slots go after the summary wrapper (or after fit-assessment as fallback)
+      let _outerAnchor = _dsWrap || faCard || null;
+      for (const slot of _lowerSlots) {
         const el = document.createElement('div');
         el.id = slot.id;
         if (slot.cls) el.className = slot.cls;
         el.style.display = 'none';
-        if (anchor) {
-          anchor.insertAdjacentElement('afterend', el);
+        if (_outerAnchor) {
+          _outerAnchor.insertAdjacentElement('afterend', el);
         } else {
           wrap.appendChild(el);
         }
-        anchor = el; // each subsequent slot goes after the previous
+        _outerAnchor = el;
       }
     }
 
@@ -4293,16 +4314,18 @@
       const _ovCards  = document.getElementById('col-overview-cards');
       // Prefer anchoring after Search Pattern (if rendered); fall back to Fit Reality Summary,
       // then to the card grid, then to the overview container.
-      const _spCard   = _ovCards?.querySelector('#section-search-pattern');
-      const _fitCard  = _ovCards?.querySelector('#section-fit-reality');
-      const _grid     = _ovCards?.querySelector('.rw-card-grid');
+      // ── RW-ROLEPAGE-FITREALITY-02: #section-fit-reality removed;
+      // anchor chain updated to use #section-briefing as fallback.
+      const _spCard    = _ovCards?.querySelector('#section-search-pattern');
+      const _briefCard = _ovCards?.querySelector('#section-briefing');
+      const _grid      = _ovCards?.querySelector('.rw-card-grid');
 
       if (_spCard) {
-        // Ideal: Fit Reality Summary → Search Pattern → Your Lens
+        // Ideal: Search Pattern → Your Lens
         _spCard.insertAdjacentElement('afterend', panel);
-      } else if (_fitCard) {
-        // Search Pattern not rendered yet: Fit Reality Summary → Your Lens
-        _fitCard.insertAdjacentElement('afterend', panel);
+      } else if (_briefCard) {
+        // Fall back: Role Briefing → Your Lens
+        _briefCard.insertAdjacentElement('afterend', panel);
       } else if (_grid) {
         _grid.appendChild(panel);
       } else if (_ovCards) {
@@ -12909,6 +12932,230 @@
       return html;
     }
 
+    // ─── Similar Roles Insight (RW-ROLEPAGE-SIMILAR-ROLES-01) ──────────────────
+    // Finds roles in the user's history that share structural traits with the
+    // current role. Aggregates their outcomes and common traits into a compact
+    // briefing-style card. Purely observational — no predictions, no scoring.
+    function _buildSimilarRolesInsight(output, currentRoleId, roles) {
+      if (!output || typeof output !== 'object') return null;
+      if (!Array.isArray(roles) || !currentRoleId) return null;
+
+      // Normalise work model string to canonical bucket
+      function _normaliseWM(s) {
+        if (!s) return null;
+        if (/\bremote\b/.test(s) && !/hybrid/i.test(s)) return 'remote';
+        if (/hybrid/i.test(s)) return 'hybrid';
+        if (/\bon[- ]?site\b|\bonsite\b|\bin[- ]?office\b/.test(s)) return 'onsite';
+        return null;
+      }
+
+      // ── Extract traits from the current role's analysis ───────────────────
+      const _rss = output.role_shape_signals || {};
+      const _pd  = output.practical_details  || {};
+
+      const _curWorkModel = _normaliseWM((_rss.work_model || _pd.remote_model || '').toLowerCase());
+      const _curStage     = (_rss.company_stage || _rss.company_stage_signal || '')
+                              .toLowerCase().replace(/[_\-]/g, '') || null;
+      const _curPressure  = (output.delivery_pressure   || '').toLowerCase() || null;
+      const _curComplex   = (output.domain_complexity   || '').toLowerCase() || null;
+      const _curIsContract = (_pd.employment_type || '').toLowerCase().includes('contract');
+      const _hasEmpType    = (_pd.employment_type || '').toLowerCase() !== 'not stated' &&
+                             (_pd.employment_type || '').trim().length > 0;
+
+      // Title tokens for the current role (resolved via the roles array)
+      const _STOP = new Set([
+        'the','and','for','with','from','this','that','role','position',
+        'head','a','an','to','in','at','by','as','of','into','across',
+      ]);
+      const _curRole = roles.find(r => r.id === currentRoleId);
+      const _tokens  = (_curRole && _curRole.role_title
+        ? _curRole.role_title.toLowerCase().split(/\W+/).filter(t => t.length >= 4 && !_STOP.has(t))
+        : []);
+
+      // ── Score each other analysed role ────────────────────────────────────
+      // Points: title overlap=2, work model=2, company stage=2,
+      //         delivery pressure=1, domain complexity=1, employment type=1
+      // Threshold: ≥3 points qualifies as structurally similar
+      const THRESHOLD = 3;
+
+      const _scored = roles
+        .filter(r => r.id !== currentRoleId && r.latest_match_output)
+        .map(r => {
+          const _mo   = r.latest_match_output;
+          const _mrss = _mo.role_shape_signals || {};
+          const _mpd  = _mo.practical_details  || {};
+          let score = 0;
+
+          // Title overlap: 2 pts
+          if (_tokens.length > 0) {
+            const _rt = (r.role_title || '').toLowerCase();
+            if (_tokens.some(t => _rt.includes(t))) score += 2;
+          }
+
+          // Work model: 2 pts
+          const _mwm = _normaliseWM((_mrss.work_model || _mpd.remote_model || '').toLowerCase());
+          if (_curWorkModel && _mwm && _curWorkModel === _mwm) score += 2;
+
+          // Company stage: 2 pts
+          const _mstage = (_mrss.company_stage || _mrss.company_stage_signal || '')
+                            .toLowerCase().replace(/[_\-]/g, '');
+          if (_curStage && _mstage && _curStage !== 'unknown' && _curStage === _mstage) score += 2;
+
+          // Delivery pressure: 1 pt
+          const _mpres = (_mo.delivery_pressure || '').toLowerCase();
+          if (_curPressure && _mpres && _curPressure !== 'unclear' && _curPressure === _mpres) score += 1;
+
+          // Domain complexity: 1 pt
+          const _mcomp = (_mo.domain_complexity || '').toLowerCase();
+          if (_curComplex && _mcomp && _curComplex !== 'unclear' && _curComplex === _mcomp) score += 1;
+
+          // Employment type: 1 pt (contract vs permanent)
+          if (_hasEmpType) {
+            const _mIsContract = (_mpd.employment_type || '').toLowerCase().includes('contract');
+            if (_curIsContract === _mIsContract) score += 1;
+          }
+
+          return { role: r, score };
+        })
+        .filter(s => s.score >= THRESHOLD);
+
+      const MIN_SIMILAR = 2;
+      if (_scored.length < MIN_SIMILAR) return null;
+
+      const _similar = _scored.map(s => s.role);
+      const _n = _similar.length;
+
+      // ── Classify the furthest outcome for each similar role ───────────────
+      const _INTERVIEW_STAGES = new Set(['Recruiter Screen', 'Hiring Manager', 'Panel', 'Final']);
+      const _outcomes = { offer: 0, interview: 0, applied: 0, rejected: 0, ghosted: 0, passed: 0 };
+
+      for (const r of _similar) {
+        const _oc     = r.outcome_state || '';
+        const _stages = (r.role_updates || [])
+          .filter(u => !u.event_type || u.event_type === 'stage')
+          .map(u => u.stage_reached || '');
+
+        if (_oc === 'offer_accepted' || _oc === 'offer' || _stages.includes('Offer')) {
+          _outcomes.offer++;
+        } else if (_oc === 'rejected' || _oc === 'no_response') {
+          _outcomes.rejected++;
+        } else if (_oc === 'ghosted') {
+          _outcomes.ghosted++;
+        } else if (_oc === 'skipped' || _oc === 'withdrew' || _oc === 'closed') {
+          _outcomes.passed++;
+        } else if (_stages.some(s => _INTERVIEW_STAGES.has(s))) {
+          _outcomes.interview++;
+        } else if (r._appliedDate) {
+          _outcomes.applied++;
+        } else {
+          _outcomes.passed++; // saved but not engaged
+        }
+      }
+
+      // ── Common traits (appear in ≥50% of similar roles, cap at 3) ─────────
+      const _traitCounts  = {};
+      const _traitLabels  = {};
+      const _STAGE_READABLE = {
+        scaleup:        'Scale-up',
+        startup:        'Start-up',
+        earlystage:     'Early-stage',
+        enterprise:     'Enterprise',
+        smb:            'SMB',
+        agency:         'Agency',
+        scaleup2:       'Scale-up',
+      };
+      const _PRESSURE_READABLE = {
+        fast:       'Fast-paced environment',
+        intense:    'High-intensity delivery',
+        sustainable:'Sustainable delivery cadence',
+      };
+      const _WM_READABLE = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+
+      for (const r of _similar) {
+        const _mo   = r.latest_match_output || {};
+        const _mrss = _mo.role_shape_signals || {};
+        const _mpd  = _mo.practical_details  || {};
+
+        // Company stage
+        const _st = (_mrss.company_stage || _mrss.company_stage_signal || '')
+                      .toLowerCase().replace(/[_\-]/g, '');
+        if (_st && _st !== 'unknown') {
+          const _key = 'stage:' + _st;
+          _traitCounts[_key] = (_traitCounts[_key] || 0) + 1;
+          if (!_traitLabels[_key]) _traitLabels[_key] = _STAGE_READABLE[_st]
+            || (_st.charAt(0).toUpperCase() + _st.slice(1).replace(/([a-z])([A-Z])/g, '$1-$2'));
+        }
+
+        // Delivery pressure
+        const _dp = (_mo.delivery_pressure || '').toLowerCase();
+        if (_dp && _dp !== 'unclear') {
+          const _key = 'pressure:' + _dp;
+          _traitCounts[_key] = (_traitCounts[_key] || 0) + 1;
+          if (!_traitLabels[_key]) _traitLabels[_key] = _PRESSURE_READABLE[_dp]
+            || (_dp.charAt(0).toUpperCase() + _dp.slice(1) + ' delivery pressure');
+        }
+
+        // Work model
+        const _wm = _normaliseWM((_mrss.work_model || _mpd.remote_model || '').toLowerCase());
+        if (_wm) {
+          const _key = 'wm:' + _wm;
+          _traitCounts[_key] = (_traitCounts[_key] || 0) + 1;
+          if (!_traitLabels[_key]) _traitLabels[_key] = _WM_READABLE[_wm] || _wm;
+        }
+
+        // Domain complexity
+        const _dc = (_mo.domain_complexity || '').toLowerCase();
+        if (_dc && _dc !== 'unclear') {
+          const _key = 'dc:' + _dc;
+          _traitCounts[_key] = (_traitCounts[_key] || 0) + 1;
+          if (!_traitLabels[_key]) _traitLabels[_key] =
+            (_dc.charAt(0).toUpperCase() + _dc.slice(1).replace(/_/g, ' ')) + ' complexity';
+        }
+      }
+
+      const _traitThreshold = Math.max(2, Math.ceil(_n * 0.5));
+      const _commonTraits = Object.entries(_traitCounts)
+        .filter(([, c]) => c >= _traitThreshold)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([k]) => _traitLabels[k] || k);
+
+      // ── Build HTML ────────────────────────────────────────────────────────
+      const _noun = _n === 1 ? 'role' : 'roles';
+      let _html = '';
+
+      // Intro sentence
+      _html += `<div class="rw-srim-intro">${_n} ${_noun} in your history share structural traits with this one.</div>`;
+
+      // Outcomes row
+      const _outcomeOrder = [
+        ['offer',     'Offer',     'rw-srim-chip--offer'],
+        ['interview', 'Interview', 'rw-srim-chip--interview'],
+        ['applied',   'Applied',   ''],
+        ['rejected',  'Rejected',  'rw-srim-chip--rejected'],
+        ['ghosted',   'Ghosted',   'rw-srim-chip--muted'],
+        ['passed',    'Passed',    'rw-srim-chip--muted'],
+      ];
+      const _activeOutcomes = _outcomeOrder.filter(([k]) => _outcomes[k] > 0);
+
+      if (_activeOutcomes.length > 0) {
+        _html += `<div class="rw-srim-section-label">Outcomes</div>`;
+        _html += `<div class="rw-srim-outcomes">`;
+        for (const [key, label, mod] of _activeOutcomes) {
+          _html += `<span class="rw-srim-chip${mod ? ' ' + mod : ''}">${_outcomes[key]} × ${esc(label)}</span>`;
+        }
+        _html += `</div>`;
+      }
+
+      // Common traits
+      if (_commonTraits.length > 0) {
+        _html += `<div class="rw-srim-section-label">Common traits</div>`;
+        _html += `<ul class="rw-srim-traits">${_commonTraits.map(t => `<li>${esc(t)}</li>`).join('')}</ul>`;
+      }
+
+      return `<div class="rw-card rw-card--full rw-srim" id="section-similar-roles">${_html}</div>`;
+    }
+
     function renderMatchOutput(output) {
       if (!output || typeof output !== 'object') {
         return '<p class="doc-no-analysis" style="padding:8px 0;">No analysis data.</p>';
@@ -13026,7 +13273,7 @@
                 <ul class="rw-fa-bullets rw-fa-bullets--warn">${_fa.watchouts.map(w => `<li>${esc(w)}</li>`).join('')}</ul>
                </div>`
             : '';
-          html += `<div class="rw-fa-card" id="section-fit-assessment">
+          html += `<div class="rw-decision-summary" id="section-decision-summary"><div class="rw-ds-header"><span class="rw-ds-title">Decision Summary</span></div><div class="rw-fa-card" id="section-fit-assessment">
             <div class="rw-fa-title">Fit Assessment</div>
             <div class="rw-fa-summary">${esc(_fa.summary)}</div>
             ${_fa.mainReason ? `<div class="rw-fa-main-reason"><span class="rw-fa-main-reason-label">Main reason:</span> ${esc(_fa.mainReason)}</div>` : ''}
@@ -13043,7 +13290,7 @@
               <div class="rw-fa-cv-label">Recommended CV</div>
               <div class="rw-fa-cv-empty">Loading recommendation…</div>
             </div>
-          </div>`;
+          </div></div>`;
         }
       }
 
@@ -13089,9 +13336,7 @@
         }
       }
 
-      // ── Two-column layout: main analysis left, sticky Decision Lens right ──────
-      html += `<div class="rw-lens-layout">`;
-      html += `<div class="rw-lens-layout__main">`;
+      // ── Single-column card grid (RW-ROLEPAGE-LAYOUT-01) ──────────────────────
       html += `<div class="rw-card-grid">`;
 
       // ── Role Briefing card — Archetype + Briefing Header (full width) ──────────
@@ -13220,105 +13465,98 @@
           }
         }
 
-        // ── Fit Reality ──
-        {
-          const _fr = Array.isArray(output.fit_reality_summary) ? output.fit_reality_summary.filter(Boolean) : [];
-          if (_fr.length > 0) {
-            _rbHtml += `<div class="rw-sub-section" id="section-fit-reality"><div class="rw-sub-label">Fit Reality</div>${markerBullets(_fr.slice(0, 3))}</div>`;
-          }
-        }
+        // ── Fit Reality removed (RW-ROLEPAGE-FITREALITY-02) ──
+        // Content redistributed: fit-confirming bullets → Fit Assessment;
+        // cautionary signals → Risks & Unknowns + Fit Assessment watchouts;
+        // role-defining interpretation → "What They're Looking For" in Role Briefing.
 
-        if (_rbHtml) {
-          html += `<div class="rw-card rw-card--full rw-card--narrative" id="section-briefing">${_rbHtml}</div>`;
-        }
-      }
-
-      // ── ROLE SIGNALS — Structural Signals + Operational Signals ──────────────
-      {
+        // ── Key Signals (RW-ROLEPAGE-BRIEFING-05) — Structural, Operational, Practical Details ──
+        // Moved from standalone Role Signals card into Role Briefing.
         let _roleSignalsHtml = '';
         let _roleSignalsHas = false;
 
-        // ── Structural Signals — from role_shape_signals ──
+        // ── Structural Signals — from role_shape_signals (RW-ROLEPAGE-SIGNALS-03) ──
+        // Primary: work_model, role_type, salary_transparency, company_stage,
+        //          craft_strategy_balance, product_mode
+        // Secondary: squad_model, design_system_ownership, hiring_philosophy
+        // Removed from display: office_culture_signal (redundant with work model),
+        //   decision_culture (too vague), ai_tooling_signal (legacy/niche)
         {
           const rss = output.role_shape_signals;
           if (rss && typeof rss === 'object') {
             const _cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-            const rows = [];
+            const _primaryRows = [];
+            const _secondaryRows = [];
 
             const _ev  = (rss && rss._evidence) || {};
 
-            if (rss && typeof rss === 'object') {
-              // ── Structural ────────────────────────────────────────────────────
-              const _wm = rss.work_model || (output.practical_details && output.practical_details.remote_model) || null;
-              if (_wm && _wm !== 'unknown') {
-                const _wmLabels = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
-                rows.push(['Work model', _wmLabels[_wm] || _cap(_wm), null]);
-              }
-
-              const _rt = rss.role_type || (output.practical_details && output.practical_details.employment_type) || null;
-              if (_rt && _rt !== 'unknown' && _rt !== 'Not stated') {
-                const _rtLabels = { contract: 'Contract', permanent: 'Permanent' };
-                rows.push(['Role type', _rtLabels[_rt] || _cap(_rt), null]);
-              }
-
-              const _salaryVal = rss.salary_signal || null;
-              if (_salaryVal) {
-                const _salLabels = { range: 'Range stated', stated: 'Stated', not_stated: 'Not stated' };
-                rows.push(['Salary transparency', _salLabels[_salaryVal] || _cap(_salaryVal), null]);
-              }
-
-              // ── Role shape ────────────────────────────────────────────────────
-              if (rss.squad_model === true)
-                rows.push(['Squad model', 'Yes', _ev.squad_model]);
-
-              if (rss.craft_strategy_balance) {
-                const _balanceLabels = { craft_heavy: 'Craft-heavy', strategy_heavy: 'Strategy-heavy', balanced: 'Balanced' };
-                rows.push(['Craft vs strategy', _balanceLabels[rss.craft_strategy_balance] || _cap(rss.craft_strategy_balance), _ev.craft_strategy_balance]);
-              }
-
-              if (rss.design_system_ownership === true)
-                rows.push(['Design system ownership', 'Yes', _ev.design_system_ownership]);
-
-              if (rss.product_mode) {
-                const _modeLabels = { greenfield: 'Greenfield', mixed: 'Mixed', iteration: 'Iteration' };
-                rows.push(['Product mode', _modeLabels[rss.product_mode] || _cap(rss.product_mode), _ev.product_mode]);
-              }
-
-              // ── Cultural ──────────────────────────────────────────────────────
-              const _dc = rss.decision_culture || null;
-              if (_dc) rows.push(['Decision culture', _cap(_dc), _ev.decision_culture]);
-
-              const _cs = rss.company_stage || rss.company_stage_signal || null;
-              if (_cs && _cs !== 'unknown') {
-                const _stageLabels = { scaleup: 'Scale-up', startup: 'Start-up', enterprise: 'Enterprise' };
-                rows.push(['Company stage', _stageLabels[_cs] || _cap(_cs), null]);
-              }
-
-              if (rss.office_culture_signal === true)
-                rows.push(['Office culture signal', 'Yes', _ev.office_culture_signal]);
-
-              const _hp = rss.hiring_philosophy || rss.hiring_philosophy_signal || null;
-              if (_hp) rows.push(['Hiring philosophy', _cap(_hp), _ev.hiring_philosophy]);
-
-              // ── Legacy-only signals (shown when present, not duplicated above) ──
-              if (rss.ai_tooling_signal === true)
-                rows.push(['AI tooling signal', 'Yes', _ev.ai_tooling_signal]);
+            // ── Primary structural signals — high-value, shown first ──────────
+            const _wm = rss.work_model || (output.practical_details && output.practical_details.remote_model) || null;
+            if (_wm && _wm !== 'unknown') {
+              const _wmLabels = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+              _primaryRows.push(['Work model', _wmLabels[_wm] || _cap(_wm), null]);
             }
 
-            if (rows.length > 0) {
-              const _structTable = `<table style="width:100%;border-collapse:collapse;">${rows.map(([k, v, ev], i) => `
+            const _rt = rss.role_type || (output.practical_details && output.practical_details.employment_type) || null;
+            if (_rt && _rt !== 'unknown' && _rt !== 'Not stated') {
+              const _rtLabels = { contract: 'Contract', permanent: 'Permanent' };
+              _primaryRows.push(['Role type', _rtLabels[_rt] || _cap(_rt), null]);
+            }
+
+            const _salaryVal = rss.salary_signal || null;
+            if (_salaryVal) {
+              const _salLabels = { range: 'Range stated', stated: 'Stated', not_stated: 'Not stated' };
+              _primaryRows.push(['Salary transparency', _salLabels[_salaryVal] || _cap(_salaryVal), null]);
+            }
+
+            const _cs = rss.company_stage || rss.company_stage_signal || null;
+            if (_cs && _cs !== 'unknown') {
+              const _stageLabels = { scaleup: 'Scale-up', startup: 'Start-up', enterprise: 'Enterprise' };
+              _primaryRows.push(['Company stage', _stageLabels[_cs] || _cap(_cs), null]);
+            }
+
+            if (rss.craft_strategy_balance) {
+              const _balanceLabels = { craft_heavy: 'Craft-heavy', strategy_heavy: 'Strategy-heavy', balanced: 'Balanced' };
+              _primaryRows.push(['Craft vs strategy', _balanceLabels[rss.craft_strategy_balance] || _cap(rss.craft_strategy_balance), _ev.craft_strategy_balance]);
+            }
+
+            if (rss.product_mode) {
+              const _modeLabels = { greenfield: 'Greenfield', mixed: 'Mixed', iteration: 'Iteration' };
+              _primaryRows.push(['Product mode', _modeLabels[rss.product_mode] || _cap(rss.product_mode), _ev.product_mode]);
+            }
+
+            // ── Secondary structural signals — shown below primary ────────────
+            if (rss.squad_model === true)
+              _secondaryRows.push(['Squad model', 'Yes', _ev.squad_model]);
+
+            if (rss.design_system_ownership === true)
+              _secondaryRows.push(['Design system ownership', 'Yes', _ev.design_system_ownership]);
+
+            const _hp = rss.hiring_philosophy || rss.hiring_philosophy_signal || null;
+            if (_hp) _secondaryRows.push(['Hiring philosophy', _cap(_hp), _ev.hiring_philosophy]);
+
+            // office_culture_signal, decision_culture, ai_tooling_signal removed
+            // from display — redundant or low-value (data unchanged)
+
+            const _allRows = _primaryRows.length + _secondaryRows.length;
+            if (_allRows > 0) {
+              const _renderRows = (rows, dimmed) => rows.map(([k, v, ev], i) => `
                 <tr${i < rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
-                  <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(k)}</td>
-                  <td style="padding:6px 0;font-size:13px;color:var(--text);">${esc(v)}${ev ? `<div style="font-size:11px;color:var(--text-light);font-style:italic;margin-top:2px;line-height:1.35;">\u201c${esc(ev)}\u201d</div>` : ''}</td>
-                </tr>`).join('')}
-              </table>`;
-              _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-shape"><div class="rw-sub-label">Structural Signals</div>${_structTable}</div>`;
+                  <td style="padding:5px 0;font-size:12.5px;color:${dimmed ? 'var(--text-light)' : 'var(--text-muted)'};width:38%;vertical-align:top;">${esc(k)}</td>
+                  <td style="padding:5px 0;font-size:${dimmed ? '12px' : '13px'};color:${dimmed ? 'var(--text-light)' : 'var(--text)'};">${esc(v)}${ev ? `<div style="font-size:11px;color:var(--text-light);font-style:italic;margin-top:2px;line-height:1.35;">\u201c${esc(ev)}\u201d</div>` : ''}</td>
+                </tr>`).join('');
+
+              let _structHtml = `<table style="width:100%;border-collapse:collapse;">${_renderRows(_primaryRows, false)}${_primaryRows.length && _secondaryRows.length ? `<tr style="border-bottom:1px solid var(--border-light);"><td colspan="2" style="padding:0;"></td></tr>` : ''}${_renderRows(_secondaryRows, true)}</table>`;
+
+              _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-shape"><div class="rw-sub-label">Structural Signals</div>${_structHtml}</div>`;
               _roleSignalsHas = true;
             }
           }
         }
 
-        // ── Operational Signals — v2 deeper role-interpretation signals ──
+        // ── Operational Signals — v2 deeper role-interpretation signals (RW-ROLEPAGE-SIGNALS-03) ──
+        // Primary: scope_clarity, seniority_authenticity, delivery_pressure, ownership_level
+        // Secondary (lighter): domain_complexity, stakeholder_density, user_proximity, success_metric_maturity
         {
           const _v2Labels = {
             scope_clarity:            'Scope clarity',
@@ -13351,86 +13589,123 @@
             understated: 'color:var(--amber,#d68910)',
           };
 
-          const v2Keys = Object.keys(_v2Labels);
-          const v2Rows = [];
-          for (const key of v2Keys) {
-            const val = output[key];
-            if (val && val !== 'unclear' && val !== 'unknown') {
-              const label     = _v2Labels[key];
-              const valLabel  = _v2ValueLabels[val] || (val.charAt(0).toUpperCase() + val.slice(1).replace(/_/g, ' '));
-              const accentCss = _v2Accents[val] ? ';' + _v2Accents[val] : '';
-              v2Rows.push([label, valLabel, accentCss]);
-            }
-          }
+          // Primary keys — highest decision value, shown first at full weight
+          const _v2PrimaryKeys = ['scope_clarity', 'seniority_authenticity', 'delivery_pressure', 'ownership_level'];
+          // Secondary keys — useful context, shown after with lighter styling
+          const _v2SecondaryKeys = ['domain_complexity', 'stakeholder_density', 'user_proximity', 'success_metric_maturity'];
 
-          if (v2Rows.length > 0) {
-            const _opTable = `<table style="width:100%;border-collapse:collapse;">${v2Rows.map(([k, v, accentCss], i) => `
-              <tr${i < v2Rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
-                <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(k)}</td>
-                <td style="padding:6px 0;font-size:13px;color:var(--text)${accentCss};">${esc(v)}</td>
-              </tr>`).join('')}
-            </table>`;
+          const _buildOpRows = (keys) => {
+            const rows = [];
+            for (const key of keys) {
+              const val = output[key];
+              if (val && val !== 'unclear' && val !== 'unknown') {
+                const label     = _v2Labels[key];
+                const valLabel  = _v2ValueLabels[val] || (val.charAt(0).toUpperCase() + val.slice(1).replace(/_/g, ' '));
+                const accentCss = _v2Accents[val] ? ';' + _v2Accents[val] : '';
+                rows.push([label, valLabel, accentCss]);
+              }
+            }
+            return rows;
+          };
+
+          const _opPrimary   = _buildOpRows(_v2PrimaryKeys);
+          const _opSecondary = _buildOpRows(_v2SecondaryKeys);
+
+          if (_opPrimary.length + _opSecondary.length > 0) {
+            const _renderOpRows = (rows, dimmed) => rows.map(([k, v, accentCss], i) => `
+              <tr${i < rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
+                <td style="padding:5px 0;font-size:12.5px;color:${dimmed ? 'var(--text-light)' : 'var(--text-muted)'};width:38%;vertical-align:top;">${esc(k)}</td>
+                <td style="padding:5px 0;font-size:${dimmed ? '12px' : '13px'};color:${dimmed ? 'var(--text-light)' : 'var(--text)'}${dimmed ? '' : accentCss};">${esc(v)}</td>
+              </tr>`).join('');
+
+            const _opTable = `<table style="width:100%;border-collapse:collapse;">${_renderOpRows(_opPrimary, false)}${_opPrimary.length && _opSecondary.length ? `<tr style="border-bottom:1px solid var(--border-light);"><td colspan="2" style="padding:0;"></td></tr>` : ''}${_renderOpRows(_opSecondary, true)}</table>`;
+
             _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-reality-signals"><div class="rw-sub-label">Operational Signals</div>${_opTable}</div>`;
             _roleSignalsHas = true;
           }
         }
 
+        // ── Practical Details sub-section (RW-ROLEPAGE-SIGNALS-04) ──────────────
+        // Unique factual rows not already covered by Structural/Operational Signals.
+        // Excluded: Work model (→ Structural "Work model"),
+        //           Employment type (→ Structural "Role type").
+        {
+          const _pdObj = output.practical_details || {};
+          const _pdSalAnnual  = _pdObj.salary_annual  || null;
+          const _pdSalMonthly = _pdObj.salary_monthly || null;
+          const _pdSalStr = (_pdSalAnnual && _pdSalAnnual !== 'Not stated' && _pdSalMonthly)
+            ? `${_pdSalAnnual} (${_pdSalMonthly})`
+            : (_pdSalAnnual && _pdSalAnnual !== 'Not stated' ? _pdSalAnnual : null);
+
+          const _pdRows = [];
+          // Location — unique to PD
+          if (_pdObj.location && _pdObj.location !== 'Not stated')
+            _pdRows.push(['Location', _pdObj.location]);
+          // Salary — actual figure; distinct from the "Salary transparency" signal
+          if (_pdSalStr)
+            _pdRows.push(['Salary', _pdSalStr]);
+          // Reporting to — unique to PD
+          if (_pdObj.reporting_line && _pdObj.reporting_line !== 'Not stated')
+            _pdRows.push(['Reporting to', _pdObj.reporting_line]);
+          // Visa — unique to PD
+          if (_pdObj.visa && _pdObj.visa !== 'Not stated')
+            _pdRows.push(['Visa', _pdObj.visa]);
+          // Commute — brief text note; Commute Impact card provides full detail
+          if (_pdObj.commute_reality)
+            _pdRows.push(['Commute', _pdObj.commute_reality]);
+          // Company type — different from "Company stage" signal (stage = scale-up etc,
+          //   type = B2B SaaS etc)
+          if (_pdObj.company_type && _pdObj.company_type !== 'Not stated')
+            _pdRows.push(['Company type', _pdObj.company_type]);
+          // Seniority text — raw extracted label (e.g. "Senior"); different from
+          //   the Operational Signal authenticity assessment (e.g. "Authentic")
+          if (_pdObj.role_seniority && _pdObj.role_seniority !== 'Not stated')
+            _pdRows.push(['Seniority', _pdObj.role_seniority]);
+
+          // Verification notes — surface extraction ambiguities inline
+          const _pdVn    = Array.isArray(_pdObj._verification_needed) ? _pdObj._verification_needed : [];
+          const _pdNotes = Array.isArray(_pdObj._extraction_notes)    ? _pdObj._extraction_notes    : [];
+          const _pdVerifyHtml = (_pdVn.length || _pdNotes.length)
+            ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);">${_pdNotes.map(n =>
+                `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5;margin-bottom:3px;">\u26A0 ${esc(n)}</div>`
+              ).join('')}</div>`
+            : '';
+
+          if (_pdRows.length > 0) {
+            const _pdTable = `<table style="width:100%;border-collapse:collapse;">${_pdRows.map(([k, v], i) => `
+              <tr${i < _pdRows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
+                <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(k)}</td>
+                <td style="padding:6px 0;font-size:13px;color:var(--text);">${esc(v)}</td>
+              </tr>`).join('')}
+            </table>${_pdVerifyHtml}`;
+            _roleSignalsHtml += `<div class="rw-sub-section" id="section-practical"><div class="rw-sub-label">Practical Details</div>${_pdTable}</div>`;
+            _roleSignalsHas = true;
+          }
+        }
+
         if (_roleSignalsHas) {
-          html += card('Role Signals', _roleSignalsHtml, 'section-role-signals', true, 'rw-card--narrative', 'role-signals');
+          _rbHtml += `<div class="rw-sub-section" id="section-role-signals"><div class="rw-sub-label">Key Signals</div>${_roleSignalsHtml}</div>`;
+        }
+
+        if (_rbHtml) {
+          html += `<div class="rw-card rw-card--full rw-card--narrative" id="section-briefing">${_rbHtml}</div>`;
         }
       }
 
-
-      // ── Practical Reality ────────────────────────────────────────────────────
-      html += sectionHeader('Practical Reality');
-
-      // Practical Details — factual extracted values table
+      // ── Similar Roles Insight (RW-ROLEPAGE-SIMILAR-ROLES-01) ─────────────────
       {
-        const pd = output.practical_details || {};
-        const salaryAnnual  = pd.salary_annual  || 'Not stated';
-        const salaryMonthly = pd.salary_monthly || null;
-        const salaryStr = (salaryAnnual !== 'Not stated' && salaryMonthly)
-          ? `${salaryAnnual} (${salaryMonthly})`
-          : salaryAnnual;
-
-        // Build rows — only include company_type and role_seniority when extracted
-        const rows = [
-          ['Location',        pd.location         || 'Not stated'],
-          ['Work model',      pd.remote_model      || 'Not stated'],
-          ['Employment type', pd.employment_type   || 'Not stated'],
-          ['Salary',          salaryStr],
-          ['Reporting to',    pd.reporting_line    || 'Not stated'],
-          ['Visa',            pd.visa              || 'Not stated'],
-        ];
-        // New v2 fields — append only when non-trivial
-        if (pd.company_type && pd.company_type !== 'Not stated') {
-          rows.push(['Company type', pd.company_type]);
-        }
-        if (pd.role_seniority && pd.role_seniority !== 'Not stated') {
-          rows.push(['Seniority', pd.role_seniority]);
-        }
-        if (pd.commute_reality) {
-          rows.push(['Commute', pd.commute_reality]);
-        }
-
-        // Verification callout — surface ambiguous fields inline under the table
-        const _vn = Array.isArray(pd._verification_needed) ? pd._verification_needed : [];
-        const _notes = Array.isArray(pd._extraction_notes) ? pd._extraction_notes : [];
-        const verifyHtml = (_vn.length || _notes.length)
-          ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);">
-               ${_notes.map(n => `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5;margin-bottom:3px;">⚠ ${esc(n)}</div>`).join('')}
-             </div>`
-          : '';
-
-        const table = `<table style="width:100%;border-collapse:collapse;">${rows.map(([k, v], i) => `
-          <tr${i < rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
-            <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(k)}</td>
-            <td style="padding:6px 0;font-size:13px;color:${v === 'Not stated' ? 'var(--text-light)' : 'var(--text)'};">${esc(v)}</td>
-          </tr>`).join('')}
-        </table>${verifyHtml}`;
-        html += card('Practical Details', table, 'section-practical', false, 'rw-card--data');
+        const _srimHtml = _buildSimilarRolesInsight(output, selectedRoleId, allRoles);
+        if (_srimHtml) html += _srimHtml;
       }
 
+      // ── Role Signals merged into Role Briefing as “Key Signals” (RW-ROLEPAGE-BRIEFING-05) ──
+
+
+      // ── Practical Reality section header removed (RW-ROLEPAGE-SIGNALS-04) ───
+      // Practical Details merged into Role Signals; Comp Snapshot, Commute, and
+      // JD Clarity & Risks continue below without a redundant section break.
+
+      // Practical Details card block removed — see Role Signals sub-section below
 
       // ── Compensation Snapshot (half-width card, pairs with Practical Details) ──
       {
@@ -13606,13 +13881,10 @@
       // ── Your Decision Context ─────────────────────────────────────────────
       html += sectionHeader('Your Decision Context');
 
-      // ── Decision Lens — captured for sticky side panel (RW-ROLEPAGE-LENS-PANEL-01) ──
-      // Rendering logic is unchanged; the card is placed in the right sticky panel
-      // rather than inline in the card flow. _lensHtml is inserted after grid-close.
-      let _lensHtml = '';
+      // ── Decision Lens — rendered inline in card grid (RW-ROLEPAGE-LAYOUT-01) ──
       {
         const _dlHtml = _renderDecisionLens(output);
-        if (_dlHtml) _lensHtml = _dlHtml;
+        if (_dlHtml) html += _dlHtml;
       }
 
       // ── Your Lens ──────────────────────────────────────────────────────────
@@ -13827,206 +14099,237 @@
 
 
       // ── Career Pattern Intelligence ──────────────────────────────────────────
-      html += sectionHeader('Career Pattern Intelligence', false, 'career-pattern');
-
-      // ── OARM — Role Memory (full-width, 5+ verdicts; delayed until next render) ──
-      // Personal decision summary: how many fits, not-for-me, and undecided verdicts
-      // the user has recorded. First threshold crossing arms the card; shows from next render.
+      // RW-ROLEPAGE-CAREER-04: collect into _cpiCards; suppress Search Pattern
+      //   when PS visible; downgrade Your Role Signals to secondary tier.
+      // RW-ROLEPAGE-CAREER-05: section header deferred — only emitted when
+      //   _cpiCards is non-empty; suppressed entirely for low-data users.
       {
-        const _oarmAllRoles = typeof roles !== 'undefined' ? roles : [];
-        const _oarmAll      = _oarmAllRoles.filter(r => r.verdict_state);
-        if (_oarmAll.length >= 5) {
-          const _oarmKey     = 'rw_intel_oarm_unlocked';
-          const _oarmGet     = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
-          const _oarmSet     = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
-          const _oarmArmed   = _oarmGet(_oarmKey) === 'true';
-          if (!_oarmArmed) {
-            _oarmSet(_oarmKey, 'true');
-          } else {
-            const _oarmFits  = _oarmAllRoles.filter(r => r.verdict_state === 'fits');
-            const _oarmNot   = _oarmAllRoles.filter(r => r.verdict_state === 'not_for_me');
-            const _oarmUndc  = _oarmAllRoles.filter(r => r.verdict_state === 'undecided');
-            const _oarmN     = _oarmAll.length;
-            const _oarmLines = _computeOARMSummary(_oarmFits, _oarmNot, _oarmUndc);
-            if (_oarmLines && _oarmLines.length > 0) {
-              const _oarmMeta = `<div class="rw-intel-meta">${_oarmN} role${_oarmN !== 1 ? 's' : ''} with a recorded verdict</div>`;
-              const _oarmBody = _oarmMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_oarmLines.map(s =>
-                `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(s)}</div>`
-              ).join('')}</div>`;
-              html += card('Role Memory', _oarmBody, 'section-oarm', true, 'rw-card--intel');
-            }
-          }
-        }
-      }
+        let _cpiCards = '';
+        // Read Pattern Signals lock state once — reused by Search Pattern suppression
+        // and Your Role Signals tier decision. Thresholds unchanged.
+        const _cpiPsUnlocked = (() => { try { return localStorage.getItem('rw_intel_ps_unlocked') === 'true'; } catch(e) { return false; } })();
 
-      // ── Decision Reflection (full-width, 10+ drift dataset rows; delayed unlock) ──
-      // Surfaces gaps between stated preferences (verdict_state) and actual outcomes.
-      // Threshold: 10+ roles with BOTH verdict_state AND outcome_state recorded.
-      {
-        const _drAllRoles  = typeof roles !== 'undefined' ? roles : [];
-        const _drDataset   = _buildDriftDataset(_drAllRoles);
-        if (_drDataset.length >= 10) {
-          const _drKey     = 'rw_intel_dr_unlocked';
-          const _drGet     = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
-          const _drSet     = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
-          const _drArmed   = _drGet(_drKey) === 'true';
-          if (!_drArmed) {
-            _drSet(_drKey, 'true');
-          } else {
-            const _drSignals = _computeDriftSignals(_drDataset);
-            if (_drSignals && _drSignals.length > 0) {
-              const _drN    = _drDataset.length;
-              const _drMeta = `<div class="rw-intel-meta">Based on ${_drN} role${_drN !== 1 ? 's' : ''} with a verdict and outcome</div>`;
-              const _drBody = _drMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_drSignals.map(s =>
-                `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(s)}</div>`
-              ).join('')}</div>`;
-              html += card('Decision Reflection', _drBody, 'section-decision-reflection', true, 'rw-card--intel');
-            }
-          }
-        }
-      }
-
-      // ── Your Role Signals (full-width; 15+ analysed roles AND 8+ verdict_state roles) ──
-      // Reflects behavioural patterns from the user's own decisions and outcomes.
-      // Threshold: 15+ analysed roles + 8+ roles with verdict_state recorded.
-      // Delayed appearance: first threshold crossing sets rw_intel_role_signals_unlocked.
-      {
-        const _rsAllRoles  = typeof roles !== 'undefined' ? roles : [];
-        const _rsAnalysed  = _rsAllRoles.filter(r => r.latest_match_output && r.latest_match_output.fit_reality_summary);
-        const _rsDataset   = buildRoleSignalDataset(_rsAllRoles);
-        if (_rsAnalysed.length >= 15 && _rsDataset.length >= 8) {
-          const _rsKey     = 'rw_intel_role_signals_unlocked';
-          const _rsGet     = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
-          const _rsSet     = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
-          const _rsArmed   = _rsGet(_rsKey) === 'true';
-          if (!_rsArmed) {
-            _rsSet(_rsKey, 'true');
-          } else {
-            const _rsSignals = computeRoleSignals(_rsDataset);
-            if (_rsSignals && _rsSignals.length > 0) {
-              const _rsN    = _rsAnalysed.length;
-              const _rsMeta = `<div class="rw-intel-meta">Signals emerging from ${_rsN} analysed role${_rsN !== 1 ? 's' : ''}</div>`;
-              const _rsBody = _rsMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_rsSignals.map(s =>
-                `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(s)}</div>`
-              ).join('')}</div>`;
-              html += card('Your Role Signals', _rsBody, 'section-role-signals', true, 'rw-card--intel');
-            }
-          }
-        }
-      }
-
-      // ── Emerging Pattern (full-width, 10+ analysed roles; delayed until next render) ──
-      // Early intelligence card: surfaces up to 2 tentative observations about the search
-      // before the full Pattern Signals / Search Pattern cards appear at 15+.
-      {
-        const _epAllRoles = typeof roles !== 'undefined' ? roles : [];
-        const _epAnalysed = _epAllRoles.filter(r => r.latest_match_output && r.latest_match_output.fit_reality_summary);
-        if (_epAnalysed.length >= 10) {
-          const _epKey = 'rw_intel_ep_unlocked';
-          const _epGet = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
-          const _epSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
-          const _epUnlocked = _epGet(_epKey) === 'true';
-          if (!_epUnlocked) {
-            // First threshold crossing — flag but stay hidden (shows on next render).
-            _epSet(_epKey, 'true');
-          } else {
-            const _epN = _epAnalysed.length;
-            // Hide once Pattern Signals takes over at 15+ to avoid redundancy.
-            const _psUnlocked = (() => { try { return localStorage.getItem('rw_intel_ps_unlocked') === 'true'; } catch(e) { return false; } })();
-            if (_epN < 15 || !_psUnlocked) {
-              const _epSignals = _computeEmergingPattern(_epAnalysed);
-              if (_epSignals && _epSignals.length > 0) {
-                const _epMeta = `<div class="rw-intel-meta">Early patterns \u00B7 ${_epN} analysed role${_epN !== 1 ? 's' : ''}</div>`;
-                const _epBody = _epMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_epSignals.map(p =>
-                  `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(p)}</div>`
+        // ── OARM — Role Memory (full-width, 5+ verdicts; delayed until next render) ──
+        // Personal decision summary: how many fits, not-for-me, and undecided verdicts
+        // the user has recorded. First threshold crossing arms the card; shows from next render.
+        {
+          const _oarmAllRoles = typeof roles !== 'undefined' ? roles : [];
+          const _oarmAll      = _oarmAllRoles.filter(r => r.verdict_state);
+          if (_oarmAll.length >= 5) {
+            const _oarmKey     = 'rw_intel_oarm_unlocked';
+            const _oarmGet     = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
+            const _oarmSet     = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
+            const _oarmArmed   = _oarmGet(_oarmKey) === 'true';
+            if (!_oarmArmed) {
+              _oarmSet(_oarmKey, 'true');
+            } else {
+              const _oarmFits  = _oarmAllRoles.filter(r => r.verdict_state === 'fits');
+              const _oarmNot   = _oarmAllRoles.filter(r => r.verdict_state === 'not_for_me');
+              const _oarmUndc  = _oarmAllRoles.filter(r => r.verdict_state === 'undecided');
+              const _oarmN     = _oarmAll.length;
+              const _oarmLines = _computeOARMSummary(_oarmFits, _oarmNot, _oarmUndc);
+              if (_oarmLines && _oarmLines.length > 0) {
+                const _oarmMeta = `<div class="rw-intel-meta">${_oarmN} role${_oarmN !== 1 ? 's' : ''} with a recorded verdict</div>`;
+                const _oarmBody = _oarmMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_oarmLines.map(s =>
+                  `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(s)}</div>`
                 ).join('')}</div>`;
-                html += card('Emerging Pattern', _epBody, 'section-emerging-pattern', true, 'rw-card--intel');
+                _cpiCards += card('Role Memory', _oarmBody, 'section-oarm', true, 'rw-card--intel');
               }
             }
           }
         }
-      }
 
-      // ── Search Pattern (full-width, 15+ analysed roles; no delayed unlock — shows immediately) ──
-      // Describes the shape of the user's current search using calm, observational language.
-      // Different from Pattern Signals: framed as "what the search looks like" not "who you are".
-      {
-        const _spAllRoles    = typeof roles !== 'undefined' ? roles : [];
-        const _spAnalysed    = _spAllRoles.filter(r => r.latest_match_output && r.latest_match_output.fit_reality_summary);
-        if (_spAnalysed.length >= 15) {
-          const _spN        = _spAnalysed.length;
-          const _spPatterns = _computeSearchPattern(_spAnalysed);
-          if (_spPatterns && _spPatterns.length > 0) {
-            const _spMeta = `<div class="rw-intel-meta">Observed across ${_spN} analysed role${_spN !== 1 ? 's' : ''}</div>`;
-            const _spBody = _spMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_spPatterns.slice(0, 3).map(p =>
-              `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(p)}</div>`
-            ).join('')}</div>`;
-            html += card('Search Pattern', _spBody, 'section-search-pattern', true, 'rw-card--intel');
+        // ── Decision Reflection (full-width, 10+ drift dataset rows; delayed unlock) ──
+        // Surfaces gaps between stated preferences (verdict_state) and actual outcomes.
+        // Threshold: 10+ roles with BOTH verdict_state AND outcome_state recorded.
+        {
+          const _drAllRoles  = typeof roles !== 'undefined' ? roles : [];
+          const _drDataset   = _buildDriftDataset(_drAllRoles);
+          if (_drDataset.length >= 10) {
+            const _drKey     = 'rw_intel_dr_unlocked';
+            const _drGet     = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
+            const _drSet     = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
+            const _drArmed   = _drGet(_drKey) === 'true';
+            if (!_drArmed) {
+              _drSet(_drKey, 'true');
+            } else {
+              const _drSignals = _computeDriftSignals(_drDataset);
+              if (_drSignals && _drSignals.length > 0) {
+                const _drN    = _drDataset.length;
+                const _drMeta = `<div class="rw-intel-meta">Based on ${_drN} role${_drN !== 1 ? 's' : ''} with a verdict and outcome</div>`;
+                const _drBody = _drMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_drSignals.map(s =>
+                  `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(s)}</div>`
+                ).join('')}</div>`;
+                _cpiCards += card('Decision Reflection', _drBody, 'section-decision-reflection', true, 'rw-card--intel');
+              }
+            }
           }
         }
-      }
 
-      // ── Pattern Signals (full-width, 15+ analysed roles; delayed until next render) ──
-      {
-        const _allRoles = typeof roles !== 'undefined' ? roles : [];
-        const _analysedRoles = _allRoles.filter(r => r.latest_match_output && r.latest_match_output.fit_reality_summary);
-        if (_analysedRoles.length >= 15) {
-          // Delayed appearance: only show from the render AFTER the threshold was first crossed.
-          const _psKey      = 'rw_intel_ps_unlocked';
-          const _psCountKey = 'rw_intel_ps_count';
-          const _psGet  = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
-          const _psSet  = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
-          const _psUnlocked = _psGet(_psKey) === 'true';
-          if (!_psUnlocked) {
-            // First threshold crossing this session — flag it but stay invisible.
-            _psSet(_psKey, 'true');
-          } else {
-            const _psN      = _analysedRoles.length;
-            const _psLastN  = parseInt(_psGet(_psCountKey) || '0', 10);
-            const _psGrowing = _psLastN > 0 && (_psN - _psLastN) >= 5;
-            _psSet(_psCountKey, String(_psN));
-            const _patterns = _computePatternSignals(_analysedRoles);
-            if (_patterns && _patterns.length > 0) {
-              const _psMeta = `<div class="rw-intel-meta">Observed across ${_psN} analysed role${_psN !== 1 ? 's' : ''}${_psGrowing ? ' · Pattern strengthening' : ''}</div>`;
-              const _patternHtml = _psMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_patterns.slice(0, 3).map(p =>
+        // ── Your Role Signals (full-width; 15+ analysed roles AND 8+ verdict_state roles) ──
+        // Reflects behavioural patterns from the user's own decisions and outcomes.
+        // Threshold: 15+ analysed roles + 8+ roles with verdict_state recorded.
+        // Delayed appearance: first threshold crossing sets rw_intel_role_signals_unlocked.
+        // RW-ROLEPAGE-CAREER-04: rendered as secondary tier when Pattern Signals is also
+        // showing — lighter pills, 2-signal cap, subdued heading — signals supplementary role.
+        {
+          const _rsAllRoles  = typeof roles !== 'undefined' ? roles : [];
+          const _rsAnalysed  = _rsAllRoles.filter(r => r.latest_match_output && r.latest_match_output.fit_reality_summary);
+          const _rsDataset   = buildRoleSignalDataset(_rsAllRoles);
+          if (_rsAnalysed.length >= 15 && _rsDataset.length >= 8) {
+            const _rsKey     = 'rw_intel_role_signals_unlocked';
+            const _rsGet     = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
+            const _rsSet     = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
+            const _rsArmed   = _rsGet(_rsKey) === 'true';
+            if (!_rsArmed) {
+              _rsSet(_rsKey, 'true');
+            } else {
+              const _rsSignals = computeRoleSignals(_rsDataset);
+              if (_rsSignals && _rsSignals.length > 0) {
+                const _rsN    = _rsAnalysed.length;
+                const _rsMeta = `<div class="rw-intel-meta">Signals emerging from ${_rsN} analysed role${_rsN !== 1 ? 's' : ''}</div>`;
+                // When Pattern Signals is also visible, render as secondary: lighter pills,
+                // 2-signal cap, subdued class. Content and logic unchanged.
+                if (_cpiPsUnlocked) {
+                  const _rsBodySec = _rsMeta + `<div style="display:flex;flex-direction:column;gap:6px;">${_rsSignals.slice(0, 2).map(s =>
+                    `<div style="font-size:12px;color:var(--text-light);line-height:1.5;padding:7px 10px;background:var(--bg-subtle,#fafaf9);border-radius:4px;border-left:1px solid var(--border-light);">${esc(s)}</div>`
+                  ).join('')}</div>`;
+                  _cpiCards += card('Your Role Signals', _rsBodySec, 'section-role-signals', true, 'rw-card--intel rw-card--intel-secondary');
+                } else {
+                  const _rsBody = _rsMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_rsSignals.map(s =>
+                    `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(s)}</div>`
+                  ).join('')}</div>`;
+                  _cpiCards += card('Your Role Signals', _rsBody, 'section-role-signals', true, 'rw-card--intel');
+                }
+              }
+            }
+          }
+        }
+
+        // ── Emerging Pattern (full-width, 10+ analysed roles; delayed until next render) ──
+        // Early intelligence card: surfaces up to 2 tentative observations about the search
+        // before the full Pattern Signals / Search Pattern cards appear at 15+.
+        {
+          const _epAllRoles = typeof roles !== 'undefined' ? roles : [];
+          const _epAnalysed = _epAllRoles.filter(r => r.latest_match_output && r.latest_match_output.fit_reality_summary);
+          if (_epAnalysed.length >= 10) {
+            const _epKey = 'rw_intel_ep_unlocked';
+            const _epGet = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
+            const _epSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
+            const _epUnlocked = _epGet(_epKey) === 'true';
+            if (!_epUnlocked) {
+              // First threshold crossing — flag but stay hidden (shows on next render).
+              _epSet(_epKey, 'true');
+            } else {
+              const _epN = _epAnalysed.length;
+              // Hide once Pattern Signals takes over at 15+ to avoid redundancy.
+              const _psUnlocked = (() => { try { return localStorage.getItem('rw_intel_ps_unlocked') === 'true'; } catch(e) { return false; } })();
+              if (_epN < 15 || !_psUnlocked) {
+                const _epSignals = _computeEmergingPattern(_epAnalysed);
+                if (_epSignals && _epSignals.length > 0) {
+                  const _epMeta = `<div class="rw-intel-meta">Early patterns \u00B7 ${_epN} analysed role${_epN !== 1 ? 's' : ''}</div>`;
+                  const _epBody = _epMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_epSignals.map(p =>
+                    `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(p)}</div>`
+                  ).join('')}</div>`;
+                  _cpiCards += card('Emerging Pattern', _epBody, 'section-emerging-pattern', true, 'rw-card--intel');
+                }
+              }
+            }
+          }
+        }
+
+        // ── Search Pattern — suppressed when Pattern Signals is unlocked ──────────────
+        // RW-ROLEPAGE-CAREER-04: Search Pattern and Pattern Signals both appear at 15+
+        // analysed roles and cover similar ground ("what the search looks like" vs
+        // "patterns observed"). Showing both creates visual redundancy. Pattern Signals
+        // is the delayed, higher-fidelity card; when it is visible, Search Pattern adds
+        // little and is suppressed. Threshold and data logic unchanged.
+        if (!_cpiPsUnlocked) {
+          const _spAllRoles    = typeof roles !== 'undefined' ? roles : [];
+          const _spAnalysed    = _spAllRoles.filter(r => r.latest_match_output && r.latest_match_output.fit_reality_summary);
+          if (_spAnalysed.length >= 15) {
+            const _spN        = _spAnalysed.length;
+            const _spPatterns = _computeSearchPattern(_spAnalysed);
+            if (_spPatterns && _spPatterns.length > 0) {
+              const _spMeta = `<div class="rw-intel-meta">Observed across ${_spN} analysed role${_spN !== 1 ? 's' : ''}</div>`;
+              const _spBody = _spMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_spPatterns.slice(0, 3).map(p =>
                 `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(p)}</div>`
               ).join('')}</div>`;
-              html += card('Pattern Signals', _patternHtml, 'section-pattern-signals', true, 'rw-card--intel');
+              _cpiCards += card('Search Pattern', _spBody, 'section-search-pattern', true, 'rw-card--intel');
             }
           }
         }
-      }
 
-      // ── Decision Signals (full-width, 100+ analysed AND 40+ outcomes; delayed until next render) ──
-      {
-        const _allRolesDS = typeof roles !== 'undefined' ? roles : [];
-        const _dsAnalysed = _allRolesDS.filter(r => r.latest_match_output && r.latest_match_output.fit_reality_summary);
-        const _DS_OUTCOMES = new Set(['waiting', 'responded', 'ghosted', 'no_response', 'interviewing', 'offer', 'offer_accepted', 'rejected', 'withdrew']);
-        const _dsOutcome  = _allRolesDS.filter(r => r.outcome_state && _DS_OUTCOMES.has(r.outcome_state));
-        if (_dsAnalysed.length >= 100 && _dsOutcome.length >= 40) {
-          const _dsKey      = 'rw_intel_ds_unlocked';
-          const _dsCountKey = 'rw_intel_ds_count';
-          const _dsGet  = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
-          const _dsSet  = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
-          const _dsUnlocked = _dsGet(_dsKey) === 'true';
-          if (!_dsUnlocked) {
-            _dsSet(_dsKey, 'true');
-          } else {
-            const _dsN      = _dsAnalysed.length;
-            const _dsOutcomeN = _dsOutcome.length;
-            const _dsLastN  = parseInt(_dsGet(_dsCountKey) || '0', 10);
-            const _dsGrowing = _dsLastN > 0 && (_dsN - _dsLastN) >= 5;
-            _dsSet(_dsCountKey, String(_dsN));
-            const _decisionSignals = _computeDecisionSignals(_dsAnalysed, _dsOutcome);
-            if (_decisionSignals && _decisionSignals.length > 0) {
-              const _dsMeta = `<div class="rw-intel-meta">Observed across ${_dsN} roles explored · ${_dsOutcomeN} outcome${_dsOutcomeN !== 1 ? 's' : ''} recorded${_dsGrowing ? ' · Patterns developing' : ''}</div>`;
-              const _dsHtml = _dsMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_decisionSignals.slice(0, 3).map(s =>
-                `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(s)}</div>`
-              ).join('')}</div>`;
-              html += card('Decision Signals', _dsHtml, 'section-decision-signals', true, 'rw-card--intel');
+        // ── Pattern Signals (full-width, 15+ analysed roles; delayed until next render) ──
+        {
+          const _allRoles = typeof roles !== 'undefined' ? roles : [];
+          const _analysedRoles = _allRoles.filter(r => r.latest_match_output && r.latest_match_output.fit_reality_summary);
+          if (_analysedRoles.length >= 15) {
+            // Delayed appearance: only show from the render AFTER the threshold was first crossed.
+            const _psKey      = 'rw_intel_ps_unlocked';
+            const _psCountKey = 'rw_intel_ps_count';
+            const _psGet  = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
+            const _psSet  = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
+            const _psUnlocked = _psGet(_psKey) === 'true';
+            if (!_psUnlocked) {
+              // First threshold crossing this session — flag it but stay invisible.
+              _psSet(_psKey, 'true');
+            } else {
+              const _psN      = _analysedRoles.length;
+              const _psLastN  = parseInt(_psGet(_psCountKey) || '0', 10);
+              const _psGrowing = _psLastN > 0 && (_psN - _psLastN) >= 5;
+              _psSet(_psCountKey, String(_psN));
+              const _patterns = _computePatternSignals(_analysedRoles);
+              if (_patterns && _patterns.length > 0) {
+                const _psMeta = `<div class="rw-intel-meta">Observed across ${_psN} analysed role${_psN !== 1 ? 's' : ''}${_psGrowing ? ' · Pattern strengthening' : ''}</div>`;
+                const _patternHtml = _psMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_patterns.slice(0, 3).map(p =>
+                  `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(p)}</div>`
+                ).join('')}</div>`;
+                _cpiCards += card('Pattern Signals', _patternHtml, 'section-pattern-signals', true, 'rw-card--intel');
+              }
             }
           }
         }
+
+        // ── Decision Signals (full-width, 100+ analysed AND 40+ outcomes; delayed until next render) ──
+        {
+          const _allRolesDS = typeof roles !== 'undefined' ? roles : [];
+          const _dsAnalysed = _allRolesDS.filter(r => r.latest_match_output && r.latest_match_output.fit_reality_summary);
+          const _DS_OUTCOMES = new Set(['waiting', 'responded', 'ghosted', 'no_response', 'interviewing', 'offer', 'offer_accepted', 'rejected', 'withdrew']);
+          const _dsOutcome  = _allRolesDS.filter(r => r.outcome_state && _DS_OUTCOMES.has(r.outcome_state));
+          if (_dsAnalysed.length >= 100 && _dsOutcome.length >= 40) {
+            const _dsKey      = 'rw_intel_ds_unlocked';
+            const _dsCountKey = 'rw_intel_ds_count';
+            const _dsGet  = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
+            const _dsSet  = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
+            const _dsUnlocked = _dsGet(_dsKey) === 'true';
+            if (!_dsUnlocked) {
+              _dsSet(_dsKey, 'true');
+            } else {
+              const _dsN      = _dsAnalysed.length;
+              const _dsOutcomeN = _dsOutcome.length;
+              const _dsLastN  = parseInt(_dsGet(_dsCountKey) || '0', 10);
+              const _dsGrowing = _dsLastN > 0 && (_dsN - _dsLastN) >= 5;
+              _dsSet(_dsCountKey, String(_dsN));
+              const _decisionSignals = _computeDecisionSignals(_dsAnalysed, _dsOutcome);
+              if (_decisionSignals && _decisionSignals.length > 0) {
+                const _dsMeta = `<div class="rw-intel-meta">Observed across ${_dsN} roles explored · ${_dsOutcomeN} outcome${_dsOutcomeN !== 1 ? 's' : ''} recorded${_dsGrowing ? ' · Patterns developing' : ''}</div>`;
+                const _dsHtml = _dsMeta + `<div style="display:flex;flex-direction:column;gap:10px;">${_decisionSignals.slice(0, 3).map(s =>
+                  `<div style="font-size:13px;color:var(--text);line-height:1.55;padding:10px 12px;background:var(--bg-subtle,#fafaf9);border-radius:5px;border-left:2px solid var(--border-medium,#d0cdc8);">${esc(s)}</div>`
+                ).join('')}</div>`;
+                _cpiCards += card('Decision Signals', _dsHtml, 'section-decision-signals', true, 'rw-card--intel');
+              }
+            }
+          }
+        }
+
+        // ── Emit section only when at least one card has unlocked ───────────────────────
+        // RW-ROLEPAGE-CAREER-05: suppress header + section entirely for low-data users.
+        if (_cpiCards) {
+          html += sectionHeader('Career Pattern Intelligence', false, 'career-pattern');
+          html += _cpiCards;
+        }
+        // When _cpiCards is empty: section is fully suppressed — no header, no placeholder.
       }
 
 
@@ -14079,14 +14382,14 @@
       </div>`;
 
       html += `</div>`; // close rw-card-grid
-      html += `</div>`; // close rw-lens-layout__main
 
-      // ── Right panel: sticky Decision Lens + quick role actions ──────────────
+      // ── Quick-action strip: Apply + Skip (RW-ROLEPAGE-LAYOUT-01) ─────────────
+      // Rendered below the card grid; data-ws-quick handled by _wsInitLensPanelActions.
       {
         const _hasSalary = !!(output.practical_details && output.practical_details.salary_annual &&
           output.practical_details.salary_annual !== 'Not stated');
 
-        // Compact salary nudge shown in panel when salary is known
+        // Compact salary line when salary is known
         const _salNudge = _hasSalary
           ? `<div class="rw-lens-panel__salary">${esc(output.practical_details.salary_annual)}</div>`
           : '';
@@ -14110,18 +14413,9 @@
           </button>
         </div>`;
 
-        html += `<div class="rw-lens-layout__panel" id="rw-lens-layout-panel">`;
-        html += `<div class="rw-lens-panel">`;
-        if (_lensHtml) {
-          html += _lensHtml;
-          html += _salNudge;
-          html += _qaHtml;
-        }
-        html += `</div>`; // close rw-lens-panel
-        html += `</div>`; // close rw-lens-layout__panel
+        if (_salNudge) html += _salNudge;
+        html += _qaHtml;
       }
-
-      html += `</div>`; // close rw-lens-layout
 
       return html;
     }

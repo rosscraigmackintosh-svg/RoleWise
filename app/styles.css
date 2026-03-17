@@ -26,7 +26,7 @@
     /* ─── Five-panel app shell: nav | filter | list | overview | chat ── */
     .app {
       display: grid;
-      grid-template-columns: 204px 0px 260px 1fr 360px;
+      grid-template-columns: 254px 0px 310px 1fr 360px; /* RW-LAYOUT-WIDTH-01: nav +50, list +50 */
       height: 100vh;
       overflow: hidden;
       transition: grid-template-columns 0.18s ease;
@@ -2949,6 +2949,71 @@
       font-style: italic;
     }
 
+    /* ─── Decision Summary block (RW-ROLEPAGE-TOP-01) ──────────────
+       Unified card wrapping Fit Assessment, Potential blockers,
+       My Verdict, and Decision history into one calm decision block.
+       Sub-sections strip their own card borders and sit flush inside
+       with a top-border divider between each visible section.       */
+
+    .rw-decision-summary {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .rw-ds-header {
+      padding: 12px 18px 10px;
+    }
+
+    .rw-ds-title {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-light);
+    }
+
+    /* Fit Assessment: flatten card appearance, keep as first sub-section */
+    .rw-decision-summary .rw-fa-card {
+      background: none;
+      border: none;
+      border-top: 1px solid var(--border-light);
+      border-radius: 0;
+      margin-bottom: 0;
+      padding: 14px 18px 16px;
+    }
+
+    /* Potential blockers: flatten and add top divider */
+    .rw-decision-summary .dl-blockers-section {
+      background: none;
+      border: none;
+      border-top: 1px solid var(--border-light);
+      border-radius: 0;
+      margin: 0;
+      padding: 14px 18px;
+    }
+
+    /* My Verdict: flatten and add top divider */
+    .rw-decision-summary .ws-dc-card {
+      background: none;
+      border: none;
+      border-top: 1px solid var(--border-light);
+      border-radius: 0;
+      padding: 12px 18px;
+    }
+
+    /* Decision History: flatten and add top divider */
+    .rw-decision-summary .dl-history-section {
+      background: none;
+      border: none;
+      border-top: 1px solid var(--border-light);
+      border-radius: 0;
+      margin: 0;
+      padding: 12px 18px;
+    }
+
     /* ─── Role Intelligence Summary ─────────────────────────────── */
     /* Compact briefing block between quality indicator and card grid. */
     /* Renders as a horizontal wrap of signal pills, each with a tone  */
@@ -3625,7 +3690,7 @@
 
     /* ── Intake mode: collapse col-chat column, expand overview ── */
     .app.intake-mode {
-      grid-template-columns: 204px 0px 260px 1fr 0px;
+      grid-template-columns: 254px 0px 310px 1fr 0px; /* RW-LAYOUT-WIDTH-01: nav +50, list +50 */
     }
     .app.intake-mode .col-chat {
       display: none;
@@ -4174,6 +4239,7 @@
       letter-spacing: 0.12em;
       color: var(--text-light);
       margin-bottom: 16px;
+      text-wrap: balance;    /* prevent orphaned words in card titles */
     }
     /* Remove interior dividers from the main analysis panel — only Role Record border remains */
     #match-output-panel .doc-section-heading {
@@ -9126,9 +9192,9 @@
      */
     .rw-card-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      column-gap: 20px;
-      row-gap: 24px;
+      grid-template-columns: 1fr; /* RW-ROLEPAGE-LAYOUT-01: single column */
+      column-gap: 0;
+      row-gap: 20px;
       padding: 4px 0 24px;
     }
 
@@ -9143,9 +9209,9 @@
       margin-bottom: 12px;
     }
 
-    /* Full-width cards span both columns */
+    /* Full-width cards — single-column layout, no span needed (RW-ROLEPAGE-LAYOUT-01) */
     .rw-card--full {
-      grid-column: 1 / -1;
+      grid-column: 1;
     }
 
     /* ─────────────────────────────────────────────────────────────────────── */
@@ -9162,17 +9228,7 @@
       margin-bottom: 16px;
     }
 
-    /* Fit Reality Summary: primary interpretation card.
-     * The most important card in the overview. Extra room, the firmest border,
-     * without any dashboard-style treatment.                                 */
-    #section-fit-reality {
-      padding: 28px 32px;
-      border-width: 1.5px;
-    }
-
-    #section-fit-reality > .doc-section-heading {
-      margin-bottom: 20px;
-    }
+    /* #section-fit-reality removed (RW-ROLEPAGE-FITREALITY-02) — dead rules deleted */
 
     /* ─────────────────────────────────────────────────────────────────────── */
     /* Tier 2 — Data: Practical Details, Compensation Snapshot,               */
@@ -9250,8 +9306,7 @@
         grid-column: 1;
       }
       /* Restore uniform padding on mobile — no tier differentiation needed */
-      .rw-card--narrative,
-      #section-fit-reality {
+      .rw-card--narrative {
         padding: 18px 20px;
       }
       .rw-card--data {
@@ -9303,6 +9358,7 @@
       margin-top: -6px;   /* pulls up against the heading */
       margin-bottom: 12px;
       line-height: 1.4;
+      font-variant-numeric: tabular-nums; /* keeps "23 roles" counts layout-stable */
     }
 
     /* ── Intelligence card UX: subtle fade-in on appearance ─────────────────── */
@@ -9318,6 +9374,14 @@
     @keyframes rw-intel-fadein {
       from { opacity: 0; }
       to   { opacity: 1; }
+    }
+
+
+    /* ── Secondary intel card — supplementary, appears after primary cards ────── */
+    /* RW-ROLEPAGE-CAREER-04: used for Your Role Signals when Pattern Signals is   */
+    /* also visible. Removes the fade-in so it does not announce itself.           */
+    .rw-card--intel-secondary {
+      animation: none;
     }
 
     /* Reduce motion: respect OS preference */
@@ -9369,6 +9433,7 @@
       letter-spacing: 0.08em;
       color: var(--text-light);
       line-height: 1;
+      text-wrap: balance;    /* prevent orphaned words in section headers */
     }
 
     /* Mobile: keep section breaks readable when stacked */
@@ -9395,22 +9460,17 @@
     .rw-card {
       padding: 16px 18px;
       border-radius: 8px;
-      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      transition: transform 0.12s ease;
     }
 
     .rw-card--narrative {
       padding: 20px 24px;
     }
 
-    #section-fit-reality {
-      padding: 24px 28px;
-    }
-
-    /* Hover: very small vertical lift + soft shadow — cards feel clickable     */
-    /* but calm. No dramatic motion.                                            */
+    /* Hover: very small vertical lift — cards feel clickable but calm.         */
+    /* Shadow removed (RW-UI-SHADOWS-01); lift alone provides feedback.        */
     .rw-card:hover {
       transform: translateY(-1px);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     }
 
     /* Suppress hover lift on full-width intel cards — they span columns and   */
@@ -9662,6 +9722,15 @@
       letter-spacing: 0.06em;
     }
 
+    /* Key Signals nested inside Role Briefing (RW-ROLEPAGE-BRIEFING-05):
+       The outer "Key Signals" sub-label is styled by #section-briefing .rw-sub-label.
+       Inner signal-type sub-sections are not :first-child (label div precedes them),
+       so default 14px border/margin applies. Tighten the first inner connection. */
+    #section-briefing #section-role-signals > .rw-sub-section:nth-child(2) {
+      margin-top: 8px;
+      padding-top: 8px;
+    }
+
     /* Mobile: restore uniform padding on Rolewise Briefing */
     @media (max-width: 720px) {
       #section-briefing {
@@ -9805,6 +9874,12 @@
       border-color: var(--border);
     }
 
+    /* Tactile press feedback — scale to 0.96, faster than hover transition */
+    .rw-lens-qa-btn:active {
+      transform: scale(0.96);
+      transition-duration: 60ms;
+    }
+
     /* Apply button: slight positive accent without a hard colour token */
     .rw-lens-qa-btn--apply {
       border-color: var(--green, #27ae60);
@@ -9870,6 +9945,116 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
+       RW-ROLEPAGE-LAYOUT-01 — Single-column layout
+       ─────────────────────────────────────────────────────────────────────
+       The rw-lens-layout two-column wrapper has been removed from the HTML.
+       All cards render in a single vertical stack inside rw-card-grid (1fr).
+       The Apply/Skip strip and optional salary nudge render below the grid.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* Apply/Skip strip sits below the card grid — give it breathing room */
+    .rw-lens-qa-strip {
+      margin-top: 16px;
+    }
+
+    /* Salary nudge shown above Apply/Skip when salary is known */
+    .rw-lens-panel__salary {
+      margin-top: 16px;
+      margin-bottom: 0;
+    }
+
+    /* Decision Lens card: in the grid it should be full-width (already rw-card--full)
+       and the previously-sticky panel overrides are no longer needed */
+    .rw-lens-panel .rw-card--full,
+    .rw-lens-panel .rw-decision-lens {
+      grid-column: 1;
+      width: auto;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       RW-ROLEPAGE-SIMILAR-ROLES-01 — Similar Roles Insight card
+       ─────────────────────────────────────────────────────────────────────
+       Compact briefing-style card immediately following Rolewise Briefing.
+       Shows outcomes and common traits from structurally similar roles.
+       Tone is observational only — no predictions, no scores.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    .rw-srim {
+      padding: 16px 20px;
+      background: var(--bg-card);
+      border-color: var(--border-light);
+    }
+
+    /* Card has no title; suppress the default heading slot */
+    .rw-srim > .doc-section-heading { display: none; }
+
+    .rw-srim-intro {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      font-weight: 500;
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+
+    .rw-srim-section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-light);
+      margin-bottom: 7px;
+      margin-top: 12px;
+    }
+    .rw-srim-section-label:first-of-type { margin-top: 0; }
+
+    /* Outcome chips */
+    .rw-srim-outcomes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .rw-srim-chip {
+      display: inline-flex;
+      align-items: center;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: var(--bg-subtle, #fafaf9);
+      border: 1px solid var(--border-light);
+      border-radius: 4px;
+      padding: 3px 8px;
+      white-space: nowrap;
+    }
+    .rw-srim-chip--offer     { color: var(--green, #27ae60); border-color: rgba(39,174,96,0.25); }
+    .rw-srim-chip--interview { color: var(--accent, #2980b9); border-color: rgba(41,128,185,0.2); }
+    .rw-srim-chip--rejected  { color: var(--red, #c0392b); border-color: rgba(192,57,43,0.2); }
+    .rw-srim-chip--muted     { color: var(--text-light); border-color: var(--border-light); }
+
+    /* Common traits list */
+    .rw-srim-traits {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .rw-srim-traits li {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      padding-left: 14px;
+      position: relative;
+    }
+    .rw-srim-traits li::before {
+      content: '\00b7';
+      position: absolute;
+      left: 3px;
+      color: var(--text-light);
+      font-weight: 700;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
        RW-ROLEPAGE-AI-INTERACTION-01 — Inline Ask AI section explanations
        ─────────────────────────────────────────────────────────────────────
        Ask AI button appears in section headers and card headings.
@@ -9897,6 +10082,17 @@
       flex-shrink: 0;
       transition: color 0.12s, border-color 0.12s, opacity 0.12s;
       line-height: 1.6;
+      position: relative; /* enables ::after hit-area expansion */
+    }
+    /* Expand touch target to ~44px without changing the visual size (WCAG 2.5.5) */
+    .rw-ask-ai-btn::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      min-width: 44px;
+      min-height: 44px;
     }
     .rw-ask-ai-btn:hover {
       color: var(--text-muted);
@@ -10106,16 +10302,16 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
-       ROLE DETAIL MAX WIDTH — focused reading column
+       ROLE DETAIL MAX WIDTH — page-width cap (RW-ROLEPAGE-TOP-01)
        ─────────────────────────────────────────────────────────────────────
-       Cards in the middle panel are constrained to 720px for comfortable
-       line lengths. On wide screens the content block centres horizontally.
+       Cards in the middle panel are capped at 1200px for layout quality.
+       Centred horizontally within the overview column on wide screens.
        Sticky header, rail, and other structural elements are unaffected.
        ═══════════════════════════════════════════════════════════════════════ */
 
     /* Overview / analysis card grid wrapper */
     .rw-overview-wrap {
-      max-width: 720px;
+      max-width: 1200px;   /* RW-ROLEPAGE-TOP-01: expanded from 720px */
       margin-left: auto;
       margin-right: auto;
     }
@@ -10403,7 +10599,7 @@
       border-radius: 8px;
       border: 1px solid var(--card-border);
       background: var(--card-bg);
-      box-shadow: var(--shadow-md);
+      /* box-shadow removed (RW-UI-SHADOWS-01) — cards use border + bg for separation */
     }
 
     /* Legacy doc view inner wrapper: also on grey panel — no bg override    */
@@ -10645,8 +10841,9 @@
 .rw-action-btn:active {
   background: var(--accent-soft);
   border-color: var(--accent);
-  transform: translateY(0);
+  transform: scale(0.98) translateY(0); /* adds press feel distinct from hover lift */
   box-shadow: none;
+  transition-duration: 60ms;
 }
 
 .rw-action-btn.rw-action-btn--loading {
