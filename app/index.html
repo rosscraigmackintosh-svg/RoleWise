@@ -10,6 +10,8 @@
   <link rel="stylesheet" href="styles.css">
   <!-- Reasoning Map — advanced internal feature. Remove this line + reasoning-map.js to disable. -->
   <link rel="stylesheet" href="reasoning-map.css">
+  <!-- AI Inspect Mode — DEV ONLY. Remove these two lines for production builds. -->
+  <link rel="stylesheet" href="devtools/inspect/inspect-mode.css">
 </head>
 <body>
 
@@ -493,8 +495,14 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Prompt layer — must load before app.js so helpers are available globally -->
   <script src="ai/prompts/rolewise-prompts.js"></script>
+  <!-- AI Inspect: ai-meta.js must load before app.js so aiMeta() is available during render -->
+  <!-- DEV ONLY — remove this line for production builds -->
+  <script src="devtools/inspect/ai-meta.js"></script>
   <!-- Reasoning Map — must load after app.js so the bridge click handler fires after ROLEWISE_REASONING_MAP is set -->
   <script src="app.js"></script>
   <script src="reasoning-map.js"></script>
+  <!-- AI Inspect: inspect-mode.js loads after app.js (needs DOM ready + app state) -->
+  <!-- DEV ONLY — remove this line for production builds -->
+  <script src="devtools/inspect/inspect-mode.js"></script>
 </body>
 </html>

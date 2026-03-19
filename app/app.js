@@ -851,6 +851,10 @@
       const headerEl = document.createElement('div');
       headerEl.id        = 'col-role-header';
       headerEl.className = 'col-role-header';
+      // ── AI Inspect: tag this node so the inspect system can identify it ──
+      if (typeof aiMeta === 'function') {
+        aiMeta(headerEl, { nodeId: 'role-header', component: 'RoleHeader', slot: 'header', label: 'Role Header' });
+      }
       headerEl.innerHTML = `
         <div class="rh-inner">
           <div class="rh-left">
@@ -951,7 +955,7 @@
         : '';
 
       el.innerHTML = `
-        <div class="jd-card">
+        <div class="jd-card" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'jd-card', component: 'JDCard', slot: 'jd', label: 'Job Description Card' }) : ''}>
           <div class="jd-card-header">
             <span class="jd-card-title">Original job description</span>
             <div class="jd-card-meta">
@@ -6879,7 +6883,7 @@
       // Build workspace scaffold
       el.innerHTML = `
         <div class="ws-workspace" id="ws-workspace">
-          <div class="ws-workspace-header" id="ws-workspace-header">
+          <div class="ws-workspace-header" id="ws-workspace-header" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'workspace-header', component: 'WorkspaceHeader', slot: 'header', label: 'Workspace Header' }) : ''}>
             ${_wsHeaderCompany
               ? `<div class="ws-header-company">${esc(_wsHeaderCompany)}</div>
                  <div class="ws-header-title">${esc(_wsHeaderTitle || 'Untitled role')}</div>
@@ -6898,7 +6902,7 @@
           </div>
           <div class="ws-timeline" id="ws-timeline"><div class="ws-timeline-spacer"></div></div>
           <div id="ws-scroll-nudge" role="button" aria-label="Scroll to latest">↓ New response</div>
-          <div class="ws-chat-bar" id="ws-chat-bar">
+          <div class="ws-chat-bar" id="ws-chat-bar" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'chat-bar', component: 'ChatBar', slot: 'input', label: 'Chat Bar' }) : ''}>
             <div class="ws-salary-hint" id="ws-salary-hint" hidden></div>
             <div class="ws-attachment-preview" id="ws-attachment-preview"></div>
             <div class="ws-chat-inner">
@@ -8998,7 +9002,7 @@
       // ── Stage + Outcome chips + Admin → role-chips-section (single card) ───
       if (chipsEl) {
         chipsEl.innerHTML = `
-          <div class="rail-chips-area">
+          <div class="rail-chips-area" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'stage-rail', component: 'StageRail', slot: 'stage-tracker', label: 'Stage & Outcome Rail' }) : ''}>
             <div class="rail-chips-row">
               <span class="rail-chips-label">Stage</span>
               <div class="rail-chips-list" id="rail-stepper" data-decision-accent="${_decisionAccent}">
@@ -13273,7 +13277,7 @@
                 <ul class="rw-fa-bullets rw-fa-bullets--warn">${_fa.watchouts.map(w => `<li>${esc(w)}</li>`).join('')}</ul>
                </div>`
             : '';
-          html += `<div class="rw-decision-summary" id="section-decision-summary"><div class="rw-ds-header"><span class="rw-ds-title">Decision Summary</span></div><div class="rw-fa-card" id="section-fit-assessment">
+          html += `<div class="rw-decision-summary" id="section-decision-summary"><div class="rw-ds-header"><span class="rw-ds-title">Decision Summary</span></div><div class="rw-fa-card" id="section-fit-assessment" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'fit-assessment', component: 'FitAssessmentCard', slot: 'overview-card', label: 'Fit Assessment Card' }) : ''}>
             <div class="rw-fa-title">Fit Assessment</div>
             <div class="rw-fa-summary">${esc(_fa.summary)}</div>
             ${_fa.mainReason ? `<div class="rw-fa-main-reason"><span class="rw-fa-main-reason-label">Main reason:</span> ${esc(_fa.mainReason)}</div>` : ''}
@@ -13303,12 +13307,12 @@
 
         // Salary as lightweight inline context span inside the strip
         const _salInline = _hasSalary
-          ? `<span class="rw-qa-salary">${esc(output.practical_details.salary_annual)}</span>`
+          ? `<span class="rw-qa-salary" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'salary-display', component: 'SalaryCard', slot: 'salary', label: 'Salary Display' }) : ''}>${esc(output.practical_details.salary_annual)}</span>`
           : '';
 
         // Quick-action buttons: Apply · Skip
         // data-ws-quick is handled by the panel action delegator (_wsInitLensPanelActions).
-        html += `<div class="rw-lens-qa-strip">${_salInline}<button class="rw-lens-qa-btn rw-lens-qa-btn--apply" data-ws-quick="applied"
+        html += `<div class="rw-lens-qa-strip" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'primary-actions', component: 'QuickActionStrip', slot: 'actions', label: 'Primary Action Area' }) : ''}>${_salInline}<button class="rw-lens-qa-btn rw-lens-qa-btn--apply" data-ws-quick="applied"
             aria-label="Mark as Applied" title="Mark this role as Applied">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
               <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -13358,7 +13362,7 @@
               `<span class="ris-value">${esc(s.value)}</span>` +
             `</div>`
           ).join('');
-          html += `<div class="rw-intel-summary" id="section-intel-summary">${_risHtml}</div>`;
+          html += `<div class="rw-intel-summary" id="section-intel-summary" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'intel-summary', component: 'IntelSummary', slot: 'signals', label: 'Intel Summary' }) : ''}>${_risHtml}</div>`;
         }
       }
 
@@ -13423,7 +13427,7 @@
               `<div class="rw-bh-cell"><span class="rw-bc-label">${esc(k)}</span><span class="rw-bc-value">${esc(v)}</span></div>`
             ).join('')}</div>`;
           }
-          _briefHtml += `<div class="rw-briefing-header">${_bh}</div>`;
+          _briefHtml += `<div class="rw-briefing-header" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'role-briefing', component: 'RoleBriefing', slot: 'briefing', label: 'Role Briefing' }) : ''}>${_bh}</div>`;
         }
       }
       html += sectionHeader('Role Briefing', true, 'briefing');
@@ -13491,7 +13495,7 @@
             if (_hsSig) {
               _hsHtml2 += `<div style="font-size:11.5px;color:var(--text-light);font-style:italic;line-height:1.4;">\u201c${esc(_hsSig)}\u201d</div>`;
             }
-            _leftHtml += `<div class="rw-sub-section" id="section-hiring-system"><div class="rw-sub-label">Hiring Context</div>${_hsHtml2}</div>`;
+            _leftHtml += `<div class="rw-sub-section" id="section-hiring-system" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'hiring-context', component: 'HiringContext', slot: 'hiring', label: 'Hiring Context' }) : ''}><div class="rw-sub-label">Hiring Context</div>${_hsHtml2}</div>`;
           }
         }
 
@@ -13578,7 +13582,7 @@
 
               let _structHtml = `<table style="width:100%;border-collapse:collapse;">${_renderRows(_primaryRows, false)}${_primaryRows.length && _secondaryRows.length ? `<tr style="border-bottom:1px solid var(--border-light);"><td colspan="2" style="padding:0;"></td></tr>` : ''}${_renderRows(_secondaryRows, true)}</table>`;
 
-              _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-shape"><div class="rw-sub-label">Structural Signals</div>${_structHtml}</div>`;
+              _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-shape" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'role-shape-signals', component: 'RoleShapeSignals', slot: 'signals', label: 'Structural Signals' }) : ''}><div class="rw-sub-label">Structural Signals</div>${_structHtml}</div>`;
               _roleSignalsHas = true;
             }
           }
@@ -13650,7 +13654,7 @@
 
             const _opTable = `<table style="width:100%;border-collapse:collapse;">${_renderOpRows(_opPrimary, false)}${_opPrimary.length && _opSecondary.length ? `<tr style="border-bottom:1px solid var(--border-light);"><td colspan="2" style="padding:0;"></td></tr>` : ''}${_renderOpRows(_opSecondary, true)}</table>`;
 
-            _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-reality-signals"><div class="rw-sub-label">Operational Signals</div>${_opTable}</div>`;
+            _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-reality-signals" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'role-reality-signals', component: 'RoleRealitySignals', slot: 'signals', label: 'Operational Signals' }) : ''}><div class="rw-sub-label">Operational Signals</div>${_opTable}</div>`;
             _roleSignalsHas = true;
           }
         }
@@ -20130,7 +20134,7 @@
       const _profileClass = _classifyProfileUrl(rec.linkedin_url);
       const _profileLabel = _profileClass || 'View profile';
 
-      let html = `<div class="rc-detail">
+      let html = `<div class="rc-detail" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'recruiter-card', component: 'RecruiterDetail', slot: 'recruiter', label: 'Recruiter Detail' }) : ''}>
         <div class="rc-detail-header">
           <div class="rc-avatar rc-avatar-lg ${esc(_avatarClass)}" aria-hidden="true">${esc(_initials)}</div>
           <div class="rc-detail-header-text">
@@ -20639,7 +20643,7 @@
       listEl.style.flexDirection = 'column';
 
       // Build contacts list panel HTML
-      listEl.innerHTML = `<div class="rc-list-panel">
+      listEl.innerHTML = `<div class="rc-list-panel" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'recruiter-list', component: 'RecruiterList', slot: 'list', label: 'Recruiter List' }) : ''}>
         <div class="rc-list-header">
           <div class="rc-list-title">Role Contacts</div>
           <button class="rc-add-btn" id="rc-add-recruiter-btn">+ Add contact</button>
