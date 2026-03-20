@@ -36,7 +36,7 @@
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.07em;
+      letter-spacing: 0.04em;
       color: var(--text-muted);
       margin-bottom: 14px;
     }
@@ -102,6 +102,89 @@
       line-height: 1.5;
     }
 
+    /* ── RoleCard ───────────────────────────────────────────────────────────
+       Canonical slot vocabulary for the primary repeated role surface.
+       Applied to renderRoleCard() alongside existing .inbox-* classes.
+       The .inbox-* context layer in styles.css overrides base values where
+       needed — these slots define the standalone-reusable appearance.
+       JS query hooks (.inbox-role-company / .inbox-role-title) are separate
+       and must not be removed from app.js.
+
+       Slot map:
+         .rw-role-card                — outer wrapper
+         .rw-role-card__company       — company name (primary visual anchor)
+         .rw-role-card__company--unknown — when company_name is absent
+         .rw-role-card__title         — role title (secondary, muted)
+         .rw-role-card__signal        — single intelligence hint line
+         .rw-role-card__meta          — location · engagement · action · time
+         .rw-role-card__badge         — hiring signal badge row (ars-badge)
+         .rw-role-card__reasons       — up to 2 mini decision signals
+       ──────────────────────────────────────────────────────────────────── */
+
+    .rw-role-card {
+      display: block;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .rw-role-card__company {
+      font-size: var(--text-md, 14px);
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3;
+    }
+
+    .rw-role-card__company--unknown {
+      color: var(--text-light);
+    }
+
+    .rw-role-card__title {
+      font-size: var(--text-sm, 12px);
+      font-weight: 400;
+      color: var(--text-muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.4;
+    }
+
+    .rw-role-card__signal {
+      font-size: var(--text-xs, 11px);
+      color: var(--text-light);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.4;
+    }
+
+    .rw-role-card__meta {
+      font-size: var(--text-xs, 11px);
+      color: var(--text-muted);
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rw-role-card__badge {
+      margin-top: 6px;
+    }
+
+    .rw-role-card__reasons {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-style: italic;
+    }
+
     /* ── FrictionSignal ────────────────────────────────────────────────────
        Usage: individual { label, text } signal objects from friction_signals.
        Replaces the editorial bullet list inside renderDeepContextHtml.
@@ -117,7 +200,7 @@
       background: var(--surface);
       border: 1px solid var(--border-light);
       border-left: 3px solid var(--warning-200, #fedf89);
-      border-radius: var(--radius-lg);
+      border-radius: 6px;
       padding: 12px 16px;
     }
 

@@ -1618,12 +1618,12 @@
         if (role.engagement_type && role.engagement_type !== 'Unknown') metaParts.push(role.engagement_type);
         if (_userAction) metaParts.push(_userAction);
         if (_timeLabel) metaParts.push(_timeLabel);
-        const metaHtml = `<div class="inbox-meta">${metaParts.map(esc).join(' \u00B7 ')}</div>`;
+        const metaHtml = `<div class="rw-role-card__meta inbox-meta">${metaParts.map(esc).join(' \u00B7 ')}</div>`;
 
         // ── Hiring signal badge (company behaviour, not user action) ───────────
         const _hs = _hiringSignal(role);
         const hiringBadgeHtml = _hs
-          ? `<div class="inbox-hs"><span class="ars-badge ars-${_hs.status}">${esc(_hs.label)}</span></div>`
+          ? `<div class="rw-role-card__badge inbox-hs"><span class="ars-badge ars-${_hs.status}">${esc(_hs.label)}</span></div>`
           : '';
 
         // ── Mini reason line — up to 2 decision signals ────────────────────────
@@ -1633,13 +1633,13 @@
         const _miniSignals     = [..._frictionPhrases];
         if (_archPrimary && _miniSignals.length < 2) _miniSignals.push(_archPrimary);
         const miniReasonHtml = _miniSignals.length
-          ? `<div class="inbox-mini-reasons">${_miniSignals.slice(0, 2).map(esc).join(' \u00B7 ')}</div>`
+          ? `<div class="rw-role-card__reasons inbox-mini-reasons">${_miniSignals.slice(0, 2).map(esc).join(' \u00B7 ')}</div>`
           : '';
 
         // ── Intelligence signal — single notable characteristic beneath title ──
         const _intelSig    = _buildInboxSignal(lmo);
         const intelSigHtml = _intelSig
-          ? `<div class="inbox-signals">${esc(_intelSig)}</div>`
+          ? `<div class="rw-role-card__signal inbox-signals">${esc(_intelSig)}</div>`
           : '';
 
         // ── Boundary match indicator (Decision Layer V1) ───────────────────────
@@ -1654,9 +1654,9 @@
           return `<div class="inbox-boundary-match">Boundary match</div>`;
         })();
 
-        return `<div class="inbox-role${role.id === selectedRoleId ? ' active' : ''}"${decAttr} data-id="${esc(role.id)}">
-          <div class="inbox-company inbox-role-company${company ? '' : ' inbox-company-unknown'}">${attnDot}${esc(company || 'Unknown company')}</div>
-          <div class="inbox-title inbox-role-title">${esc(title)}</div>
+        return `<div class="rw-role-card inbox-role${role.id === selectedRoleId ? ' active' : ''}"${decAttr} data-id="${esc(role.id)}">
+          <div class="rw-role-card__company inbox-company inbox-role-company${company ? '' : ' inbox-company-unknown rw-role-card__company--unknown'}">${attnDot}${esc(company || 'Unknown company')}</div>
+          <div class="rw-role-card__title inbox-title inbox-role-title">${esc(title)}</div>
           ${intelSigHtml}
           ${metaHtml}
           ${hiringBadgeHtml}
