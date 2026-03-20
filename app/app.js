@@ -7908,12 +7908,16 @@
 
       // Build the top-of-page signal element based on whether role has progressed
       const _stageClass     = stageTagClass(_currentStage);
-      const _topSignalHtml  = _isProgressed && decisionLabel
-        // Progressed: stage is primary, initial decision is secondary context
-        ? `<div class="doc-stage-context">
-             <span class="stage-tag${_stageClass ? ' ' + _stageClass : ''}">${esc(_currentStage)}</span>
-             <span class="doc-initial-decision">Initial decision: ${esc(decisionLabel)}</span>
-           </div>`
+      const _topSignalHtml  = _isProgressed
+        // Progressed: calm applied-timing line. Stage state lives in the rail — no pill here.
+        ? (() => {
+            if (role._appliedDate) {
+              const _days = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
+              const _daysStr = _days === 0 ? 'today' : _days === 1 ? 'yesterday' : `${_days} days ago`;
+              return `<div class="doc-applied-status">Applied ${_daysStr}</div>`;
+            }
+            return `<div class="doc-applied-status">In progress</div>`;
+          })()
         // JD Review or no decision yet: show decision badge as before
         : decisionLabel
           ? `<div class="doc-decision ${decisionClass}">${esc(decisionLabel)}</div>`
@@ -7929,6 +7933,7 @@
               <h1 class="doc-role-title">${esc(role.role_title)}</h1>
               <div class="doc-meta">${_metaLine3 ? `<span id="doc-meta-line3">${_metaLine3}</span>` : ''}<span id="doc-meta-emptype"></span></div>
               <div class="doc-meta-posted">${esc(_addedLabel)}</div>
+              ${role.job_url ? `<div class="doc-meta-job-link"><a href="${esc(role.job_url)}" target="_blank" rel="noopener">View original posting ↗</a></div>` : ''}
               <div id="doc-meta-salary" class="doc-meta-salary" style="display:none;"></div>
               <div id="doc-meta-recruiter" class="doc-meta-recruiter" style="display:none;"></div>
               <div id="doc-meta-start" class="doc-meta-start" style="display:none;"></div>
@@ -7946,6 +7951,8 @@
           <div id="doc-decision-summary" style="display:none;"></div>
           <!-- Next Action — filled async after decision summary -->
           <div id="doc-next-action"></div>
+          <!-- Progressed quick-actions — filled synchronously for in-process roles -->
+          <div id="doc-progressed-actions"></div>
           <!-- Role Lens — filled async when analysis loads -->
           <div id="doc-role-lens" style="display:none;"></div>
           <!-- Jump links — filled async when analysis loads -->
@@ -8019,6 +8026,38 @@
             _appMetaEl.innerHTML = _ctxLines.join('');
             _appMetaEl.style.display = '';
           }
+        }
+      }
+
+      // ── Fill progressed quick-actions (synchronous — only for in-process roles) ──
+      if (_isProgressed && !isArchivedRole(role) && !role.outcome_state) {
+        const _pActEl = document.getElementById('doc-progressed-actions');
+        if (_pActEl) {
+          const _nextIdx  = currentStageIndex(role) + 1;
+          const _nextStep = RAIL_STAGE_STEPS[_nextIdx] || null;
+          const _nextBtnHtml = _nextStep
+            ? `<button class="doc-pa-btn doc-pa-btn--next" id="doc-pa-next">Moved to ${esc(_nextStep.label)}</button>`
+            : '';
+          _pActEl.innerHTML = `<div class="doc-progressed-actions">
+            ${_nextBtnHtml}
+            <button class="doc-pa-btn doc-pa-btn--rejected" id="doc-pa-rejected">Mark as Rejected</button>
+          </div>`;
+
+          if (_nextStep) {
+            document.getElementById('doc-pa-next')?.addEventListener('click', async () => {
+              const _btn = document.getElementById('doc-pa-next');
+              if (_btn) { _btn.disabled = true; _btn.textContent = 'Saving…'; }
+              await markStage(role.id, _nextStep.status, _nextStep.stage);
+              // Re-render doc to reflect new stage (rail already updates via markStage)
+              const _updated = allRoles.find(r => r.id === role.id);
+              if (_updated) renderRoleDoc(_updated);
+            });
+          }
+
+          document.getElementById('doc-pa-rejected')?.addEventListener('click', () => {
+            // Route to the rail's existing outcome form — no new infrastructure
+            showOutcomeReasonForm(role.id, 'rejected');
+          });
         }
       }
 
@@ -8290,7 +8329,9 @@
                 // ── Next Action + Pattern Notice + Decision Bar ────────────────
                 renderNextAction(role);
                 renderPatternNotice(role);
-                renderDecisionBar(role);
+                // Decision bar (Skip / Save / Apply) is only relevant at JD Review.
+                // For progressed roles the stage + outcome rail handles workflow tracking.
+                if (!_isProgressed) renderDecisionBar(role);
 
                 // ── Sticky Decision Bar ────────────────────────────────────────
                 // Populate the sticky bar (shown via IntersectionObserver when DS scrolls out)
@@ -8629,7 +8670,7 @@
                     // Inject deep context into Role Record
                     const _deepElA = document.getElementById('role-record-deep-analysis');
                     if (_deepElA) _deepElA.innerHTML = renderDeepContextHtml(analysis);
-                    renderDecisionBar(role);
+                    if (!_isProgressed) renderDecisionBar(role);
                   } catch (genErr) {
                     genBtn.disabled = false;
                     genBtn.textContent = 'Generate analysis';
@@ -8721,7 +8762,7 @@
                   // Inject deep context into Role Record
                   const _deepElB = document.getElementById('role-record-deep-analysis');
                   if (_deepElB) _deepElB.innerHTML = renderDeepContextHtml(analysis);
-                  renderDecisionBar(role);
+                  if (!_isProgressed) renderDecisionBar(role);
                 } catch (genErr) {
                   genBtn.disabled = false;
                   genBtn.textContent = 'Generate analysis';
