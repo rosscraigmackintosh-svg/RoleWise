@@ -8331,7 +8331,7 @@
                 renderPatternNotice(role);
                 // Decision bar (Skip / Save / Apply) is only relevant at JD Review.
                 // For progressed roles the stage + outcome rail handles workflow tracking.
-                if (!_isProgressed) renderDecisionBar(role);
+                if (!_isProgressed && !isArchivedRole(role)) renderDecisionBar(role);
 
                 // ── Sticky Decision Bar ────────────────────────────────────────
                 // Populate the sticky bar (shown via IntersectionObserver when DS scrolls out)
@@ -8670,7 +8670,7 @@
                     // Inject deep context into Role Record
                     const _deepElA = document.getElementById('role-record-deep-analysis');
                     if (_deepElA) _deepElA.innerHTML = renderDeepContextHtml(analysis);
-                    if (!_isProgressed) renderDecisionBar(role);
+                    if (!_isProgressed && !isArchivedRole(role)) renderDecisionBar(role);
                   } catch (genErr) {
                     genBtn.disabled = false;
                     genBtn.textContent = 'Generate analysis';
@@ -8762,7 +8762,7 @@
                   // Inject deep context into Role Record
                   const _deepElB = document.getElementById('role-record-deep-analysis');
                   if (_deepElB) _deepElB.innerHTML = renderDeepContextHtml(analysis);
-                  if (!_isProgressed) renderDecisionBar(role);
+                  if (!_isProgressed && !isArchivedRole(role)) renderDecisionBar(role);
                 } catch (genErr) {
                   genBtn.disabled = false;
                   genBtn.textContent = 'Generate analysis';
@@ -9971,7 +9971,7 @@
 
     // ─── Structured reflection options for terminal outcomes (Phase 3) ──────────
     const _REFLECTION_OPTIONS = {
-      rejected:    ['Salary or rate mismatch', 'Location or remote mismatch', 'Overqualified', 'Underqualified', 'Role changed or cancelled', 'No reason given'],
+      rejected:    ['Salary or rate mismatch', 'Location or remote mismatch', 'Overqualified', 'Underqualified', 'Role changed or cancelled'],
       skipped:     ['Salary or rate too low',  'Location or remote mismatch', 'Role scope not right', 'Company concerns', 'Too many unknowns'],
       withdrew:    ['Found a better opportunity', 'Salary or rate too low', 'Role scope changed', 'Timeline didn\'t work', 'Company culture concerns'],
     };
@@ -9986,8 +9986,10 @@
       const _outcomeListForm = document.getElementById('rail-outcome-list');
       if (_outcomeListForm) _outcomeListForm.classList.add('outcome-disabled');
 
-      const label   = RAIL_OUTCOMES.find(o => o.outcomeState === outcomeState)?.label || outcomeState;
-      const _opts   = _REFLECTION_OPTIONS[outcomeState] || [];
+      const label        = RAIL_OUTCOMES.find(o => o.outcomeState === outcomeState)?.label || outcomeState;
+      const _opts        = _REFLECTION_OPTIONS[outcomeState] || [];
+      const _isRejection = outcomeState === 'rejected';
+
       const _chipsHtml = _opts.length ? `
         <div class="rc-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;">
           ${_opts.map(opt => `
@@ -9996,11 +9998,25 @@
         </div>
       ` : '';
 
+      // Rejection-specific: calm heading, short helper text, optional email paste
+      const _headingText = _isRejection ? 'Role not selected' : `Mark as ${esc(label)}`;
+      const _subtextHtml = _isRejection
+        ? `<div class="rw-of__subtext">What happened? A quick note helps you spot patterns later.</div>`
+        : '';
+      const _emailHtml = _isRejection ? `
+        <details class="rw-of__email-details">
+          <summary class="rw-of__email-summary">Paste rejection email <span class="rw-of__optional">(optional)</span></summary>
+          <textarea id="outcome-rejection-email" placeholder="Paste the email here…" spellcheck="false" style="width:100%;box-sizing:border-box;padding:7px 10px;font-size:11.5px;font-family:var(--font);border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text-light);resize:vertical;min-height:72px;margin-top:6px;"></textarea>
+        </details>
+      ` : '';
+
       formEl.innerHTML = `
         <div style="padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);">
-          <div style="font-size:12px;font-weight:500;color:var(--text);margin-bottom:8px;">Mark as ${esc(label)}</div>
+          <div style="font-size:12px;font-weight:500;color:var(--text);margin-bottom:${_isRejection ? '4px' : '8px'};">${_headingText}</div>
+          ${_subtextHtml}
           ${_chipsHtml}
           <textarea id="outcome-reason-input" placeholder="Reason (optional)" spellcheck="true" style="width:100%;box-sizing:border-box;padding:7px 10px;font-size:12px;font-family:var(--font);border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);resize:vertical;min-height:56px;"></textarea>
+          ${_emailHtml}
           <div style="display:flex;gap:6px;margin-top:8px;">
             <button id="outcome-confirm-btn" style="flex:1;padding:7px 0;font-size:12.5px;font-family:var(--font);background:var(--text);color:var(--bg);border:none;border-radius:var(--radius);cursor:pointer;">Confirm</button>
             <button id="outcome-cancel-btn" style="flex:1;padding:7px 0;font-size:12.5px;font-family:var(--font);background:var(--surface);color:var(--text-muted);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">Cancel</button>
@@ -10037,8 +10053,11 @@
       });
 
       document.getElementById('outcome-confirm-btn').addEventListener('click', () => {
-        const reason = document.getElementById('outcome-reason-input')?.value.trim() || null;
-        setOutcome(roleId, outcomeState, reason);
+        const reason    = document.getElementById('outcome-reason-input')?.value.trim() || null;
+        const emailText = document.getElementById('outcome-rejection-email')?.value.trim() || null;
+        // For rejections, combine free-text reason with optional pasted email
+        const combinedReason = [reason, emailText ? `[Rejection email]\n${emailText}` : null].filter(Boolean).join('\n\n') || null;
+        setOutcome(roleId, outcomeState, combinedReason);
       });
 
       document.getElementById('outcome-cancel-btn').addEventListener('click', () => {
@@ -10143,10 +10162,25 @@
         const updatedRole = allRoles.find(r => r.id === roleId);
         if (updatedRole) renderRail(updatedRole);
 
+        // Refresh the role doc for archive outcomes so the doc reflects the new state
+        // (without this, in-process actions and the decision bar remain stale after rejection)
+        if (updatedRole && ARCHIVE_OUTCOME_STATES.has(outcomeState)) {
+          renderRoleDoc(updatedRole);
+        }
+
         // Show a brief confirmation in rail-confirm (now re-rendered, re-query)
         const freshConfirm = document.getElementById('rail-confirm');
         if (freshConfirm) {
-          freshConfirm.textContent = 'Outcome saved.';
+          const _outcomeMsg = {
+            rejected:       'Rejection recorded. Role archived.',
+            withdrew:       'Withdrawal recorded. Role archived.',
+            offer_accepted: 'Offer accepted. Congratulations!',
+            skipped:        'Role skipped.',
+            no_response:    'Marked as no response.',
+            ghosted:        'Marked as ghosted.',
+            closed:         'Role closed.',
+          }[outcomeState] || 'Outcome saved.';
+          freshConfirm.textContent = _outcomeMsg;
           setTimeout(() => { if (freshConfirm) freshConfirm.textContent = ''; }, 2500);
         }
 
