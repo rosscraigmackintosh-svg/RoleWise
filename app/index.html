@@ -301,6 +301,81 @@
       border-color: var(--border);
     }
 
+    /* ── StageChip ──────────────────────────────────────────────────────────
+       Canonical vocabulary for stage progression chips.
+       Applied alongside existing .rail-chip / .rail-step classes in
+       buildStepperItems(). The .rail-chip context layer in styles.css
+       governs sizing, padding, and base hover — system layer provides:
+       semantic token mapping, standalone reusability, and the --skipped
+       modifier (for non-linear flows where stages were never visited).
+
+       State modifiers:
+         --current   Active stage (present in role journey)
+         --done      Completed stage (visited and passed)
+         --upcoming  Future stage (not yet reached)
+         --skipped   Stage not visited in this role's actual journey
+                     (e.g. Applied → Final skips Recruiter/HM/Panel)
+         --locked    Outcome set — read-only, pointer-events off
+
+       JS selectors that must be preserved (unchanged):
+         .rail-step.clickable → wireStepperHandlers (click/keydown)
+         data-status / data-stage attributes on clickable steps
+       ──────────────────────────────────────────────────────────────────── */
+
+    .rw-stage-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: var(--font);
+      color: var(--text-muted);
+      background: var(--bg);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm, 6px);
+      white-space: nowrap;
+      line-height: 1;
+      user-select: none;
+      transition: color 0.1s ease, border-color 0.1s ease, background 0.1s ease;
+    }
+
+    /* Current stage — visually selected */
+    .rw-stage-chip--current {
+      color: var(--text);
+      border-color: var(--border);
+      font-weight: 600;
+    }
+
+    /* Completed stage — de-emphasised, borderless */
+    .rw-stage-chip--done {
+      color: var(--text-light);
+      border-color: transparent;
+      background: transparent;
+    }
+
+    /* Upcoming stage — muted */
+    .rw-stage-chip--upcoming {
+      color: var(--text-muted);
+      opacity: 0.55;
+    }
+
+    /* Skipped stage — not part of this role's actual journey.
+       Two-class compound selector (specificity 0,2,0) required to
+       reliably override .rail-chip (0,1,0) from the context layer. */
+    .rw-stage-chip.rw-stage-chip--skipped {
+      color: var(--text-light);
+      background: transparent;
+      border-style: dashed;
+      border-color: var(--border-light);
+      opacity: 0.45;
+    }
+
+    /* Locked — outcome is set, stage progression is frozen */
+    .rw-stage-chip--locked {
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
     /* ── FrictionSignal ────────────────────────────────────────────────────
        Usage: individual { label, text } signal objects from friction_signals.
        Replaces the editorial bullet list inside renderDeepContextHtml.

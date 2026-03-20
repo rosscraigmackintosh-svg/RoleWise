@@ -8809,10 +8809,30 @@
       return -1;
     }
 
+    // Returns the set of stage labels explicitly recorded in role_updates.
+    // Used by buildStepperItems to distinguish truly-visited stages from
+    // stages inferred done by index position alone (non-linear journey support).
+    // JD Review is never in role_updates directly (it's the default fallback),
+    // but any higher stage implicitly means JD Review was reviewed, so i=0 is
+    // excluded from the skipped check in buildStepperItems.
+    function _visitedStageSet(role) {
+      if (!role?.role_updates?.length) return new Set();
+      return new Set(
+        role.role_updates
+          .filter(u => !u.event_type || u.event_type === 'stage')
+          .map(u => (u.stage_reached === 'Reviewed' ? 'JD Review' : u.stage_reached) || '')
+          .filter(Boolean)
+      );
+    }
+
     // Build stepper HTML. locked = true when outcome is set (all steps read-only).
     // outcomeLabel: when provided, truncates timeline at effectiveIdx and appends ✕ outcome step.
     // All steps except the current one are clickable when not locked.
-    function buildStepperItems(stageIdx, locked, _outcomeLabel) {
+    // visitedStages: Set of stage labels explicitly recorded in role_updates.
+    //   Stages with i > 0 that are below effectiveIdx but absent from visitedStages
+    //   render as rw-stage-chip--skipped (dashed, faded) rather than --done.
+    //   Defaults to empty Set (all done-by-index chips render as done — legacy behaviour).
+    function buildStepperItems(stageIdx, locked, _outcomeLabel, visitedStages = new Set()) {
       // _outcomeLabel kept for call-site compat; outcomes now render in their own chip row.
       // Treat -1 (no stage updates yet) as index 0 so JD Review renders as current.
       const effectiveIdx = stageIdx < 0 ? 0 : stageIdx;
@@ -8820,14 +8840,18 @@
       return RAIL_STAGE_STEPS.map((s, i) => {
         const isCurrent = i === effectiveIdx;
         const isDone    = i < effectiveIdx;
+        // i > 0 excludes JD Review from skipped — it's never in role_updates (default fallback)
+        const isSkipped = isDone && i > 0 && visitedStages.size > 0 && !visitedStages.has(s.stage);
         const clickable = !locked && !isCurrent;
 
         const stateClass = isCurrent ? 'current' : isDone ? 'done' : 'upcoming';
+        const rwState    = `rw-stage-chip--${isSkipped ? 'skipped' : stateClass}`;
         const classes = [
           'rail-chip', 'rail-step',
-          stateClass,
+          'rw-stage-chip', rwState,
+          isSkipped ? '' : stateClass,  // omit 'done' on skipped — avoids rail-chip.done border override
           clickable ? 'clickable' : '',
-          locked    ? 'locked'    : '',
+          locked    ? 'locked rw-stage-chip--locked' : '',
         ].filter(Boolean).join(' ');
 
         const attrs = clickable
@@ -9006,7 +9030,7 @@
             <div class="rail-chips-row">
               <span class="rail-chips-label">Stage</span>
               <div class="rail-chips-list" id="rail-stepper" data-decision-accent="${_decisionAccent}">
-                ${buildStepperItems(stageIdx, locked)}
+                ${buildStepperItems(stageIdx, locked, null, _visitedStageSet(role))}
               </div>
             </div>
 
@@ -9237,7 +9261,7 @@
           const newIdx    = currentStageIndex(updatedRole);
           const stepperEl = document.getElementById('rail-stepper');
           if (stepperEl) {
-            stepperEl.innerHTML = buildStepperItems(newIdx, false);
+            stepperEl.innerHTML = buildStepperItems(newIdx, false, null, _visitedStageSet(updatedRole));
             stepperEl.dataset.decisionAccent = stepperDecisionAccent(updatedRole, newIdx);
             wireStepperHandlers(roleId);
           }
@@ -9340,7 +9364,7 @@
                 const revertedIdx = currentStageIndex(revertedRole);
                 const stepperEl   = document.getElementById('rail-stepper');
                 if (stepperEl) {
-                  stepperEl.innerHTML = buildStepperItems(revertedIdx, false);
+                  stepperEl.innerHTML = buildStepperItems(revertedIdx, false, null, _visitedStageSet(revertedRole));
                   stepperEl.dataset.decisionAccent = stepperDecisionAccent(revertedRole, revertedIdx);
                   wireStepperHandlers(roleId);
                 }
