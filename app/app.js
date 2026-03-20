@@ -4290,17 +4290,17 @@
       const _li = arr => arr.map(s => `<li>${esc(s)}</li>`).join('');
 
       const favouredHtml = favoured.length
-        ? `<div class="yl-label">You tend to favour roles where:</div>
-           <ul class="yl-list">${_li(favoured)}</ul>`
+        ? `<div class="rw-lens-panel__label">You tend to favour roles where:</div>
+           <ul class="rw-lens-panel__list">${_li(favoured)}</ul>`
         : '';
 
       const weakerHtml = weaker.length
-        ? `<div class="yl-label yl-label--weaker">Roles where outcomes have been weaker often include:</div>
-           <ul class="yl-list yl-list--weaker">${_li(weaker)}</ul>`
+        ? `<div class="rw-lens-panel__label rw-lens-panel__label--weaker">Roles where outcomes have been weaker often include:</div>
+           <ul class="rw-lens-panel__list rw-lens-panel__list--weaker">${_li(weaker)}</ul>`
         : '';
 
       const noteHtml = note
-        ? `<div class="yl-note">${esc(note)}</div>`
+        ? `<div class="rw-lens-panel__note">${esc(note)}</div>`
         : '';
 
       // Persistent intelligence card — renders in the overview panel, not chat timeline.
@@ -4308,9 +4308,9 @@
       // Insert after Fit Reality Summary so the overview reads: Fit → Your Lens → Risks.
       const panel = document.createElement('div');
       panel.id        = 'section-your-lens';
-      panel.className = 'rw-card rw-card--full rw-card--intel yl-panel ws-settle';
+      panel.className = 'rw-card rw-card--full rw-card--intel ws-settle';
       panel.innerHTML = `
-        <div class="doc-section-heading">Your Lens</div>
+        <div class="rw-lens-panel__heading">Your Lens</div>
         ${favouredHtml}
         ${weakerHtml}
         ${noteHtml}`;
@@ -14536,13 +14536,16 @@
         }
       }
 
-      // Friction Signals — 2–3 potential mismatches (editorial format, no tag chips)
+      // Friction Signals — 2–3 potential mismatches (rw-friction-signal system wrappers)
       {
         const fs = output.friction_signals;
         if (Array.isArray(fs) && fs.length) {
-          // Combine label + text into a single string for editorial rendering
-          const asStrings = fs.map(f => f.text ? `${f.label}. ${f.text}` : (f.label || ''));
-          html += secAlways('Friction Signals', editorialBullets(asStrings));
+          const signalCards = fs.map(f => {
+            const labelHtml = f.label ? `<div class="rw-friction-signal__label">${esc(f.label)}</div>` : '';
+            const textHtml  = f.text  ? `<div class="rw-friction-signal__text">${esc(f.text)}</div>`   : '';
+            return `<div class="rw-friction-signal">${labelHtml}${textHtml}</div>`;
+          }).join('');
+          html += secAlways('Friction Signals', `<div class="rw-friction-signals-wrap">${signalCards}</div>`);
         }
       }
 
