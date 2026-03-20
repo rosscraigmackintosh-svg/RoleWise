@@ -994,7 +994,7 @@
       background: var(--surface);
       color: var(--text-muted);
       cursor: pointer;
-      transition: background 0.1s, color 0.1s;
+      transition: background 0.1s, color 0.1s, transform 0.1s ease;
     }
     .ar-action-btn:hover:not(:disabled) { background: var(--border-light); color: var(--text); }
     .ar-action-btn:disabled { opacity: 1; background: var(--surface); color: var(--text-light); border-color: var(--border-light); cursor: not-allowed; }
@@ -7610,7 +7610,7 @@
       background: var(--surface);
       color: var(--text);
       cursor: pointer;
-      transition: background 0.13s ease, border-color 0.13s ease, color 0.13s ease;
+      transition: background 0.13s ease, border-color 0.13s ease, color 0.13s ease, transform 0.1s ease;
     }
     .ws-dbar-apply  { border-color: #059669; color: #059669; }
     .ws-dbar-apply:hover  { background: #059669; color: #fff; }
