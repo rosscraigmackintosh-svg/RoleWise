@@ -4412,12 +4412,14 @@
       text-decoration: underline;
     }
 
-    /* Quick-action row for in-process roles (Next Stage + Rejected) */
+    /* Quick-action row for in-process roles (Next Stage + Rejected).
+       margin-top: 12px holds whether #doc-next-action is filled (32px total
+       with next-action-wrap's 20px bottom margin) or empty (12px gap). */
     .doc-progressed-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 7px;
-      margin-top: 4px;
+      margin-top: 12px;
       margin-bottom: 20px;
     }
     .doc-pa-btn {
