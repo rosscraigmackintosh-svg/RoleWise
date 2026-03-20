@@ -301,6 +301,83 @@
       border-color: var(--border);
     }
 
+    /* ── StageTracker ───────────────────────────────────────────────────────
+       Three-layer wrapper for the right-rail stage + outcome area.
+       Applied as dual classes alongside .rail-chips-area — existing context
+       layer CSS governs all sizing, spacing, and chip interaction; system
+       layer adds semantic slot names and the three distinct sub-areas.
+
+       Slot map:
+         .rw-stage-tracker            — outer wrapper (+ rail-chips-area)
+         .rw-stage-tracker__meta      — Layer 2: meta health state line
+         .rw-stage-tracker__meta-badge       — the badge itself
+           --active --in-progress --needs-attention --archived
+         .rw-stage-tracker__progression      — Layer 1: stage chip row
+         .rw-stage-tracker__annotations      — Layer 3: decision + outcome
+         .rw-stage-tracker__annotation-row   — each row within Layer 3
+         .rw-stage-tracker__annotation-chip  — read-only user_decision badge
+           --skip (Passed)  --apply (Applying)  --save (Saved)
+
+       Label translations:
+         user_decision 'skip'    → "Passed"          (shown in __annotation-chip)
+         user_decision 'apply'   → "Applying"         (distinct from outcome 'Applied')
+         user_decision 'save'    → "Saved"
+         outcome_state 'skipped' → "Stopped pursuing" (in RAIL_OUTCOMES label)
+
+       JS selectors preserved (unchanged in app.js):
+         #rail-stepper · #rail-outcome-list · .rail-outcome-item
+         .rail-step.clickable · data-outcome · data-stage · data-status
+       ──────────────────────────────────────────────────────────────────── */
+
+    /* Layer 2: Meta badge — compact status line above stage row */
+    .rw-stage-tracker__meta {
+      margin-bottom: 6px;
+    }
+
+    .rw-stage-tracker__meta-badge {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-light);
+    }
+
+    .rw-stage-tracker__meta-badge--needs-attention {
+      color: var(--warning-700, #b54708);
+    }
+
+    /* --archived and --active use the default text-light colour */
+
+    /* Layer 3: read-only user_decision annotation badge */
+    .rw-stage-tracker__annotation-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      font-size: 11.5px;
+      font-weight: 500;
+      font-family: var(--font);
+      border-radius: var(--radius-sm, 6px);
+      white-space: nowrap;
+      line-height: 1;
+      user-select: none;
+      cursor: default;
+      background: var(--border-light);
+      color: var(--text-muted);
+    }
+
+    /* Applying — green tint, signals forward intent */
+    .rw-stage-tracker__annotation-chip--apply {
+      background: var(--success-50, #ecfdf3);
+      color: var(--success-700, #067647);
+    }
+
+    /* Passed and Saved — neutral, low weight */
+    .rw-stage-tracker__annotation-chip--skip,
+    .rw-stage-tracker__annotation-chip--save {
+      background: var(--border-light);
+      color: var(--text-muted);
+    }
+
     /* ── StageChip ──────────────────────────────────────────────────────────
        Canonical vocabulary for stage progression chips.
        Applied alongside existing .rail-chip / .rail-step classes in

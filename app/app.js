@@ -8786,7 +8786,7 @@
       { label: 'Rejected',       outcomeState: 'rejected',       hasReason: true  },
       { label: 'No response',    outcomeState: 'no_response',    hasReason: false, desc: 'Applied — nothing came back' },
       { label: 'Ghosted',        outcomeState: 'ghosted',        hasReason: false, desc: 'Had contact, then they went silent' },
-      { label: 'Skipped',        outcomeState: 'skipped',        hasReason: true  },
+      { label: 'Stopped pursuing', outcomeState: 'skipped',       hasReason: true  },
       { label: 'Withdrew',       outcomeState: 'withdrew',       hasReason: true  },
       { label: 'Offer Accepted', outcomeState: 'offer_accepted', hasReason: false },
       { label: 'Closed',         outcomeState: 'closed',         hasReason: false },
@@ -8998,6 +8998,16 @@
       }
     }
 
+    // ─── StageTracker: meta state helper ────────────────────────────────────
+    // Returns the role's macro health state for Layer 2 (meta badge).
+    // Evaluated in display priority order — archived first, then flags.
+    function _roleMetaState(role) {
+      if (isArchivedRole(role))         return 'archived';
+      if (needsAttentionDot(role))      return 'needs_attention';
+      if (PROGRESSED_STAGES.has(currentStageLabel(role))) return 'in_progress';
+      return 'active';
+    }
+
     function renderRail(role) {
       _ensureOverviewLowerCards();
       const chipsEl = document.getElementById('role-chips-section');
@@ -9023,21 +9033,46 @@
         return `<div class="rail-chip rail-outcome-item${isSelected ? ' selected' : ''}" data-outcome="${esc(o.outcomeState)}" data-has-reason="${o.hasReason}" tabindex="0">${esc(o.label)}</div>`;
       }).join('');
 
+      // ── StageTracker: Layer 2 (meta badge) ────────────────────────────────
+      const _metaState  = _roleMetaState(role);
+      const _metaLabels = { active: 'Active', in_progress: 'In progress', needs_attention: 'Needs attention', archived: 'Archived' };
+      const _metaHtml   = `<div class="rw-stage-tracker__meta">
+        <span class="rw-stage-tracker__meta-badge rw-stage-tracker__meta-badge--${_metaState}">${_metaLabels[_metaState]}</span>
+      </div>`;
+
+      // ── StageTracker: Layer 3 — user_decision annotation ──────────────────
+      // Shown only when user_decision is set. Labels deliberately distinct
+      // from outcome_state equivalents (skip→Passed, apply→Applying).
+      const _DEC_LABELS = { skip: 'Passed', apply: 'Applying', save: 'Saved' };
+      const _userDec    = role.user_decision;
+      const _decRowHtml = _userDec
+        ? `<div class="rw-stage-tracker__annotation-row rail-chips-row">
+             <span class="rail-chips-label">My call</span>
+             <span class="rw-stage-tracker__annotation-chip rw-stage-tracker__annotation-chip--${esc(_userDec)}">${esc(_DEC_LABELS[_userDec] || _userDec)}</span>
+           </div>`
+        : '';
+
       // ── Stage + Outcome chips + Admin → role-chips-section (single card) ───
       if (chipsEl) {
         chipsEl.innerHTML = `
-          <div class="rail-chips-area" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'stage-rail', component: 'StageRail', slot: 'stage-tracker', label: 'Stage & Outcome Rail' }) : ''}>
-            <div class="rail-chips-row">
+          <div class="rw-stage-tracker rail-chips-area" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'stage-rail', component: 'StageRail', slot: 'stage-tracker', label: 'Stage & Outcome Rail' }) : ''}>
+
+            ${_metaHtml}
+
+            <div class="rw-stage-tracker__progression rail-chips-row">
               <span class="rail-chips-label">Stage</span>
               <div class="rail-chips-list" id="rail-stepper" data-decision-accent="${_decisionAccent}">
                 ${buildStepperItems(stageIdx, locked, null, _visitedStageSet(role))}
               </div>
             </div>
 
-            <div class="rail-chips-row">
-              <span class="rail-chips-label">Outcome</span>
-              <div class="rail-chips-list${locked ? ' outcome-disabled' : ''}" id="rail-outcome-list">
-                ${outcomeChips}
+            <div class="rw-stage-tracker__annotations">
+              ${_decRowHtml}
+              <div class="rw-stage-tracker__annotation-row rail-chips-row">
+                <span class="rail-chips-label">Outcome</span>
+                <div class="rail-chips-list${locked ? ' outcome-disabled' : ''}" id="rail-outcome-list">
+                  ${outcomeChips}
+                </div>
               </div>
             </div>
 
