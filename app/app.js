@@ -3368,9 +3368,9 @@
         barEl.innerHTML =
           `<div class="ws-dbar-prompt">What do you want to do with this role?</div>
            <div class="ws-dbar-actions">
-             <button class="ws-dbar-btn ws-dbar-apply">Apply</button>
-             <button class="ws-dbar-btn ws-dbar-explore">Explore Further</button>
-             <button class="ws-dbar-btn ws-dbar-pass">Pass</button>
+             <button class="rw-intent-btn rw-intent-btn--apply ws-dbar-btn ws-dbar-apply">Apply</button>
+             <button class="rw-intent-btn rw-intent-btn--next ws-dbar-btn ws-dbar-explore">Explore Further</button>
+             <button class="rw-intent-btn rw-intent-btn--neutral ws-dbar-btn ws-dbar-pass">Pass</button>
            </div>`;
         barEl.querySelector('.ws-dbar-apply').addEventListener('click', () => _decide('apply'));
         barEl.querySelector('.ws-dbar-explore').addEventListener('click', () => _decide('save'));
@@ -13312,14 +13312,14 @@
 
         // Quick-action buttons: Apply · Skip
         // data-ws-quick is handled by the panel action delegator (_wsInitLensPanelActions).
-        html += `<div class="rw-lens-qa-strip" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'primary-actions', component: 'QuickActionStrip', slot: 'actions', label: 'Primary Action Area' }) : ''}>${_salInline}<button class="rw-lens-qa-btn rw-lens-qa-btn--apply" data-ws-quick="applied"
+        html += `<div class="rw-lens-qa-strip" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'primary-actions', component: 'QuickActionStrip', slot: 'actions', label: 'Primary Action Area' }) : ''}>${_salInline}<button class="rw-intent-btn rw-intent-btn--apply rw-lens-qa-btn rw-lens-qa-btn--apply" data-ws-quick="applied"
             aria-label="Mark as Applied" title="Mark this role as Applied">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
               <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             Apply
           </button>
-          <button class="rw-lens-qa-btn rw-lens-qa-btn--skip" data-ws-quick="skipped"
+          <button class="rw-intent-btn rw-intent-btn--neutral rw-lens-qa-btn rw-lens-qa-btn--skip" data-ws-quick="skipped"
             aria-label="Skip this role" title="Skip — not pursuing this role">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
               <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -21771,8 +21771,8 @@
                     </li>`).join('')}</ul>`;
 
             const actionBtn = role.archived
-              ? `<button class="ar-action-btn ar-btn-restore">Restore</button>`
-              : `<button class="ar-action-btn ar-btn-archive">Archive</button>`;
+              ? `<button class="rw-intent-btn rw-intent-btn--neutral ar-action-btn ar-btn-restore">Restore</button>`
+              : `<button class="rw-intent-btn rw-intent-btn--archive ar-action-btn ar-btn-archive">Archive</button>`;
 
             const panel = contentEl.querySelector('.ar-detail');
             panel.innerHTML = `
