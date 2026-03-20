@@ -1565,9 +1565,9 @@
       const _buildInboxSignal = lmo => {
         if (!lmo || typeof lmo !== 'object') return null;
         // 1 — Low-signal evaluation (top priority — affects analysis confidence)
-        if (lmo._weakSignal) return 'Low-signal evaluation';
+        if (lmo._weakSignal) return 'Limited job info';
         // 2 — High-volume funnel (warn: poor candidate experience expected)
-        if (lmo.hiring_system?.type === 'high_volume_funnel') return 'High-volume hiring funnel';
+        if (lmo.hiring_system?.type === 'high_volume_funnel') return 'High-volume hiring';
         // 3 — Intense pace (warn: energy cost to flag early)
         if (lmo.delivery_pressure === 'intense') return 'Intense pace expected';
         // 4 — Seniority inflated (warn: scope/comp misalignment risk)
@@ -1581,7 +1581,7 @@
         if (lmo.hiring_system?.type === 'founder_led') return 'Founder-led hire';
         if (lmo.hiring_system?.type === 'direct_employer') return 'Direct employer hire';
         // 8 — Understated scope (interesting edge case)
-        if (lmo.seniority_authenticity === 'understated') return 'Understated scope';
+        if (lmo.seniority_authenticity === 'understated') return 'Scope may be understated';
         return null;
       };
 
@@ -1642,8 +1642,8 @@
         // Stage tag reuses existing .stage-tag + .stage-{slug} CSS (per-stage colours).
         const _stageSlug  = stageLabel.toLowerCase().replace(/\s+/g, '-');
         const _outcomeLabel = role.outcome_state
-          ? ({ rejected: 'Rejected', withdrew: 'Withdrew', offer_accepted: 'Accepted',
-               skipped: 'Skipped', no_response: 'No response', ghosted: 'Ghosted',
+          ? ({ rejected: 'Rejected', withdrew: 'Withdrew', offer_accepted: 'Offer accepted',
+               skipped: 'Stopped pursuing', no_response: 'No response', ghosted: 'Ghosted',
                closed: 'Closed' })[role.outcome_state] || role.outcome_state
           : null;
 
@@ -1674,7 +1674,7 @@
           if (!_lmo) return '';
           const _matchedBlockers = _detectBlockers(role).filter(b => _boundaryKeyCache.has(b.key));
           if (!_matchedBlockers.length) return '';
-          return `<div class="inbox-boundary-match">Boundary match</div>`;
+          return `<div class="inbox-boundary-match">Boundary flagged</div>`;
         })();
 
         return `<div class="rw-role-card inbox-role${role.id === selectedRoleId ? ' active' : ''}"${decAttr} data-meta-state="${_metaState}" data-id="${esc(role.id)}">
@@ -10207,12 +10207,12 @@
         const freshConfirm = document.getElementById('rail-confirm');
         if (freshConfirm) {
           const _outcomeMsg = {
-            rejected:       'Rejection recorded. Role archived.',
-            withdrew:       'Withdrawal recorded. Role archived.',
-            offer_accepted: 'Offer accepted. Congratulations!',
-            skipped:        'Role skipped.',
-            no_response:    'Marked as no response.',
-            ghosted:        'Marked as ghosted.',
+            rejected:       'Rejected. Role archived.',
+            withdrew:       'Withdrew. Role archived.',
+            offer_accepted: 'Offer accepted.',
+            skipped:        'Stopped pursuing.',
+            no_response:    'No response. Role archived.',
+            ghosted:        'Ghosted. Role archived.',
             closed:         'Role closed.',
           }[outcomeState] || 'Outcome saved.';
           freshConfirm.textContent = _outcomeMsg;
