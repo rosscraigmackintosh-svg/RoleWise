@@ -1588,63 +1588,71 @@
       const renderRoleCard = role => {
         const company    = sanitiseCompanyName(role.company_name);
         const title      = role.role_title || 'Untitled role';
-        const attnDot    = needsAttentionDot(role) ? '<span class="inbox-attn-dot"></span>' : '';
         const stageLabel = currentStageLabel(role);
         const days       = daysSinceLastUpdate(role);
+
+        // Meta state drives card rendering — determines which elements appear
+        const _metaState  = _roleMetaState(role);
+        const _isArchived = _metaState === 'archived';
+        const _isInProg   = _metaState === 'in_progress';
+        const _isAttn     = _metaState === 'needs_attention';
 
         // Left-border colour — only at JD Review (decision primary); removed once progressed
         const _cardProgressed = PROGRESSED_STAGES.has(stageLabel);
         const decColor = _cardProgressed ? null : inboxDecisionColor(role);
         const decAttr  = decColor ? ` data-decision="${decColor}"` : '';
 
-        // ── User action label (what the user did) ──────────────────────────────
-        const _userAction = (() => {
-          if (role.outcome_state) return null;
-          if (stageLabel === 'Applied' || _cardProgressed) return 'Applied';
-          if (role.user_decision === 'save') return 'Saved';
-          if (stageLabel === 'JD Review' && role.job_description_raw) return 'Analysed';
-          return null;
-        })();
-
-        // ── Natural time label ─────────────────────────────────────────────────
+        // ── Time label ─────────────────────────────────────────────────────────
         const _timeLabel = days === null ? '' :
           days === 0 ? 'Today' :
           days === 1 ? 'Yesterday' :
           `${days}d ago`;
 
-        // ── Meta line: Location · Engagement · User action · Time ──────────────
+        // ── Meta line: location · (engagement type for active) · time ──────────
+        // User action ("Applied / Saved / Analysed") removed — stage tag/badge
+        // now carries that state signal more precisely.
         const metaParts = [];
         if (role.location_text) metaParts.push(role.location_text);
-        if (role.engagement_type && role.engagement_type !== 'Unknown') metaParts.push(role.engagement_type);
-        if (_userAction) metaParts.push(_userAction);
+        if (!_isInProg && !_isArchived && role.engagement_type && role.engagement_type !== 'Unknown') {
+          metaParts.push(role.engagement_type);
+        }
         if (_timeLabel) metaParts.push(_timeLabel);
-        const metaHtml = `<div class="rw-role-card__meta inbox-meta">${metaParts.map(esc).join(' \u00B7 ')}</div>`;
 
-        // ── Hiring signal badge (company behaviour, not user action) ───────────
-        const _hs = _hiringSignal(role);
-        const hiringBadgeHtml = _hs
-          ? `<div class="rw-role-card__badge inbox-hs"><span class="ars-badge ars-${_hs.status}">${esc(_hs.label)}</span></div>`
-          : '';
-
-        // ── Mini reason line — up to 2 decision signals ────────────────────────
-        const lmo              = role.latest_match_output || {};
-        const _frictionPhrases = verdictDecisionReasons(lmo);
-        const _archPrimary     = lmo.role_archetype?.primary || null;
-        const _miniSignals     = [..._frictionPhrases];
-        if (_archPrimary && _miniSignals.length < 2) _miniSignals.push(_archPrimary);
-        const miniReasonHtml = _miniSignals.length
-          ? `<div class="rw-role-card__reasons inbox-mini-reasons">${_miniSignals.slice(0, 2).map(esc).join(' \u00B7 ')}</div>`
-          : '';
-
-        // ── Intelligence signal — single notable characteristic beneath title ──
-        const _intelSig    = _buildInboxSignal(lmo);
+        // ── Intelligence signal — ONE signal only ─────────────────────────────
+        // Suppressed for in_progress (stage tag is the signal) and archived
+        // (analysis is irrelevant once done). Mini reasons removed — they added
+        // noise alongside the intel signal without adding proportional value.
+        const lmo          = role.latest_match_output || {};
+        const _intelSig    = (_isInProg || _isArchived) ? null : _buildInboxSignal(lmo);
         const intelSigHtml = _intelSig
           ? `<div class="rw-role-card__signal inbox-signals">${esc(_intelSig)}</div>`
           : '';
 
+        // ── Footer-right: stage tag (in_progress) | state badge (attn/archived) ─
+        // Stage tag reuses existing .stage-tag + .stage-{slug} CSS (per-stage colours).
+        const _stageSlug  = stageLabel.toLowerCase().replace(/\s+/g, '-');
+        const _outcomeLabel = role.outcome_state
+          ? ({ rejected: 'Rejected', withdrew: 'Withdrew', offer_accepted: 'Accepted',
+               skipped: 'Skipped', no_response: 'No response', ghosted: 'Ghosted',
+               closed: 'Closed' })[role.outcome_state] || role.outcome_state
+          : null;
+
+        const footerRightHtml = _isInProg
+          ? `<span class="rw-role-card__stage stage-tag stage-${_stageSlug}">${esc(stageLabel)}</span>`
+          : _isAttn
+          ? `<span class="rw-role-card__state rw-role-card__state--attention">Attention</span>`
+          : (_isArchived && _outcomeLabel)
+          ? `<span class="rw-role-card__state rw-role-card__state--archived">${esc(_outcomeLabel)}</span>`
+          : '';
+
+        // ── Footer row: meta left, pill right ─────────────────────────────────
+        const _metaInner = metaParts.map(esc).join(' \u00B7 ');
+        const footerHtml = `<div class="rw-role-card__footer">
+          <div class="rw-role-card__footer-meta inbox-meta">${_metaInner}</div>
+          ${footerRightHtml ? `<div class="rw-role-card__footer-right">${footerRightHtml}</div>` : ''}
+        </div>`;
+
         // ── Boundary match indicator (Decision Layer V1) ───────────────────────
-        // Only shown when boundaries are loaded and the role has analysis data with
-        // at least one detected blocker that matches a saved boundary.
         const _boundaryMatchHtml = (() => {
           if (!_boundaryKeyCache || _boundaryKeyCache.size === 0) return '';
           const _lmo = role.latest_match_output || role.analysis;
@@ -1654,13 +1662,11 @@
           return `<div class="inbox-boundary-match">Boundary match</div>`;
         })();
 
-        return `<div class="rw-role-card inbox-role${role.id === selectedRoleId ? ' active' : ''}"${decAttr} data-id="${esc(role.id)}">
-          <div class="rw-role-card__company inbox-company inbox-role-company${company ? '' : ' inbox-company-unknown rw-role-card__company--unknown'}">${attnDot}${esc(company || 'Unknown company')}</div>
+        return `<div class="rw-role-card inbox-role${role.id === selectedRoleId ? ' active' : ''}"${decAttr} data-meta-state="${_metaState}" data-id="${esc(role.id)}">
+          <div class="rw-role-card__company inbox-company inbox-role-company${company ? '' : ' inbox-company-unknown rw-role-card__company--unknown'}">${esc(company || 'Unknown company')}</div>
           <div class="rw-role-card__title inbox-title inbox-role-title">${esc(title)}</div>
           ${intelSigHtml}
-          ${metaHtml}
-          ${hiringBadgeHtml}
-          ${miniReasonHtml}
+          ${footerHtml}
           ${_boundaryMatchHtml}
         </div>`;
       };
