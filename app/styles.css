@@ -10915,6 +10915,17 @@
     [data-theme="dark"] .stage-tag.stage-final            { background: var(--utility-warning-100, #7a2e0e);    color: var(--utility-yellow-700, #fde272); }
     [data-theme="dark"] .stage-tag.stage-offer            { background: var(--utility-success-100, #074d31);    color: var(--utility-success-700, #75e0a7); }
 
+    /* ── State badges: dark mode overrides ──────────────────────────────── */
+    /* Light tints (#fffaeb, #f3f4f6) are wrong on dark backgrounds.        */
+    [data-theme="dark"] .rw-role-card__state--attention {
+      background: var(--utility-warning-100, #7a2e0e);
+      color: var(--utility-yellow-700, #fde272);
+    }
+    [data-theme="dark"] .rw-role-card__state--archived {
+      background: var(--utility-gray-100, #22262f);
+      color: var(--utility-gray-700, #cecfd2);
+    }
+
     /* ═══════════════════════════════════════════════════════════════════════
        ADD NEW ROLE — intake panel intro copy
        ─────────────────────────────────────────────────────────────────────

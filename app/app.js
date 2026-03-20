@@ -1608,14 +1608,24 @@
           days === 1 ? 'Yesterday' :
           `${days}d ago`;
 
-        // ── Meta line: location · (engagement type for active) · time ──────────
-        // User action ("Applied / Saved / Analysed") removed — stage tag/badge
-        // now carries that state signal more precisely.
+        // ── User action — returned to meta for active/needs_attention only ───────
+        // Stage tag covers in_progress; outcome label covers archived.
+        // For pre-analysis roles ("Saved") or analysed-but-not-progressed ("Analysed")
+        // this is the only state signal on the card, so it should stay.
+        const _userAction = (() => {
+          if (_isInProg || _isArchived || role.outcome_state) return null;
+          if (role.user_decision === 'save') return 'Saved';
+          if (stageLabel === 'JD Review' && role.job_description_raw) return 'Analysed';
+          return null;
+        })();
+
+        // ── Meta line: location · (engagement + user action for active) · time ──
         const metaParts = [];
         if (role.location_text) metaParts.push(role.location_text);
         if (!_isInProg && !_isArchived && role.engagement_type && role.engagement_type !== 'Unknown') {
           metaParts.push(role.engagement_type);
         }
+        if (_userAction) metaParts.push(_userAction);
         if (_timeLabel) metaParts.push(_timeLabel);
 
         // ── Intelligence signal — ONE signal only ─────────────────────────────
@@ -1646,11 +1656,16 @@
           : '';
 
         // ── Footer row: meta left, pill right ─────────────────────────────────
+        // Guard: skip entirely if there is nothing to render — avoids an empty
+        // div contributing margin-top space (e.g. archived role, no location,
+        // outcome_state null → daysSinceLastUpdate returns null → _timeLabel '').
         const _metaInner = metaParts.map(esc).join(' \u00B7 ');
-        const footerHtml = `<div class="rw-role-card__footer">
-          <div class="rw-role-card__footer-meta inbox-meta">${_metaInner}</div>
-          ${footerRightHtml ? `<div class="rw-role-card__footer-right">${footerRightHtml}</div>` : ''}
-        </div>`;
+        const footerHtml = (_metaInner || footerRightHtml)
+          ? `<div class="rw-role-card__footer">
+              <div class="rw-role-card__footer-meta inbox-meta">${_metaInner}</div>
+              ${footerRightHtml ? `<div class="rw-role-card__footer-right">${footerRightHtml}</div>` : ''}
+            </div>`
+          : '';
 
         // ── Boundary match indicator (Decision Layer V1) ───────────────────────
         const _boundaryMatchHtml = (() => {
