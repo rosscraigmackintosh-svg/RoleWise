@@ -10055,9 +10055,13 @@
       document.getElementById('outcome-confirm-btn').addEventListener('click', () => {
         const reason    = document.getElementById('outcome-reason-input')?.value.trim() || null;
         const emailText = document.getElementById('outcome-rejection-email')?.value.trim() || null;
-        // For rejections, combine free-text reason with optional pasted email
-        const combinedReason = [reason, emailText ? `[Rejection email]\n${emailText}` : null].filter(Boolean).join('\n\n') || null;
-        setOutcome(roleId, outcomeState, combinedReason);
+        // outcome_reason stores only the short reason (chip / free text) so it stays
+        // clean for suggestion chips and analytics. The pasted email is appended to
+        // role_updates.note only, keeping the full context in the timeline.
+        const noteText  = emailText
+          ? [reason, `[Rejection email]\n${emailText}`].filter(Boolean).join('\n\n')
+          : null;
+        setOutcome(roleId, outcomeState, reason, noteText || null);
       });
 
       document.getElementById('outcome-cancel-btn').addEventListener('click', () => {
@@ -10069,7 +10073,11 @@
     }
 
     // ─── Set outcome (how the role journey ended) ─────────────────────────────
-    async function setOutcome(roleId, outcomeState, reason) {
+    // noteOverride: if provided, stored in role_updates.note instead of reason.
+    // Allows callers to attach richer context (e.g. pasted rejection email) to
+    // the timeline entry without contaminating the outcome_reason field used for
+    // chips and analytics.
+    async function setOutcome(roleId, outcomeState, reason, noteOverride = null) {
       const formEl    = document.getElementById('rail-outcome-form');
       const confirmEl = document.getElementById('rail-confirm');
 
@@ -10092,12 +10100,13 @@
 
         // Record outcome in the timeline — uses event_type='outcome' and dedicated
         // outcome_state column; status is set to a safe neutral value never the outcome value.
+        // noteOverride (e.g. reason + pasted email) goes here only, not into outcome_reason.
         await db.from('role_updates').insert({
           role_id:       roleId,
           event_type:    'outcome',
           outcome_state: outcomeState,
           status:        'in_progress',
-          note:          reason || null,
+          note:          noteOverride || reason || null,
         });
 
         // Update local state
@@ -10114,7 +10123,7 @@
             outcome_state: outcomeState,
             status:        'in_progress',
             stage_reached: null,
-            note:          reason || null,
+            note:          noteOverride || reason || null,
             created_at:    now2,
           });
           return r;
@@ -10163,8 +10172,13 @@
         if (updatedRole) renderRail(updatedRole);
 
         // Refresh the role doc for archive outcomes so the doc reflects the new state
-        // (without this, in-process actions and the decision bar remain stale after rejection)
-        if (updatedRole && ARCHIVE_OUTCOME_STATES.has(outcomeState)) {
+        // (without this, in-process actions and the decision bar remain stale after rejection).
+        // Guard: skip if already in workspace view — renderWorkspaceView calls renderRail
+        // internally, which would re-render the rail and wipe the freshConfirm message
+        // before the timeout clears it. Workspace view doesn't render doc-progressed-actions
+        // so it has no stale buttons to clear.
+        const _inWorkspaceView = document.getElementById('col-chat')?.classList.contains('ws-active');
+        if (updatedRole && ARCHIVE_OUTCOME_STATES.has(outcomeState) && !_inWorkspaceView) {
           renderRoleDoc(updatedRole);
         }
 
