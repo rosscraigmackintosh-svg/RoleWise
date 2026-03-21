@@ -348,6 +348,13 @@
 
     /* --archived and --active use the default text-light colour */
 
+    /* Nudge hint — shown between meta badge and stage stepper when a role is idle */
+    .rail-nudge {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
     /* Layer 3: read-only user_decision annotation badge */
     .rw-stage-tracker__annotation-chip {
       display: inline-flex;
@@ -792,20 +799,21 @@
       <div class="col-left-tagline">Better role decisions</div>
 
       <nav class="col-left-nav">
-        <button class="nav-item active" data-nav="applications">Applications</button>
-        <div class="nav-sub-filters" id="nav-app-filters">
-          <button class="nav-sub-item" data-filter="all"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>All</button>
-          <button class="nav-sub-item" data-filter="needs_attention"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Needs attention</button>
-          <button class="nav-sub-item" data-filter="in_progress"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>In progress</button>
-          <button class="nav-sub-item active" data-filter="active"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Active</button>
-          <button class="nav-sub-item" data-filter="archive"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Archive</button>
+        <button class="nav-item active block w-full bg-transparent border-0 rounded-md py-2.5 px-3 text-left cursor-pointer transition-colors" data-nav="overview">Overview</button>
+        <button class="nav-item block w-full bg-transparent border-0 rounded-md py-2.5 px-3 text-left cursor-pointer transition-colors" data-nav="applications">Applications</button>
+        <div class="nav-sub-filters" id="nav-app-filters" style="display:none;">
+          <button class="nav-sub-item flex items-center w-full bg-transparent border-0 rounded-md text-left cursor-pointer transition-colors" data-filter="all"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>All</button>
+          <button class="nav-sub-item flex items-center w-full bg-transparent border-0 rounded-md text-left cursor-pointer transition-colors" data-filter="needs_attention"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Needs attention</button>
+          <button class="nav-sub-item flex items-center w-full bg-transparent border-0 rounded-md text-left cursor-pointer transition-colors" data-filter="in_progress"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>In progress</button>
+          <button class="nav-sub-item active flex items-center w-full bg-transparent border-0 rounded-md text-left cursor-pointer transition-colors" data-filter="active"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Active</button>
+          <button class="nav-sub-item flex items-center w-full bg-transparent border-0 rounded-md text-left cursor-pointer transition-colors" data-filter="archive"><svg class="nav-sub-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4.5C1.5 3.95 1.95 3.5 2.5 3.5H5L6 5H11.5C12.05 5 12.5 5.45 12.5 6V11C12.5 11.55 12.05 12 11.5 12H2.5C1.95 12 1.5 11.55 1.5 11V4.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Archive</button>
         </div>
-        <button class="nav-item"        data-nav="radar">Radar</button>
-        <button class="nav-item"        data-nav="recruiters">Role Contacts</button>
-        <button class="nav-item"        data-nav="review">Review</button>
-        <div style="height:1px;background:var(--border);margin:8px 0 6px;"></div>
-        <button class="nav-item"        data-nav="safeguards">Platform Safeguards</button>
-        <button class="nav-item"        data-nav="admin">Admin</button>
+        <button class="nav-item block w-full bg-transparent border-0 rounded-md py-2.5 px-3 text-left cursor-pointer transition-colors" data-nav="radar">Radar</button>
+        <button class="nav-item block w-full bg-transparent border-0 rounded-md py-2.5 px-3 text-left cursor-pointer transition-colors" data-nav="recruiters">Role Contacts</button>
+        <button class="nav-item block w-full bg-transparent border-0 rounded-md py-2.5 px-3 text-left cursor-pointer transition-colors" data-nav="review">Review</button>
+        <div style="height:1px;background:var(--border);margin:10px 0 8px;"></div>
+        <button class="nav-item block w-full bg-transparent border-0 rounded-md py-2.5 px-3 text-left cursor-pointer transition-colors" data-nav="safeguards">Platform Safeguards</button>
+        <button class="nav-item block w-full bg-transparent border-0 rounded-md py-2.5 px-3 text-left cursor-pointer transition-colors" data-nav="admin">Admin</button>
       </nav>
 
       <!-- Maintenance utility: hidden from main UI -->
@@ -966,7 +974,7 @@
     </main>
 
     <!-- Panel 4: Chat / Workspace -->
-    <aside class="col-chat" id="col-chat">
+    <aside class="col-chat" id="col-chat" style="display:none;">
       <div class="doc-empty">Select a role to open the workspace.</div>
     </aside>
 

@@ -156,59 +156,41 @@
 
     .col-left-nav {
       flex-shrink: 0;
-      padding: 8px 10px 8px 8px;
+      padding: 8px 10px 12px 8px;
     }
 
+    /* Tailwind handles: display, width, bg, border, border-radius, padding, */
+    /* text-align, cursor, transition. CSS handles: font, size, weight, color, hover, active. */
     .nav-item {
-      display: block;
-      width: 100%;
-      background: none;
-      border: none;
-      border-radius: var(--radius-sm, 6px);
-      padding: var(--spacing-sm, 6px) var(--spacing-md, 8px);
       font-family: var(--font);
-      font-size: var(--text-sm, 13px);
-      color: var(--color-text-tertiary, var(--text-muted));
-      text-align: left;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-      line-height: var(--leading-snug, 1.4);
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-muted);
+      line-height: var(--leading-snug);
     }
-    .nav-item:hover  { background: var(--color-bg-secondary, var(--border-light)); color: var(--color-text-primary, var(--text)); }
+    .nav-item:hover  { background: var(--border-light); color: var(--text); }
     .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
     /* ─── Applications sub-nav filters ────────────────────────── */
     /* Stacked context filters that appear below Applications.     */
-    /* Indented to show hierarchy; match nav-item interaction feel.*/
-    .nav-sub-filters {
-      padding: 1px 0 4px;
-    }
+    /* 18px left-indent signals hierarchy; padding stays in CSS.  */
+    .nav-sub-filters { padding: 2px 0 6px; }
 
     .nav-sub-item {
-      display: flex;
-      align-items: center;
-      width: 100%;
-      background: none;
-      border: none;
-      border-radius: var(--radius-sm, 6px);
-      padding: var(--spacing-xxs, 2px) var(--spacing-md, 8px) var(--spacing-xxs, 2px) 14px;
       font-family: var(--font);
-      font-size: 12px;
-      color: var(--color-text-tertiary, var(--text-muted));
-      text-align: left;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-      line-height: var(--leading-snug, 1.4);
+      font-size: 14px;
+      padding: 5px var(--spacing-md) 5px 18px;
+      color: var(--gray-700);
+      line-height: var(--leading-snug);
     }
-    .nav-sub-item:hover  { background: var(--color-bg-secondary, var(--border-light)); color: var(--color-text-primary, var(--text)); }
+    .nav-sub-item:hover  { background: var(--border-light); color: var(--text); }
     .nav-sub-item.active { color: var(--accent); font-weight: 600; }
 
     .nav-sub-icon {
-      width: 13px;
-      height: 13px;
+      width: 15px;
+      height: 15px;
       flex-shrink: 0;
-      margin-right: 6px;
-      vertical-align: middle;
+      margin-right: 8px;
       position: relative;
       top: -1px;
       opacity: 0.65;
@@ -226,8 +208,8 @@
     /* ─── Nav section labels ───────────────────────────────────── */
     .nav-section-label {
       display: block;
-      padding: 10px 8px 3px;
-      font-size: 10.5px;
+      padding: 14px 8px 4px;
+      font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.07em;
       text-transform: uppercase;
@@ -416,6 +398,172 @@
       margin-bottom: 40px;
       line-height: var(--leading-normal);
     }
+
+    /* ─── Overview page ────────────────────────────────────────────────────── */
+    .ov-page { max-width: 600px; }
+
+    .ov-heading {
+      font-size: var(--text-lg, 18px);
+      font-weight: 600;
+      color: var(--text);
+      margin: 0 0 24px;
+    }
+
+    /* Pipeline chips row */
+    .ov-pipeline {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 36px;
+    }
+    .ov-chip {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 12px 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      text-align: center;
+      transition: border-color 0.12s;
+    }
+    .ov-chip:hover { border-color: var(--text-muted); }
+    .ov-chip-n {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1;
+    }
+    .ov-chip-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    /* Content sections */
+    .ov-section { margin-bottom: 32px; }
+    .ov-section-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    /* Role rows */
+    .ov-role-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      padding: 8px 0;
+      border: none;
+      border-bottom: 1px solid var(--border-light, var(--border));
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+    }
+    .ov-role-row:last-child { border-bottom: none; }
+    .ov-role-row:hover .ov-role-company { color: var(--accent); }
+    .ov-role-row-name {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      overflow: hidden;
+    }
+    .ov-role-company {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: color 0.1s;
+    }
+    .ov-role-title {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ov-role-stage {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .ov-role-stage--attn {
+      color: var(--utility-warning-600, #b54708);
+      font-weight: 500;
+    }
+
+    /* Attention rows: two-line layout (name + nudge hint) */
+    .ov-role-row--attn {
+      align-items: flex-start;
+    }
+    .ov-role-row--attn .ov-role-row-name {
+      flex: 1;
+      min-width: 0;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+    }
+    .ov-role-row-name-line {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      overflow: hidden;
+      width: 100%;
+    }
+    .ov-role-nudge {
+      font-size: 11px;
+      color: var(--text-light);
+      font-style: italic;
+    }
+
+    /* Quiet / next-action lines */
+    .ov-quiet {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+    .ov-next-action {
+      margin-top: 8px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Patterns so far — bottom of overview, only shown when data exists */
+    .ov-insights {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color, #e8e8e8);
+    }
+    .ov-insights-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .ov-insight-item {
+      font-size: 13px;
+      color: var(--text-muted);
+      padding: 3px 0;
+      line-height: 1.5;
+    }
+
     .review-section {
       margin-bottom: 40px;
     }
@@ -3529,6 +3677,11 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    /* Nudge signal variant — same weight as intel signal, italic to differentiate */
+    .rw-nudge-signal {
+      color: var(--text-light);
+      font-style: italic;
+    }
 
     /* ─── Inbox footer row: meta left + stage/state pill right ─── */
     .rw-role-card__footer {
@@ -3613,29 +3766,7 @@
     .inbox-role[data-decision="red"]   { border-left-color: var(--utility-error-400, #f97066); }
     .inbox-role.active { border-left-color: var(--color-fg-brand-primary, var(--accent)); } /* keep selected override last */
 
-    .inbox-company {
-      font-size: var(--text-md, 14px);
-      font-weight: 600;
-      color: var(--color-text-primary, var(--text));
-      line-height: var(--leading-snug, 1.35);
-      margin-bottom: 2px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
     .inbox-company-unknown { color: var(--color-text-disabled, #a4a7ae); }
-
-    .inbox-title {
-      font-size: var(--text-sm, 12px);
-      font-weight: 400;
-      color: var(--color-text-secondary, var(--text-muted));
-      line-height: var(--leading-snug, 1.35);
-      margin-bottom: var(--spacing-sm, 6px);
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
 
     .inbox-stage {
       display: flex;
@@ -4144,7 +4275,7 @@
       background: none;
       border: none;
       border-radius: var(--radius-sm, 6px);
-      padding: var(--spacing-sm, 6px) var(--spacing-md, 8px);
+      padding: 10px 12px;
       font-family: var(--font);
       cursor: pointer;
       text-align: left;
@@ -4175,7 +4306,8 @@
       pointer-events: none;
     }
     .nav-profile-row-name {
-      font-size: var(--text-sm, 13px);
+      font-size: 15px;
+      font-weight: 500;
       color: var(--color-text-tertiary, var(--text-muted));
       white-space: nowrap;
       overflow: hidden;
@@ -4454,11 +4586,11 @@
       font-size: 12px;
     }
     .doc-meta-job-link a {
-      color: var(--text-light);
+      color: var(--text-muted);
       text-decoration: none;
     }
     .doc-meta-job-link a:hover {
-      color: var(--text-muted);
+      color: var(--text);
       text-decoration: underline;
     }
 
@@ -4515,7 +4647,7 @@
     }
     .rw-of__email-summary {
       font-size: 11.5px;
-      color: var(--text-light);
+      color: var(--text-muted);
       cursor: pointer;
       user-select: none;
       list-style: none;
@@ -4530,6 +4662,95 @@
     .rw-of__optional {
       color: var(--text-muted);
       font-weight: 400;
+    }
+    /* Outcome-form structural classes (extracted from inline styles) */
+    .rw-of__form {
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .rw-of__heading {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .rw-of__heading--rejection { margin-bottom: 4px; }
+    .rc-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+    .rc-chip {
+      padding: 3px 10px;
+      font-size: 11.5px;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text-light);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+    }
+    .rc-chip--active {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+    }
+    .rw-of__textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-family: var(--font);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--text);
+      resize: vertical;
+      min-height: 56px;
+    }
+    .rw-of__email-textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 10px;
+      font-size: 11.5px;
+      font-family: var(--font);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--text-light);
+      resize: vertical;
+      min-height: 72px;
+      margin-top: 6px;
+    }
+    .rw-of__actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .rw-of__btn-confirm {
+      flex: 1;
+      padding: 7px 0;
+      font-size: 12.5px;
+      font-family: var(--font);
+      background: var(--text);
+      color: var(--bg);
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+    }
+    .rw-of__btn-cancel {
+      flex: 1;
+      padding: 7px 0;
+      font-size: 12.5px;
+      font-family: var(--font);
+      background: var(--surface);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
     }
 
     /* Decision badge secondary state — muted, no colour tint */
@@ -5019,6 +5240,14 @@
       color: var(--text-muted);
       margin-top: 3px;
       line-height: var(--leading-normal);
+    }
+    /* Pure notes: the note text is the content, not a secondary detail.
+       Shown instead of the event-type title for note_added entries. */
+    .role-memory-note-text {
+      font-size: 13px;
+      color: var(--text);
+      line-height: var(--leading-normal);
+      font-weight: 400;
     }
     .role-memory-empty {
       font-size: var(--text-base);
@@ -5542,7 +5771,7 @@
     .rail-admin-btn.danger:hover { color: #B91C1C; }
 
     .rail-admin-confirm {
-      font-size: 11px;
+      font-size: 11.5px;
       color: var(--text-light);
     }
     .rail-admin-confirm:not(:empty) {
@@ -8111,7 +8340,9 @@
       flex: 1;
       border-top: 1px dashed var(--border-light);
     }
-    .ws-stage-event-label { white-space: nowrap; }
+    /* Label now carries the stage name directly — give it the strong treatment. */
+    /* .ws-stage-event strong rule retained for any legacy persisted HTML. */
+    .ws-stage-event-label { white-space: nowrap; color: var(--text); font-weight: 600; }
     .ws-stage-event strong { color: var(--text); font-weight: 600; }
 
     /* ─── Recruiter confirmation block ─────────────────────────────────────── */
@@ -8639,7 +8870,11 @@
        Replaces old "Role memory" note-only row with structured event picker.  */
 
     .rt-add-form {
-      margin-bottom: 14px;
+      /* Form sits below the events list — separated visually, no bottom margin needed */
+      margin-top: 14px;
+      margin-bottom: 0;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-light);
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -9273,7 +9508,7 @@
        Hiring signal badges for all stages of the hiring model.              */
 
     .inbox-company {
-      font-size: var(--text-md, 14px);
+      font-size: 15px;
       font-weight: 600;
       color: var(--color-text-primary, var(--text));
       line-height: 1.35;
@@ -9284,7 +9519,7 @@
     }
 
     .inbox-title {
-      font-size: var(--text-sm, 12px);
+      font-size: 13px;
       font-weight: 400;
       color: var(--color-text-secondary, var(--text-muted));
       line-height: 1.35;
@@ -10700,16 +10935,20 @@
     .rail-reopen-btn {
       display: inline-block;
       font-size: 11.5px;
-      color: var(--text-light);
+      color: var(--text-muted);
       background: none;
       border: none;
       padding: 4px 0 0 62px; /* left-indent aligns with chips (label width + gap) */
       cursor: pointer;
       font-family: var(--font);
       text-decoration: underline;
+      text-underline-offset: 2px;
+      text-decoration-color: var(--border);
+      transition: color 0.1s;
     }
     .rail-reopen-btn:hover {
-      color: var(--text-muted);
+      color: var(--text);
+      text-decoration-color: var(--text-muted);
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -12860,6 +13099,126 @@
   text-decoration: none;
 }
 .role-contact-detail a:hover { text-decoration: underline; }
+
+/* ── Recruiter history (inside contact card) ─────────────────────────────── */
+.role-contact-history {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color, #e8e8e8);
+}
+.role-contact-history-summary {
+  font-size: 11.5px;
+  color: var(--text-muted, #888);
+  margin-bottom: 4px;
+}
+.role-contact-history-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-light, #999);
+  padding: 2px 0;
+  gap: 8px;
+}
+.role-contact-history-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-contact-history-outcome {
+  font-size: 11px;
+  color: var(--text-muted, #aaa);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Follow-up action (contact card) ─────────────────────────────────────── */
+.role-contact-followup-row {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border-color, #e8e8e8);
+}
+
+.role-contact-followup-btn {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent, #3b7cff);
+  background: var(--accent-soft, #eef3ff);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.role-contact-followup-btn:hover {
+  background: var(--accent, #3b7cff);
+  color: #fff;
+}
+
+.role-contact-followup-panel {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.role-contact-followup-msg {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text, #1a1a1a);
+  background: var(--bg, #fff);
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: var(--radius-sm, 6px);
+  padding: 9px 11px;
+  resize: vertical;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.role-contact-followup-msg:focus {
+  border-color: var(--accent, #3b7cff);
+}
+
+.role-contact-followup-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.role-contact-followup-copy,
+.role-contact-followup-log {
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-sm, 6px);
+  padding: 5px 13px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  border: 1px solid var(--border-color, #ddd);
+}
+
+.role-contact-followup-copy {
+  color: var(--text, #1a1a1a);
+  background: transparent;
+}
+.role-contact-followup-copy:hover {
+  background: var(--gray-100, #f1f1f1);
+}
+
+.role-contact-followup-log {
+  color: #fff;
+  background: var(--accent, #3b7cff);
+  border-color: transparent;
+}
+.role-contact-followup-log:hover {
+  background: var(--accent-dark, #2d6ae0);
+}
+.role-contact-followup-log:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 
 /* ── Inline add-contact form ─────────────────────────────────────────────── */
 .role-contact-form {

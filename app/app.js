@@ -689,7 +689,7 @@
     // ─── State ────────────────────────────────────────────────────────────────
     let allRoles       = [];
     let selectedRoleId = null;
-    let currentNav     = 'applications';
+    let currentNav     = 'overview';
     let inboxTab       = 'active'; // 'active' | 'archive'
     let userProfile    = null;     // preferences_json from profiles table
     let _profileId     = null;     // profiles.id UUID — used as user_id in usage_events
@@ -743,7 +743,7 @@
       if (!app) return;
       const fw = (listPanelVisible && filterPanelOpen) ? '220px' : '0px';
       const lw = listPanelVisible ? '310px' : '0px'; // RW-LAYOUT-WIDTH-01: list +50px
-      const rw = rightPanelVisible ? '360px' : '0px';
+      const rw = '0px'; // chat panel hidden from UI — logic preserved, column always zero
       app.style.gridTemplateColumns = `254px ${fw} ${lw} 1fr ${rw}`; // RW-LAYOUT-WIDTH-01: nav +50px
     }
 
@@ -1349,6 +1349,49 @@
       return map[stageLabel] || null;
     }
 
+    // ─── Nudge rules ──────────────────────────────────────────────────────────
+    // Returns { text } or null. One signal per role — first rule wins.
+    // Rules:
+    //   1. JD Review ≥5 days         → "Still reviewing"
+    //   2. Applied, 7–13d no reply   → "No response yet"
+    //   3. Applied, ≥14d no reply    → "No response"
+    //   4. Post-applied, ≥14d quiet  → "Follow up"
+    // Guards: archived / terminal / updated <3d → null (no nudge)
+    const _IN_PROGRESS_STAGES = new Set(['Recruiter Screen', 'Hiring Manager', 'Panel', 'Final', 'Offer']);
+    function _roleNudge(role) {
+      if (!role) return null;
+      if (isArchivedRole(role) || role.outcome_state) return null;
+
+      const stage    = currentStageLabel(role);
+      const lastUpd  = daysSinceLastUpdate(role);
+
+      // Guard: role had activity very recently — nothing to surface
+      if (lastUpd !== null && lastUpd < 3) return null;
+
+      // Rule 1 — JD Review sitting idle ≥5 days
+      if (stage === 'JD Review') {
+        const _ageDays = Math.floor((Date.now() - new Date(role.created_at).getTime()) / 86400000);
+        if (_ageDays >= 5) return { text: 'Still reviewing' };
+        return null;
+      }
+
+      // Rules 2 & 3 — Applied with no employer response
+      if (stage === 'Applied') {
+        const rs = _appResponseStatus(role);
+        if (!rs || rs.status === 'active') return null;
+        if (rs.status === 'waiting' && rs.days >= 7) return { text: 'No response yet' };
+        if (rs.status === 'stale' || rs.status === 'ghosted') return { text: 'No response' };
+        return null;
+      }
+
+      // Rule 4 — Interviewing / past Applied, no stage update in ≥14 days
+      if (_IN_PROGRESS_STAGES.has(stage) && lastUpd !== null && lastUpd >= 14) {
+        return { text: 'Follow up' };
+      }
+
+      return null;
+    }
+
     function needsAttentionDot(role) {
       if (role.outcome_state || role.archived) return false;
       const stage = currentStageLabel(role);
@@ -1390,15 +1433,12 @@
       let filtered = roles.filter(r => {
         if (inboxTab === 'archive') return isArchivedRole(r) || r.user_decision === 'skip';
         if (inboxTab === 'all')     return true;
-        // Needs attention: active roles flagged by needsAttentionDot
+        // Needs attention: active roles with a live nudge — matches Overview section
         if (inboxTab === 'needs_attention')
-          return !isArchivedRole(r) && r.user_decision !== 'skip' && needsAttentionDot(r);
-        // In progress: applied or advanced past JD Review (no terminal outcome)
+          return !isArchivedRole(r) && r.user_decision !== 'skip' && !!_roleNudge(r);
+        // In progress: Recruiter Screen and beyond — matches Overview section
         if (inboxTab === 'in_progress')
-          return !isArchivedRole(r) && r.user_decision !== 'skip' && (
-            r.user_decision === 'apply' ||
-            (r.user_decision === null && currentStageLabel(r) !== 'JD Review' && r.job_description_raw)
-          );
+          return !isArchivedRole(r) && r.user_decision !== 'skip' && _IN_PROGRESS_STAGES.has(currentStageLabel(r));
         // Active tab: exclude terminal/archived roles AND roles the user has explicitly skipped
         return !isArchivedRole(r) && r.user_decision !== 'skip';
       });
@@ -1562,27 +1602,31 @@
       // (weak evaluation, high-volume funnel, intense pace, inflated seniority),
       // then positive/informational (ownership, hiring route). Only one signal
       // surfaces per role — the most noteworthy characteristic.
+      // Priority-ordered [condition, signal] pairs. First match wins.
+      // Warnings (1–4) surface before positive signals (5–8).
+      const _INBOX_SIGNAL_PRIORITY = [
+        /* 1 — Low-signal evaluation: affects analysis confidence */
+        [lmo => lmo._weakSignal,                                                          'Limited job info'],
+        /* 2 — High-volume funnel: poor candidate experience expected */
+        [lmo => lmo.hiring_system?.type === 'high_volume_funnel',                         'High-volume hiring'],
+        /* 3 — Intense pace: energy cost, flag early */
+        [lmo => lmo.delivery_pressure === 'intense',                                      'Intense pace expected'],
+        /* 4 — Inflated seniority: scope/comp misalignment risk */
+        [lmo => lmo.seniority_authenticity === 'inflated',                                'Seniority may be inflated'],
+        /* 5 — High ownership: positive signal */
+        [lmo => ['high', 'company_level', 'platform'].includes(lmo.ownership_level),     'High ownership role'],
+        /* 6 — Low ownership: informational */
+        [lmo => lmo.ownership_level === 'low',                                            'Low ownership role'],
+        /* 7 — Founder-led or direct hire: lean process */
+        [lmo => lmo.hiring_system?.type === 'founder_led',                                'Founder-led hire'],
+        [lmo => lmo.hiring_system?.type === 'direct_employer',                            'Direct employer hire'],
+        /* 8 — Understated scope: interesting edge case */
+        [lmo => lmo.seniority_authenticity === 'understated',                             'Scope may be understated'],
+      ];
+
       const _buildInboxSignal = lmo => {
         if (!lmo || typeof lmo !== 'object') return null;
-        // 1 — Low-signal evaluation (top priority — affects analysis confidence)
-        if (lmo._weakSignal) return 'Limited job info';
-        // 2 — High-volume funnel (warn: poor candidate experience expected)
-        if (lmo.hiring_system?.type === 'high_volume_funnel') return 'High-volume hiring';
-        // 3 — Intense pace (warn: energy cost to flag early)
-        if (lmo.delivery_pressure === 'intense') return 'Intense pace expected';
-        // 4 — Seniority inflated (warn: scope/comp misalignment risk)
-        if (lmo.seniority_authenticity === 'inflated') return 'Seniority may be inflated';
-        // 5 — High ownership (positive signal, worth surfacing)
-        if (['high', 'company_level', 'platform'].includes(lmo.ownership_level))
-          return 'High ownership role';
-        // 6 — Low ownership (informational)
-        if (lmo.ownership_level === 'low') return 'Low ownership role';
-        // 7 — Founder-led or direct hire (positive: lean process)
-        if (lmo.hiring_system?.type === 'founder_led') return 'Founder-led hire';
-        if (lmo.hiring_system?.type === 'direct_employer') return 'Direct employer hire';
-        // 8 — Understated scope (interesting edge case)
-        if (lmo.seniority_authenticity === 'understated') return 'Scope may be understated';
-        return null;
+        return _INBOX_SIGNAL_PRIORITY.find(([cond]) => cond(lmo))?.[1] ?? null;
       };
 
       const renderRoleCard = role => {
@@ -1628,14 +1672,16 @@
         if (_userAction) metaParts.push(_userAction);
         if (_timeLabel) metaParts.push(_timeLabel);
 
-        // ── Intelligence signal — ONE signal only ─────────────────────────────
-        // Suppressed for in_progress (stage tag is the signal) and archived
-        // (analysis is irrelevant once done). Mini reasons removed — they added
-        // noise alongside the intel signal without adding proportional value.
+        // ── Signal line — nudge takes priority; falls back to intel signal ────
+        // Nudge applies to all non-archived states incl. in_progress.
+        // Intel signal is suppressed for in_progress and archived (unchanged).
+        const _nudge       = _isArchived ? null : _roleNudge(role);
         const lmo          = role.latest_match_output || {};
-        const _intelSig    = (_isInProg || _isArchived) ? null : _buildInboxSignal(lmo);
-        const intelSigHtml = _intelSig
-          ? `<div class="rw-role-card__signal inbox-signals">${esc(_intelSig)}</div>`
+        const _intelSig    = (!_nudge && !_isInProg && !_isArchived) ? _buildInboxSignal(lmo) : null;
+        const _sigText     = _nudge?.text || _intelSig || null;
+        const _sigClass    = _nudge ? 'rw-role-card__signal inbox-signals rw-nudge-signal' : 'rw-role-card__signal inbox-signals';
+        const intelSigHtml = _sigText
+          ? `<div class="${_sigClass}">${esc(_sigText)}</div>`
           : '';
 
         // ── Footer-right: stage tag (in_progress) | state badge (attn/archived) ─
@@ -1651,8 +1697,8 @@
           ? `<span class="rw-role-card__stage stage-tag stage-${_stageSlug}">${esc(stageLabel)}</span>`
           : _isAttn
           ? `<span class="rw-role-card__state rw-role-card__state--attention">Attention</span>`
-          : (_isArchived && _outcomeLabel)
-          ? `<span class="rw-role-card__state rw-role-card__state--archived">${esc(_outcomeLabel)}</span>`
+          : _isArchived
+          ? `<span class="rw-role-card__state rw-role-card__state--archived">${esc(_outcomeLabel || 'Archived')}</span>`
           : '';
 
         // ── Footer row: meta left, pill right ─────────────────────────────────
@@ -2088,6 +2134,8 @@
     // ─── Role Timeline ─────────────────────────────────────────────────────────
     // Structured lifecycle event types available for user selection.
     const TIMELINE_EVENT_TYPES = [
+      // Note first — the most common return visit action is a quick note, not milestone logging.
+      { value: 'note_added',             label: 'Note' },
       { value: 'application_submitted',  label: 'Application submitted' },
       { value: 'recruiter_contacted',    label: 'Recruiter contacted me' },
       { value: 'interview_scheduled',    label: 'Interview scheduled' },
@@ -2097,7 +2145,6 @@
       { value: 'withdrawn',              label: 'Withdrawn' },
       { value: 'ghosted',                label: 'Ghosted' },
       { value: 'no_response',            label: 'No response' },
-      { value: 'note_added',             label: 'Note' },
     ];
 
     // Format a date string (ISO date or ISO timestamptz) as "12 Jan" or "12 Jan 2024"
@@ -2119,19 +2166,28 @@
       const displayDate = ev.event_date
         ? _fmtEventDate(ev.event_date)
         : _fmtEventDate(ev.created_at);
-      const relTime  = relativeTime(ev.created_at);
       // Use note if present (new field); fall back to detail (legacy field)
       const noteText = ev.note || ev.detail || null;
-      const noteHtml = noteText
-        ? `<div class="role-memory-detail">${esc(noteText)}</div>`
-        : '';
+
+      // Pure notes: the note text IS the content — show it as primary, suppress the "Note" title.
+      // Milestone events (application, interview, etc.): show type label first, note as context below.
+      const isNote = ev.event_type === 'note_added';
+      let bodyHtml;
+      if (isNote && noteText) {
+        bodyHtml = `<div class="role-memory-note-text">${esc(noteText)}</div>
+          <div class="role-memory-time">${esc(displayDate)}</div>`;
+      } else {
+        const noteHtml = noteText
+          ? `<div class="role-memory-detail">${esc(noteText)}</div>`
+          : '';
+        bodyHtml = `<div class="role-memory-title">${esc(ev.title)}</div>
+          <div class="role-memory-time">${esc(displayDate)}</div>
+          ${noteHtml}`;
+      }
+
       return `<div class="role-memory-event">
         <span class="${dotClass}"></span>
-        <div class="role-memory-body">
-          <div class="role-memory-title">${esc(ev.title)}</div>
-          <div class="role-memory-time">${esc(displayDate)} <span style="color:var(--text-light);">&middot; ${esc(relTime)}</span></div>
-          ${noteHtml}
-        </div>
+        <div class="role-memory-body">${bodyHtml}</div>
       </div>`;
     }
 
@@ -2162,15 +2218,17 @@
       // ── Events list ────────────────────────────────────────────────────────
       let eventsHtml;
       if (!events.length) {
-        eventsHtml = `<div class="role-memory-empty">No events yet. Add the first milestone or note above.</div>`;
+        eventsHtml = `<div class="role-memory-empty">No milestones or notes yet.</div>`;
       } else {
         eventsHtml = events.map(_renderTimelineRow).join('');
       }
 
+      // Events first — returning users read before they write.
+      // Add form at the bottom with a visual separator.
       sectionEl.innerHTML = `
-        <div class="doc-section-heading">Timeline</div>
-        ${addFormHtml}
-        <div id="role-memory-events" class="rt-events-list">${eventsHtml}</div>`;
+        <div class="doc-section-heading">Notes & milestones</div>
+        <div id="role-memory-events" class="rt-events-list">${eventsHtml}</div>
+        ${addFormHtml}`;
 
       // ── Wire add button ────────────────────────────────────────────────────
       const typeSelect  = document.getElementById('rt-type-select');
@@ -5572,8 +5630,7 @@
     // Lightweight divider — not a full artifact block, just a contextual marker.
     function _wsStageEventHtml(stage) {
       return `<div class="ws-stage-event" data-ws-entry="${WS_ENTRY.SYSTEM}">
-        <span class="ws-stage-event-label">Moved to</span>
-        <strong>${esc(stage)}</strong>
+        <span class="ws-stage-event-label">${esc(stage)}</span>
       </div>`;
     }
 
@@ -7361,6 +7418,44 @@
     // Roles with a JD use the existing renderRoleDoc path.
     // This is the ONLY entry point to the workspace — do not call renderWorkspaceView directly.
 
+    // ─── Recruiter history block ───────────────────────────────────────────────
+    // Returns an HTML string showing previous roles linked to the same recruiter.
+    // Used inside each contact card in the "Role Contacts" section.
+    // Returns '' if there are no past roles (i.e. this is the first).
+    function _recruiterHistoryHtml(recFull, currentRoleId) {
+      if (!recFull?.roles?.length) return '';
+      const _past = recFull.roles.filter(r => r.id !== currentRoleId);
+      if (_past.length === 0) return '';
+
+      // Summary counts
+      const _total      = _past.length;
+      const _responded  = _past.filter(r => r._firstResponseDate).length;
+      const _noResp     = _past.filter(r => r._appliedDate && !r._firstResponseDate).length;
+      const _parts      = [`${_total} previous role${_total !== 1 ? 's' : ''}`];
+      if (_responded > 0) _parts.push(`${_responded} response${_responded !== 1 ? 's' : ''}`);
+      if (_noResp    > 0) _parts.push(`${_noResp} no response${_noResp !== 1 ? 's' : ''}`);
+
+      // 1–2 most recent roles
+      const _sorted = [..._past].sort((a, b) => {
+        const _da = new Date(a.role_updates?.[0]?.created_at || a.created_at).getTime();
+        const _db = new Date(b.role_updates?.[0]?.created_at || b.created_at).getTime();
+        return _db - _da;
+      }).slice(0, 2);
+
+      const _itemsHtml = _sorted.map(r => {
+        const _label = [r.company_name, r.role_title].filter(Boolean).join(' · ') || 'Role';
+        const _state = r.outcome_state
+          ? outcomeDisplayLabel(r.outcome_state)
+          : currentStageLabel(r);
+        return `<div class="role-contact-history-item"><span class="role-contact-history-label">${esc(_label)}</span><span class="role-contact-history-outcome">${esc(_state)}</span></div>`;
+      }).join('');
+
+      return `<div class="role-contact-history">
+        <div class="role-contact-history-summary">${_parts.join(' · ')}</div>
+        ${_itemsHtml}
+      </div>`;
+    }
+
     // ─── Role Contacts section refresh ────────────────────────────────────────
     // Populates:
     //   #doc-meta-recruiter — compact header line showing the first contact only
@@ -7390,10 +7485,12 @@
           const _rProfileHtml = _recRaw.linkedin_url
             ? `<div class="doc-meta-rec-detail"><a href="${esc(_recRaw.linkedin_url)}" target="_blank" rel="noopener">${_recRaw.linkedin_url.includes('linkedin.com') ? 'LinkedIn' : 'Profile'} ↗</a></div>`
             : '';
-          const _lastEvDate = role.role_updates?.[0]?.created_at
-            || _firstLink?.created_at || role.created_at || null;
-          const _rLastHtml = _lastEvDate
-            ? `<div class="doc-meta-rec-detail">Last interaction: ${_rcRelativeDate(_lastEvDate)}</div>`
+          // Use the recruiter link date (when this contact was linked to the role),
+          // not the role's most recent stage update — the stage update is not an
+          // interaction with the recruiter and the label was misleading.
+          const _linkDate  = _firstLink?.created_at || role.created_at || null;
+          const _rLastHtml = _linkDate
+            ? `<div class="doc-meta-rec-detail">Linked ${_rcRelativeDate(_linkDate)}</div>`
             : '';
           // History facts
           const _recFull = allRecruiters.find(r => r.id === _recRaw.id);
@@ -7438,7 +7535,8 @@
         _wrap.appendChild(_rowEl);
       }
 
-      const _contacts = role.role_recruiters || [];
+      const _contacts    = role.role_recruiters || [];
+      const _hasNudge    = !!_roleNudge(role);
 
       let _rowHtml = `<div class="role-contacts-section">
         <div class="role-contacts-header">
@@ -7457,6 +7555,22 @@
           const _nameHtml = _rec.linkedin_url
             ? `<a href="${esc(_rec.linkedin_url)}" target="_blank" rel="noopener" class="role-contact-name-link">${esc(_rec.name || '—')}</a>`
             : `<span class="role-contact-name">${esc(_rec.name || '—')}</span>`;
+          const _recFull  = allRecruiters.find(r => r.id === _rec.id);
+          const _histHtml = _recruiterHistoryHtml(_recFull, role.id);
+
+          // Follow-up panel: visible when role has a stale nudge signal
+          const _followUpHtml = _hasNudge ? `
+            <div class="role-contact-followup-row">
+              <button class="role-contact-followup-btn" data-followup-rec-id="${esc(_rec.id)}">Follow up</button>
+            </div>
+            <div class="role-contact-followup-panel" data-panel-rec-id="${esc(_rec.id)}" style="display:none;">
+              <textarea class="role-contact-followup-msg" rows="5" spellcheck="true"></textarea>
+              <div class="role-contact-followup-actions">
+                <button class="role-contact-followup-copy">Copy message</button>
+                <button class="role-contact-followup-log">Log follow-up</button>
+              </div>
+            </div>` : '';
+
           _rowHtml += `<div class="role-contact-item" data-rec-id="${esc(_rec.id)}">
             <div class="role-contact-main">
               ${_nameHtml}
@@ -7464,6 +7578,9 @@
               ${_rec.company ? `<span class="role-contact-company">· ${esc(_rec.company)}</span>` : ''}
             </div>
             ${_rec.email ? `<div class="role-contact-detail"><a href="mailto:${esc(_rec.email)}">${esc(_rec.email)}</a></div>` : ''}
+            ${(_rec.mobile_phone || _rec.office_phone) ? `<div class="role-contact-detail"><a href="tel:${esc(_rec.mobile_phone || _rec.office_phone)}">${esc(_rec.mobile_phone || _rec.office_phone)}</a></div>` : ''}
+            ${_histHtml}
+            ${_followUpHtml}
           </div>`;
         }
         _rowHtml += `</div>`;
@@ -7483,9 +7600,110 @@
         item.style.cursor = 'pointer';
         item.addEventListener('click', e => {
           if (e.target.tagName === 'A') return;
+          if (e.target.closest('.role-contact-followup-row, .role-contact-followup-panel')) return;
           _openRecruiterById(item.dataset.recId);
         });
       });
+
+      // Wire up Follow up toggle buttons
+      _rowEl.querySelectorAll('.role-contact-followup-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const _recId = btn.dataset.followupRecId;
+          const _panel = _rowEl.querySelector(`.role-contact-followup-panel[data-panel-rec-id="${_recId}"]`);
+          if (!_panel) return;
+          const _open  = _panel.style.display !== 'none';
+          if (_open) {
+            _panel.style.display = 'none';
+            btn.textContent = 'Follow up';
+            return;
+          }
+          // Pre-fill scaffold on first open (or if textarea has been cleared)
+          const _ta = _panel.querySelector('.role-contact-followup-msg');
+          if (_ta && !_ta.value.trim()) {
+            const _recRaw = _contacts.find(l => l.recruiters?.id === _recId)?.recruiters;
+            _ta.value = _buildFollowUpMessage(_recRaw, role);
+          }
+          _panel.style.display = '';
+          btn.textContent = 'Close';
+          _panel.querySelector('.role-contact-followup-msg')?.focus();
+        });
+      });
+
+      // Wire up Copy message buttons
+      _rowEl.querySelectorAll('.role-contact-followup-copy').forEach(copyBtn => {
+        copyBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const _ta  = copyBtn.closest('.role-contact-followup-panel')?.querySelector('.role-contact-followup-msg');
+          const _msg = _ta?.value.trim();
+          if (!_msg) return;
+          const _done = () => {
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => { copyBtn.textContent = 'Copy message'; }, 2000);
+          };
+          if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(_msg).then(_done).catch(() => {
+              _ta.select(); document.execCommand('copy'); _done();
+            });
+          } else {
+            _ta.select(); document.execCommand('copy'); _done();
+          }
+        });
+      });
+
+      // Wire up Log follow-up buttons
+      _rowEl.querySelectorAll('.role-contact-followup-log').forEach(logBtn => {
+        logBtn.addEventListener('click', async e => {
+          e.stopPropagation();
+          const _panel  = logBtn.closest('.role-contact-followup-panel');
+          const _recId  = _panel?.dataset.panelRecId;
+          const _recRaw = _contacts.find(l => l.recruiters?.id === _recId)?.recruiters;
+          const _name   = _recRaw?.name || null;
+          const _note   = _name ? `Followed up with ${_name}` : 'Followed up';
+          logBtn.disabled = true;
+          const _today  = new Date().toISOString().slice(0, 10);
+          try {
+            const { data: _newEv, error: _evErr } = await db.from('role_events').insert({
+              role_id:    role.id,
+              event_type: 'note_added',
+              title:      'Note',
+              source:     'user',
+              event_date: _today,
+              note:       _note,
+              detail:     _note,
+            }).select('id, event_type, title, created_at, source, event_date, note, detail').single();
+            if (_evErr) throw _evErr;
+
+            // Prepend to timeline if visible
+            const _eventsEl = document.getElementById('role-memory-events');
+            if (_eventsEl) {
+              const _emptyEl = _eventsEl.querySelector('.role-memory-empty');
+              if (_emptyEl) _eventsEl.innerHTML = '';
+              _eventsEl.insertAdjacentHTML('afterbegin', _renderTimelineRow(_newEv));
+            }
+
+            // Close panel
+            if (_panel) _panel.style.display = 'none';
+            const _followupBtn = _rowEl.querySelector(`.role-contact-followup-btn[data-followup-rec-id="${_recId}"]`);
+            if (_followupBtn) _followupBtn.textContent = 'Follow up';
+
+            logBtn.textContent = 'Logged ✓';
+            setTimeout(() => { logBtn.textContent = 'Log follow-up'; logBtn.disabled = false; }, 2500);
+          } catch (_) {
+            logBtn.disabled = false;
+          }
+        });
+      });
+    }
+
+    // ─── Follow-up message scaffold ───────────────────────────────────────────
+    // Returns a pre-filled editable message template personalised to the contact + role.
+    function _buildFollowUpMessage(rec, role) {
+      const _firstName = rec?.name ? rec.name.split(' ')[0] : '';
+      const _greeting  = _firstName ? `Hi ${_firstName},` : 'Hi,';
+      const _roleTitle = role.role_title || 'the role';
+      const _company   = role.company_name || 'your company';
+      return `${_greeting}\n\nI wanted to follow up on my application for the ${_roleTitle} position at ${_company}. Could you share any update on the timeline or next steps?\n\nThanks,`;
     }
 
     // Backward-compat alias — all existing call sites continue to work
@@ -7757,12 +7975,12 @@
           'Recruiter Screen': 'Recruiter replied',
           'recruiter_screen': 'Recruiter replied',
           'Recruiter screen': 'Recruiter replied',
-          'Hiring Manager':   'Interview scheduled',
-          'hiring_manager':   'Interview scheduled',
-          'Panel':            'Interview scheduled',
-          'panel':            'Interview scheduled',
-          'Final':            'Interview scheduled',
-          'final':            'Interview scheduled',
+          'Hiring Manager':   'Hiring manager interview',
+          'hiring_manager':   'Hiring manager interview',
+          'Panel':            'Panel interview',
+          'panel':            'Panel interview',
+          'Final':            'Final round interview',
+          'final':            'Final round interview',
           'Offer':            'Offer received',
           'offer':            'Offer received',
           'In progress':      'In progress',
@@ -7893,6 +8111,9 @@
         </summary>
         <div class="role-record-body">
 
+          <!-- Pattern Signals — cross-portfolio observations, filled async when analysis loads -->
+          <div id="doc-pattern-signals" style="display:none;"></div>
+
           <!-- Deep analysis placeholder — filled async when analysis panel loads -->
           <div id="role-record-deep-analysis"></div>
 
@@ -7953,7 +8174,7 @@
               <div class="doc-company">${esc(sanitiseCompanyName(role.company_name) || 'Company not specified')}</div>
               <h1 class="doc-role-title">${esc(role.role_title)}</h1>
               <div class="doc-meta">${_metaLine3 ? `<span id="doc-meta-line3">${_metaLine3}</span>` : ''}<span id="doc-meta-emptype"></span></div>
-              <div class="doc-meta-posted">${esc(_addedLabel)}</div>
+              ${_isProgressed ? `<div class="doc-meta-posted">${esc(_addedLabel)}</div>` : ''}
               ${role.job_url ? `<div class="doc-meta-job-link"><a href="${esc(role.job_url)}" target="_blank" rel="noopener">View original posting ↗</a></div>` : ''}
               <div id="doc-meta-salary" class="doc-meta-salary" style="display:none;"></div>
               <div id="doc-meta-recruiter" class="doc-meta-recruiter" style="display:none;"></div>
@@ -7967,7 +8188,6 @@
           </div>
           <!-- Recruiter row — filled synchronously from role.role_recruiters -->
           <div id="doc-recruiter-row" class="doc-recruiter-row" style="display:none;"></div>
-          <div id="doc-archetype-row" class="doc-archetype-row" style="display:none;"></div>
           <!-- Decision Summary — filled async when analysis loads (decision-first order) -->
           <div id="doc-decision-summary" style="display:none;"></div>
           <!-- Next Action — filled async after decision summary -->
@@ -7978,8 +8198,6 @@
           <div id="doc-role-lens" style="display:none;"></div>
           <!-- Jump links — filled async when analysis loads -->
           <div id="doc-jump-links" style="display:none;"></div>
-          <!-- Pattern Signals — filled async when analysis loads -->
-          <div id="doc-pattern-signals" style="display:none;"></div>
           <!-- Pattern Notice — filled async, shown below Role Lens -->
           <div id="doc-pattern-notice"></div>
           ${docBody}
@@ -7991,8 +8209,10 @@
       // ── Fill recruiter meta line (synchronous — data already in role.role_recruiters) ──
       _refreshDocRecruiterMeta(role);
 
-      // ── Fill start timeline meta line (synchronous — data already on role) ──
-      {
+      // ── Fill start timeline meta line (progressed roles only) ──
+      // Hidden for JD Review — role hasn't been applied to yet; start timeline is pre-decision noise.
+      // Accessible at any time via Edit Details.
+      if (_isProgressed) {
         const _startMetaEl = document.getElementById('doc-meta-start');
         if (_startMetaEl && role.start_timeline && role.start_timeline !== 'Unknown') {
           _startMetaEl.textContent = `Start: ${role.start_timeline}`;
@@ -8025,7 +8245,9 @@
             else if (role.role_recruiters?.length)         _srcLabel = 'Recruiter outreach';
             // Unknown omitted — hide per display rules
           }
-          if (_srcLabel) _ctxLines.push(`<div>Source: ${esc(_srcLabel)}</div>`);
+          // Source channel: only surface for progressed roles — it's trivia at JD Review
+          // where applied date and response status are also absent.
+          if (_isProgressed && _srcLabel) _ctxLines.push(`<div>Source: ${esc(_srcLabel)}</div>`);
 
           // ── Applied date ──────────────────────────────────────────────────
           if (role._appliedDate) {
@@ -8341,6 +8563,9 @@
                   </div>
                 </div>`;
                 _dsEl.style.display = '';
+                // Hide the synchronous top decision badge — DS card is now the definitive signal
+                const _topBadgeEl = el.querySelector('.doc-decision');
+                if (_topBadgeEl) _topBadgeEl.style.display = 'none';
                 // If role has progressed past JD Review, DS card becomes secondary context
                 if (_isProgressed) {
                   const _dsCard = _dsEl.querySelector('.decision-summary');
@@ -8614,7 +8839,8 @@
               }
             }
           } else {
-            // No saved analysis — empty state with Generate button; raw JD goes to Role Record
+            // No saved analysis — promote CTA into doc-decision-summary slot (visible near top);
+            // raw JD goes to Role Record collapsible.
             const rawJD = role.job_description_raw || '';
             if (rawJD) {
               // Put JD collapsible into the Role Record placeholder
@@ -8629,11 +8855,18 @@
                   </details>
                 </div>`;
               }
-              panel.innerHTML = `
-                <div class="doc-section">
-                  <p class="doc-no-analysis" style="margin-bottom:14px;">No analysis saved for this role yet.</p>
+              // Promote generate CTA into decision-summary slot so it appears near the top
+              const _dsEl2 = document.getElementById('doc-decision-summary');
+              if (_dsEl2) {
+                _dsEl2.innerHTML = `<div class="decision-summary ds-empty">
+                  <div class="decision-summary-header">Ready to analyse</div>
+                  <p class="doc-prose" style="color:var(--text-muted);margin-bottom:12px;">Run the analysis to see fit, risks, and a recommended action for this role.</p>
                   <button id="btn-generate-analysis" class="btn-primary" style="font-size:13px;">Generate analysis</button>
                 </div>`;
+                _dsEl2.style.display = '';
+              }
+              // Analysis panel stays empty — the CTA above is the call to action
+              panel.innerHTML = '';
 
               const genBtn = document.getElementById('btn-generate-analysis');
               if (genBtn) {
@@ -8674,6 +8907,10 @@
 
                     // Auto-detect recruiter from JD (fire-and-forget)
                     runRecruiterAutoDetection(role, rawJD).catch(() => {});
+
+                    // Clear the "Ready to analyse" CTA — analysis is now shown in the panel below
+                    const _dsElPost = document.getElementById('doc-decision-summary');
+                    if (_dsElPost) { _dsElPost.innerHTML = ''; _dsElPost.style.display = 'none'; }
 
                     let _html2 = renderMatchOutput(analysis);
                     _html2 += `
@@ -8850,7 +9087,7 @@
       { label: 'Ghosted',        outcomeState: 'ghosted',        hasReason: false, desc: 'Had contact, then they went silent' },
       { label: 'Stopped pursuing', outcomeState: 'skipped',       hasReason: true  },
       { label: 'Withdrew',       outcomeState: 'withdrew',       hasReason: true  },
-      { label: 'Offer Accepted', outcomeState: 'offer_accepted', hasReason: false },
+      { label: 'Offer Accepted', outcomeState: 'offer_accepted', hasReason: true  },
       { label: 'Closed',         outcomeState: 'closed',         hasReason: false },
     ];
 
@@ -9084,16 +9321,31 @@
       // Decision accent for dot colouring (reverts to neutral at Recruiter Screen+)
       const _decisionAccent    = stepperDecisionAccent(role, stageIdx);
 
-      // ── Re-open button (only when outcome is set) ─────────────────
+      // ── Re-open / Restore button ──────────────────────────────────
+      // Two distinct paths:
+      //   locked (outcome_state set) → "Re-open role" clears outcome fields
+      //   purely archived (archived:true, no outcome) → "Restore role" unarchives
+      const _purelyArchived = role.archived === true && !locked;
       const reopenHtml = locked
         ? `<button class="rail-reopen-btn" id="btn-reopen-role">Re-open role</button>`
+        : _purelyArchived
+        ? `<button class="rail-reopen-btn" id="btn-reopen-role" data-action="restore">Restore role</button>`
         : '';
 
       // ── Outcome chips ─────────────────────────────────────────────────────
-      const outcomeChips = RAIL_OUTCOMES.map(o => {
-        const isSelected = currentOutcome === o.outcomeState;
-        return `<div class="rail-chip rail-outcome-item${isSelected ? ' selected' : ''}" data-outcome="${esc(o.outcomeState)}" data-has-reason="${o.hasReason}" tabindex="0">${esc(o.label)}</div>`;
-      }).join('');
+      // For progressed roles (Applied and beyond), suppress the progress-marker
+      // chips (applied/interviewing/offer_received) — they duplicate the stage
+      // stepper and would re-lock it to an earlier state if clicked accidentally.
+      const _showProgressChips = !PROGRESSED_STAGES.has(currentStage);
+      const outcomeChips = RAIL_OUTCOMES
+        .filter(o => !o.progress || _showProgressChips)
+        .map(o => {
+          const isSelected = currentOutcome === o.outcomeState;
+          // data-terminal marks non-progress outcomes so the click handler
+          // can add an inline confirm step for immediate-fire ones.
+          const terminalAttr = !o.progress ? ' data-terminal="true"' : '';
+          return `<div class="rail-chip rail-outcome-item${isSelected ? ' selected' : ''}" data-outcome="${esc(o.outcomeState)}" data-has-reason="${o.hasReason}"${terminalAttr} tabindex="0">${esc(o.label)}</div>`;
+        }).join('');
 
       // ── StageTracker: Layer 2 (meta badge) ────────────────────────────────
       const _metaState  = _roleMetaState(role);
@@ -9102,12 +9354,21 @@
         <span class="rw-stage-tracker__meta-badge rw-stage-tracker__meta-badge--${_metaState}">${_metaLabels[_metaState]}</span>
       </div>`;
 
+      // ── Nudge hint ─────────────────────────────────────────────────────────
+      const _railNudge     = _roleNudge(role);
+      const _railNudgeHtml = _railNudge
+        ? `<div class="rail-nudge">${esc(_railNudge.text)}</div>`
+        : '';
+
       // ── StageTracker: Layer 3 — user_decision annotation ──────────────────
-      // Shown only when user_decision is set. Labels deliberately distinct
-      // from outcome_state equivalents (skip→Passed, apply→Applying).
-      const _DEC_LABELS = { skip: 'Passed', apply: 'Applying', save: 'Saved' };
-      const _userDec    = role.user_decision;
-      const _decRowHtml = _userDec
+      // Shown only when user_decision is set AND role is not yet progressed.
+      // Once applied/interviewing/etc., the decision is settled — showing
+      // "Applying" at Panel stage is stale noise.
+      // Labels deliberately distinct from outcome_state equivalents (skip→Passed, apply→Applying).
+      const _DEC_LABELS  = { skip: 'Passed', apply: 'Applying', save: 'Saved' };
+      const _userDec     = role.user_decision;
+      const _railProgressed = PROGRESSED_STAGES.has(currentStage);
+      const _decRowHtml  = (_userDec && !_railProgressed)
         ? `<div class="rw-stage-tracker__annotation-row rail-chips-row">
              <span class="rail-chips-label">My call</span>
              <span class="rw-stage-tracker__annotation-chip rw-stage-tracker__annotation-chip--${esc(_userDec)}">${esc(_DEC_LABELS[_userDec] || _userDec)}</span>
@@ -9120,6 +9381,7 @@
           <div class="rw-stage-tracker rail-chips-area" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'stage-rail', component: 'StageRail', slot: 'stage-tracker', label: 'Stage & Outcome Rail' }) : ''}>
 
             ${_metaHtml}
+            ${_railNudgeHtml}
 
             <div class="rw-stage-tracker__progression rail-chips-row">
               <span class="rail-chips-label">Stage</span>
@@ -9144,32 +9406,89 @@
             <div class="rail-confirm" id="rail-confirm"></div>
 
             <div class="rail-admin">
-              <button class="rail-admin-btn" id="btn-archive-role">Archive role</button>
-              <div class="rail-admin-confirm" id="archive-confirm"></div>
+              ${role.archived
+                ? ''
+                : `<button class="rail-admin-btn" id="btn-archive-role">Archive role</button>
+                   <div class="rail-admin-confirm" id="archive-confirm"></div>`
+              }
               <button class="rail-admin-btn danger" id="btn-delete-role">Delete role</button>
               <div class="rail-admin-confirm" id="delete-confirm"></div>
             </div>
           </div>
         `;
 
-        // Re-open role (when outcome is set)
-        document.getElementById('btn-reopen-role')?.addEventListener('click', () => reopenRole(role.id));
+        // Re-open role (outcome-locked) or Restore role (purely archived)
+        document.getElementById('btn-reopen-role')?.addEventListener('click', () => {
+          const _btn = document.getElementById('btn-reopen-role');
+          if (_btn?.dataset.action === 'restore') {
+            restoreRole(role.id);
+          } else {
+            reopenRole(role.id);
+          }
+        });
 
         // Outcome chip click handlers
+        // Three paths:
+        //   hasReason   → showOutcomeReasonForm (reason form acts as the gate)
+        //   terminal    → inline confirm in #rail-outcome-form before firing
+        //   progress    → immediate (non-terminal; no gate needed)
         chipsEl.querySelectorAll('.rail-outcome-item').forEach(item => {
           item.addEventListener('click', () => {
             const outcomeState = item.dataset.outcome;
             const hasReason    = item.dataset.hasReason === 'true';
+            const isTerminal   = item.dataset.terminal === 'true';
+
             if (hasReason) {
               showOutcomeReasonForm(role.id, outcomeState);
-            } else {
-              setOutcome(role.id, outcomeState, null);
+              return;
             }
+
+            if (isTerminal) {
+              // Inline confirm — same lightweight pattern as archive.
+              // Writes into #rail-outcome-form; does not show a full form.
+              const formEl = document.getElementById('rail-outcome-form');
+              const label  = RAIL_OUTCOMES.find(o => o.outcomeState === outcomeState)?.label || outcomeState;
+              if (!formEl) { setOutcome(role.id, outcomeState, null); return; }
+
+              // If a confirm for a different outcome is pending, clear it first
+              if (formEl.dataset.pendingOutcome && formEl.dataset.pendingOutcome !== outcomeState) {
+                formEl.dataset.pendingOutcome = '';
+                formEl.innerHTML = '';
+              }
+              // Toggle off if same chip clicked again
+              if (formEl.dataset.pendingOutcome === outcomeState) {
+                formEl.dataset.pendingOutcome = '';
+                formEl.innerHTML = '';
+                return;
+              }
+
+              formEl.dataset.pendingOutcome = outcomeState;
+              formEl.innerHTML =
+                `Mark as <strong style="font-weight:500">${esc(label)}</strong>? ` +
+                `<a href="#" id="outcome-confirm-yes" style="color:var(--text-muted);text-decoration:underline;">Confirm</a>` +
+                ` · <a href="#" id="outcome-confirm-cancel" style="color:var(--text-muted);text-decoration:underline;">Cancel</a>`;
+
+              document.getElementById('outcome-confirm-yes')?.addEventListener('click', async e => {
+                e.preventDefault();
+                formEl.dataset.pendingOutcome = '';
+                formEl.innerHTML = '';
+                setOutcome(role.id, outcomeState, null);
+              });
+              document.getElementById('outcome-confirm-cancel')?.addEventListener('click', e => {
+                e.preventDefault();
+                formEl.dataset.pendingOutcome = '';
+                formEl.innerHTML = '';
+              });
+              return;
+            }
+
+            // Progress outcomes: fire immediately
+            setOutcome(role.id, outcomeState, null);
           });
         });
 
-        // Admin action handlers
-        document.getElementById('btn-archive-role').addEventListener('click', () => archiveRole(role.id));
+        // Admin action handlers (archive button absent for already-archived roles)
+        document.getElementById('btn-archive-role')?.addEventListener('click', () => archiveRole(role.id));
         document.getElementById('btn-delete-role').addEventListener('click', () => deleteRole(role.id));
       }
 
@@ -9180,26 +9499,73 @@
     // ─── Archive role ────────────────────────────────────────────────────────
     // Archive is visibility-only: sets archived = true.
     // Does NOT touch stage or outcome state.
+    // Confirmation is lighter than Delete — archive is fully reversible via
+    // "Restore role", so we show a quiet inline prompt rather than renaming
+    // the button (which would create Delete-level anxiety for a safe action).
     async function archiveRole(roleId) {
       const btn       = document.getElementById('btn-archive-role');
       const confirmEl = document.getElementById('archive-confirm');
-      if (btn) btn.disabled = true;
-      try {
-        const { error } = await db.from('roles').update({ archived: true }).eq('id', roleId);
-        if (error) throw error;
-        insertEvent(roleId, { event_type: 'role_archived', title: 'Archived' });
-        allRoles = allRoles.map(r => r.id === roleId ? { ...r, archived: true } : r);
-        renderInbox(allRoles);
-        selectedRoleId = null;
-        document.getElementById('col-overview-cards').innerHTML =
-          `<div class="doc-empty">${NAV_EMPTY_STATES[currentNav] || ''}</div>`;
-        document.getElementById('col-rail-section').innerHTML = '';
-        _setRailVisible(false);
-        _resetChatPanel();
-      } catch (e) {
-        if (btn) btn.disabled = false;
-        if (confirmEl) confirmEl.textContent = e.message || 'Archive failed.';
+      if (!btn || !confirmEl) return;
+
+      // Inline confirm: button stays labelled "Archive role"; a small
+      // "Archive? Confirm · Cancel" prompt appears below it.
+      if (confirmEl.dataset.confirming !== 'true') {
+        confirmEl.dataset.confirming = 'true';
+        confirmEl.innerHTML =
+          `Archive? <a href="#" id="archive-yes-link" style="color:var(--text-muted);text-decoration:underline;">Confirm</a>` +
+          ` · <a href="#" id="archive-cancel-link" style="color:var(--text-muted);text-decoration:underline;">Cancel</a>`;
+
+        document.getElementById('archive-yes-link')?.addEventListener('click', async e => {
+          e.preventDefault();
+          confirmEl.dataset.confirming = '';
+          confirmEl.innerHTML = '';
+          btn.disabled = true;
+          try {
+            const { error } = await db.from('roles').update({ archived: true }).eq('id', roleId);
+            if (error) throw error;
+            insertEvent(roleId, { event_type: 'role_archived', title: 'Archived' });
+            allRoles = allRoles.map(r => r.id === roleId ? { ...r, archived: true } : r);
+            renderInbox(allRoles);
+            selectedRoleId = null;
+            document.getElementById('col-rail-section').innerHTML = '';
+            _setRailVisible(false);
+            _resetChatPanel();
+
+            // Show 8-second undo message in overview cards area
+            const _cardsEl = document.getElementById('col-overview-cards');
+            if (_cardsEl) {
+              let _undoDone = false;
+              _cardsEl.innerHTML =
+                `<div class="doc-empty">Archived. <a href="#" id="archive-undo-link" style="color:var(--accent);text-decoration:underline;">Restore</a></div>`;
+              const _undoLink = document.getElementById('archive-undo-link');
+              const _undoTimer = setTimeout(() => {
+                // Only clear to empty state if the user hasn't selected a different role
+                if (!_undoDone && _cardsEl.isConnected && selectedRoleId === null) {
+                  _cardsEl.innerHTML = `<div class="doc-empty">${NAV_EMPTY_STATES[currentNav] || ''}</div>`;
+                }
+              }, 8000);
+              _undoLink?.addEventListener('click', undoE => {
+                undoE.preventDefault();
+                _undoDone = true;
+                clearTimeout(_undoTimer);
+                restoreRole(roleId);
+              });
+            }
+          } catch (e) {
+            btn.disabled = false;
+            confirmEl.textContent = e.message || 'Archive failed.';
+          }
+        });
+
+        document.getElementById('archive-cancel-link')?.addEventListener('click', e => {
+          e.preventDefault();
+          confirmEl.dataset.confirming = '';
+          confirmEl.innerHTML = '';
+        });
+        return;
       }
+
+      // Guard: if somehow called again while confirming, do nothing
     }
 
     // ─── Delete role ─────────────────────────────────────────────────────────
@@ -9474,8 +9840,9 @@
             }
           });
 
-          // Auto-dismiss after 5 seconds
-          undoTimer = setTimeout(() => { if (undoBar) undoBar.innerHTML = ''; }, 5000);
+          // Auto-dismiss after 10 seconds — 5s was too brief if the user
+          // immediately looks at the doc panel after moving a stage.
+          undoTimer = setTimeout(() => { if (undoBar) undoBar.innerHTML = ''; }, 10000);
         }
 
       } catch (e) {
@@ -9992,9 +10359,10 @@
 
     // ─── Structured reflection options for terminal outcomes (Phase 3) ──────────
     const _REFLECTION_OPTIONS = {
-      rejected:    ['Salary or rate mismatch', 'Location or remote mismatch', 'Overqualified', 'Underqualified', 'Role changed or cancelled'],
-      skipped:     ['Salary or rate too low',  'Location or remote mismatch', 'Role scope not right', 'Company concerns', 'Too many unknowns'],
-      withdrew:    ['Found a better opportunity', 'Salary or rate too low', 'Role scope changed', 'Timeline didn\'t work', 'Company culture concerns'],
+      rejected:       ['Salary or rate mismatch', 'Location or remote mismatch', 'Overqualified', 'Underqualified', 'Role changed or cancelled'],
+      skipped:        ['Salary or rate too low',  'Location or remote mismatch', 'Role scope not right', 'Company concerns', 'Too many unknowns'],
+      withdrew:       ['Found a better opportunity', 'Salary or rate too low', 'Role scope changed', 'Timeline didn\'t work', 'Company culture concerns'],
+      offer_accepted: [],
     };
 
     // ─── Show outcome reason form ─────────────────────────────────────────────
@@ -10007,40 +10375,49 @@
       const _outcomeListForm = document.getElementById('rail-outcome-list');
       if (_outcomeListForm) _outcomeListForm.classList.add('outcome-disabled');
 
-      const label        = RAIL_OUTCOMES.find(o => o.outcomeState === outcomeState)?.label || outcomeState;
-      const _opts        = _REFLECTION_OPTIONS[outcomeState] || [];
-      const _isRejection = outcomeState === 'rejected';
+      const label             = RAIL_OUTCOMES.find(o => o.outcomeState === outcomeState)?.label || outcomeState;
+      const _opts             = _REFLECTION_OPTIONS[outcomeState] || [];
+      const _isRejection      = outcomeState === 'rejected';
+      const _isOfferAccepted  = outcomeState === 'offer_accepted';
 
       const _chipsHtml = _opts.length ? `
-        <div class="rc-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;">
+        <div class="rc-chips">
           ${_opts.map(opt => `
-            <button class="rc-chip" data-rc-opt="${esc(opt)}" style="padding:3px 10px;font-size:11.5px;font-family:var(--font);background:var(--bg);color:var(--text-light);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">${esc(opt)}</button>
+            <button class="rc-chip" data-rc-opt="${esc(opt)}">${esc(opt)}</button>
           `).join('')}
         </div>
       ` : '';
 
-      // Rejection-specific: calm heading, short helper text, optional email paste
-      const _headingText = _isRejection ? 'Role not selected' : `Mark as ${esc(label)}`;
+      // Heading + helper text
+      const _headingText = _isRejection      ? 'Role not selected'
+                         : _isOfferAccepted  ? 'Offer accepted'
+                         : `Mark as ${esc(label)}`;
       const _subtextHtml = _isRejection
         ? `<div class="rw-of__subtext">What happened? A quick note helps you spot patterns later.</div>`
+        : _isOfferAccepted
+        ? `<div class="rw-of__subtext">Add a note if you like — start date, team, anything worth remembering.</div>`
         : '';
+
+      // Rejection-only: optional email paste
       const _emailHtml = _isRejection ? `
         <details class="rw-of__email-details">
           <summary class="rw-of__email-summary">Paste rejection email <span class="rw-of__optional">(optional)</span></summary>
-          <textarea id="outcome-rejection-email" placeholder="Paste the email here…" spellcheck="false" style="width:100%;box-sizing:border-box;padding:7px 10px;font-size:11.5px;font-family:var(--font);border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text-light);resize:vertical;min-height:72px;margin-top:6px;"></textarea>
+          <textarea id="outcome-rejection-email" class="rw-of__email-textarea" placeholder="Paste the email here…" spellcheck="false"></textarea>
         </details>
       ` : '';
 
+      const _headingClass = `rw-of__heading${(_isRejection || _isOfferAccepted) ? ' rw-of__heading--rejection' : ''}`;
+
       formEl.innerHTML = `
-        <div style="padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);">
-          <div style="font-size:12px;font-weight:500;color:var(--text);margin-bottom:${_isRejection ? '4px' : '8px'};">${_headingText}</div>
+        <div class="rw-of__form">
+          <div class="${_headingClass}">${_headingText}</div>
           ${_subtextHtml}
           ${_chipsHtml}
-          <textarea id="outcome-reason-input" placeholder="Reason (optional)" spellcheck="true" style="width:100%;box-sizing:border-box;padding:7px 10px;font-size:12px;font-family:var(--font);border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);resize:vertical;min-height:56px;"></textarea>
+          <textarea id="outcome-reason-input" class="rw-of__textarea" placeholder="${_isOfferAccepted ? 'Note (optional)' : 'Reason (optional)'}" spellcheck="true"></textarea>
           ${_emailHtml}
-          <div style="display:flex;gap:6px;margin-top:8px;">
-            <button id="outcome-confirm-btn" style="flex:1;padding:7px 0;font-size:12.5px;font-family:var(--font);background:var(--text);color:var(--bg);border:none;border-radius:var(--radius);cursor:pointer;">Confirm</button>
-            <button id="outcome-cancel-btn" style="flex:1;padding:7px 0;font-size:12.5px;font-family:var(--font);background:var(--surface);color:var(--text-muted);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">Cancel</button>
+          <div class="rw-of__actions">
+            <button id="outcome-confirm-btn" class="rw-of__btn-confirm">Confirm</button>
+            <button id="outcome-cancel-btn" class="rw-of__btn-cancel">Cancel</button>
           </div>
         </div>
       `;
@@ -10053,21 +10430,13 @@
           const _chipVal = chip.dataset.rcOpt;
           const _isActive = chip.classList.contains('rc-chip--active');
           // Deactivate all chips first
-          formEl.querySelectorAll('.rc-chip').forEach(c => {
-            c.classList.remove('rc-chip--active');
-            c.style.background = 'var(--bg)';
-            c.style.color = 'var(--text-light)';
-            c.style.borderColor = 'var(--border)';
-          });
+          formEl.querySelectorAll('.rc-chip').forEach(c => c.classList.remove('rc-chip--active'));
           if (_isActive) {
             // Toggle off — clear textarea if it still contains the chip value
             if (textEl.value === _chipVal) textEl.value = '';
           } else {
             // Activate this chip, populate textarea
             chip.classList.add('rc-chip--active');
-            chip.style.background = 'var(--text)';
-            chip.style.color = 'var(--bg)';
-            chip.style.borderColor = 'var(--text)';
             textEl.value = _chipVal;
           }
         });
@@ -10216,7 +10585,8 @@
             closed:         'Role closed.',
           }[outcomeState] || 'Outcome saved.';
           freshConfirm.textContent = _outcomeMsg;
-          setTimeout(() => { if (freshConfirm) freshConfirm.textContent = ''; }, 2500);
+          // 4s gives enough time to read the message and spot "Re-open role"
+          setTimeout(() => { if (freshConfirm) freshConfirm.textContent = ''; }, 4000);
         }
 
       } catch (e) {
@@ -10239,6 +10609,7 @@
           outcome_state:  null,
           outcome_reason: null,
           outcome_at:     null,
+          archived:       false,
         }).eq('id', roleId);
         if (error) throw error;
 
@@ -10250,9 +10621,12 @@
 
         allRoles = allRoles.map(r =>
           r.id !== roleId ? r
-            : { ...r, outcome_state: null, outcome_reason: null, outcome_at: null }
+            : { ...r, outcome_state: null, outcome_reason: null, outcome_at: null, archived: false }
         );
 
+        // reopenRole is only reachable from outcome-locked roles, which always live
+        // in the Archive tab — always switch to active so the role reappears.
+        _setAppFilter('active');
         renderInbox(allRoles);
 
         // Full re-render of the rail — stepper unlocks automatically
@@ -10268,11 +10642,30 @@
 
     // ─── Restore archived role (unarchive) ───────────────────────────────────
     async function restoreRole(roleId) {
-      const { error } = await db.from('roles').update({ archived: false }).eq('id', roleId);
-      if (error) { console.error('[RESTORE]', error.message); return; }
-      allRoles = allRoles.map(r => r.id === roleId ? { ...r, archived: false } : r);
-      renderInbox(allRoles);
-      selectRole(roleId);
+      const btn       = document.getElementById('btn-reopen-role');
+      const confirmEl = document.getElementById('rail-confirm');
+      if (btn) { btn.disabled = true; btn.textContent = 'Restoring\u2026'; }
+
+      try {
+        const { error } = await db.from('roles').update({ archived: false }).eq('id', roleId);
+        if (error) throw error;
+
+        insertEvent(roleId, {
+          event_type: 'decision_changed',
+          title:      'Role restored',
+          detail:     'Removed from archive — returned to active tracking',
+        });
+
+        allRoles = allRoles.map(r => r.id === roleId ? { ...r, archived: false } : r);
+
+        // Switch to active tab so the role appears in the list immediately
+        _setAppFilter('active');
+        renderInbox(allRoles);
+        selectRole(roleId);
+      } catch (e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Restore role'; }
+        if (confirmEl) confirmEl.textContent = 'Error: ' + e.message;
+      }
     }
 
     function renderPeekSections(output) {
@@ -19262,6 +19655,7 @@
     }
 
     const NAV_EMPTY_STATES = {
+      'overview':      '',
       'applications':  'Select a role from the list to review details and take action.',
       'radar':         '',
       'recruiters':    '',
@@ -20426,9 +20820,9 @@
       const _stageEventMap = {
         'Applied':          'Application submitted',
         'Recruiter Screen': 'Recruiter screen reached',
-        'Hiring Manager':   'Interview stage reached',
-        'Panel':            'Interview stage reached',
-        'Final':            'Interview stage reached',
+        'Hiring Manager':   'Hiring manager interview',
+        'Panel':            'Panel interview',
+        'Final':            'Final round interview',
         'Offer':            'Offer stage reached',
       };
       (rec.roles || []).forEach(role => {
@@ -23474,6 +23868,213 @@ If a field cannot be determined from the message, return null for that field.`,
       })();
     }
 
+    // ─── Overview page ────────────────────────────────────────────────────────
+    // Entry point: gives the user a calm at-a-glance view of their search state.
+    // Three sections: pipeline counts (clickable) → needs attention → in progress.
+    // No charts, no analytics, no gamification. Reuses existing role helpers.
+    // ─── Outcome pattern insights ─────────────────────────────────────────────
+    // Returns up to 2 plain-language observations from existing role data.
+    // Each entry is a plain string. Returns [] when there isn't enough data.
+    //   Insight 1: Stage where closed roles have tended to end (≥4 terminal, top ≥3)
+    //   Insight 2: Response picture for applied roles (≥3 applied)
+    function _computeOutcomeInsights(roles) {
+      const _insights = [];
+
+      // ── 1. Where closed roles tend to end ─────────────────────────────────
+      const _terminal = roles.filter(r => r.outcome_state && ARCHIVE_OUTCOME_STATES.has(r.outcome_state));
+      if (_terminal.length >= 4) {
+        const _stageCounts = {};
+        for (const r of _terminal) {
+          const s = currentStageLabel(r);
+          _stageCounts[s] = (_stageCounts[s] || 0) + 1;
+        }
+        const [[_topStage, _topCount]] = Object.entries(_stageCounts).sort((a, b) => b[1] - a[1]);
+        if (_topCount >= 3) {
+          const _note = _topStage === 'Applied' ? ' — no reply came back' : '';
+          _insights.push(`Closed roles have tended to end at ${_topStage}${_note}.`);
+        }
+      }
+
+      // ── 2. Response picture for applied roles ──────────────────────────────
+      const _applied = roles.filter(r => r._appliedDate);
+      if (_applied.length >= 3) {
+        const _responded = _applied.filter(r => r._firstResponseDate).length;
+        if (_responded === 0) {
+          _insights.push(`None of the ${_applied.length} applications have had a reply yet.`);
+        } else {
+          _insights.push(`${_responded} of ${_applied.length} applications have had a reply so far.`);
+        }
+      }
+
+      return _insights;
+    }
+
+    function renderOverviewView() {
+      const el = document.getElementById('col-overview-cards');
+      if (!el) return;
+
+      // ── Active pool ──────────────────────────────────────────────────────────
+      const _active = allRoles.filter(r => !isArchivedRole(r) && r.user_decision !== 'skip');
+
+      // ── Needs attention: roles with a live nudge, most stale first ──────────
+      // Uses _roleNudge() — same signal as inbox cards — so both are in sync.
+      // Full list drives the chip count, next-action text, and deduplication.
+      // Display is capped at 5 to keep the section compact.
+      const _nudgeCandidates = [..._active].sort((a, b) =>
+        (daysSinceLastUpdate(b) ?? 0) - (daysSinceLastUpdate(a) ?? 0)
+      );
+      const _nudgeAll = [];
+      for (const r of _nudgeCandidates) {
+        const n = _roleNudge(r);
+        if (n) _nudgeAll.push({ role: r, nudge: n });
+      }
+      const _withNudge  = _nudgeAll.slice(0, 5);   // display only
+      const _nudgeCount = _nudgeAll.length;          // chip + next-action
+      const _nudgeIds   = new Set(_nudgeAll.map(({ role }) => role.id)); // full exclusion set
+
+      // ── In progress: Recruiter Screen and beyond, not already in attention ──
+      // Excludes Applied — those are covered by the nudge rules above.
+      const _OV_PROG_DEPTH = ['Offer', 'Final', 'Panel', 'Hiring Manager', 'Recruiter Screen'];
+      const _inProg = _active
+        .filter(r => _IN_PROGRESS_STAGES.has(currentStageLabel(r)) && !_nudgeIds.has(r.id))
+        .sort((a, b) => {
+          const ai = _OV_PROG_DEPTH.indexOf(currentStageLabel(a));
+          const bi = _OV_PROG_DEPTH.indexOf(currentStageLabel(b));
+          return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+        });
+
+      // ── Recent: most recently touched active roles not shown above, max 3 ───
+      const _shownIds = new Set([..._nudgeIds, ..._inProg.map(r => r.id)]);
+      const _recent = [..._active]
+        .filter(r => !_shownIds.has(r.id))
+        .sort((a, b) => {
+          const _da = new Date(a.role_updates?.[0]?.created_at || a.created_at).getTime();
+          const _db = new Date(b.role_updates?.[0]?.created_at || b.created_at).getTime();
+          return _db - _da;
+        })
+        .slice(0, 3);
+
+      // ── Role row builder ─────────────────────────────────────────────────────
+      // Attention rows show the nudge hint below the name line.
+      // All other rows are flat: company · title — stage.
+      const _roleRow = (role, nudge = null) => {
+        const _company = sanitiseCompanyName(role.company_name) || 'Unknown company';
+        const _title   = role.role_title || 'Untitled role';
+        const _stage   = currentStageLabel(role);
+        if (nudge) {
+          return `<button class="ov-role-row ov-role-row--attn" data-role-id="${esc(role.id)}">
+            <span class="ov-role-row-name">
+              <span class="ov-role-row-name-line">
+                <span class="ov-role-company">${esc(_company)}</span>
+                <span class="ov-role-title">${esc(_title)}</span>
+              </span>
+              <span class="ov-role-nudge">${esc(nudge.text)}</span>
+            </span>
+            <span class="ov-role-stage ov-role-stage--attn">${esc(_stage)}</span>
+          </button>`;
+        }
+        return `<button class="ov-role-row" data-role-id="${esc(role.id)}">
+          <span class="ov-role-row-name">
+            <span class="ov-role-company">${esc(_company)}</span>
+            <span class="ov-role-title">${esc(_title)}</span>
+          </span>
+          <span class="ov-role-stage">${esc(_stage)}</span>
+        </button>`;
+      };
+
+      // ── Section HTML ─────────────────────────────────────────────────────────
+      const _attentionHtml = _withNudge.length ? `
+        <div class="ov-section">
+          <div class="ov-section-label">Needs attention</div>
+          ${_withNudge.map(({ role, nudge }) => _roleRow(role, nudge)).join('')}
+        </div>` : '';
+
+      const _progressHtml = _inProg.length ? `
+        <div class="ov-section">
+          <div class="ov-section-label">In progress</div>
+          ${_inProg.map(r => _roleRow(r)).join('')}
+        </div>` : '';
+
+      const _recentHtml = _recent.length ? `
+        <div class="ov-section">
+          <div class="ov-section-label">Recent</div>
+          ${_recent.map(r => _roleRow(r)).join('')}
+        </div>` : '';
+
+      // ── Pipeline chips (navigation shortcuts) ───────────────────────────────
+      const _chips = [
+        { n: _active.length,   label: 'Active',         filter: 'active'          },
+        { n: _nudgeCount,      label: 'Need attention', filter: 'needs_attention' },
+        { n: _inProg.length,   label: 'In progress',    filter: 'in_progress'     },
+      ];
+      const _pipelineHtml = `
+        <div class="ov-pipeline">
+          ${_chips.map(c => `
+            <button class="ov-chip" data-ov-filter="${esc(c.filter)}">
+              <span class="ov-chip-n">${c.n}</span>
+              <span class="ov-chip-label">${esc(c.label)}</span>
+            </button>
+          `).join('')}
+        </div>`;
+
+      // ── Next action ──────────────────────────────────────────────────────────
+      // Driven by the nudge count — same source as the section above.
+      let _nextText = null;
+      if (_active.length === 0) {
+        _nextText = 'No active roles yet — add one to get started.';
+      } else if (_nudgeCount === 1) {
+        _nextText = '1 role needs your attention.';
+      } else if (_nudgeCount > 1) {
+        _nextText = `${_nudgeCount} roles need your attention.`;
+      }
+      const _nextHtml = _nextText
+        ? `<div class="ov-next-action">${esc(_nextText)}</div>`
+        : '';
+
+      // ── Pattern insights ─────────────────────────────────────────────────────
+      const _insights     = _computeOutcomeInsights(allRoles);
+      const _insightsHtml = _insights.length ? `
+        <div class="ov-insights">
+          <div class="ov-insights-label">Patterns so far</div>
+          ${_insights.map(t => `<div class="ov-insight-item">${esc(t)}</div>`).join('')}
+        </div>` : '';
+
+      // ── Empty state ──────────────────────────────────────────────────────────
+      const _hasContent = _attentionHtml || _progressHtml || _recentHtml;
+      const _mainContent = _hasContent
+        ? _attentionHtml + _progressHtml + _recentHtml
+        : `<div class="ov-quiet">Everything looks quiet.</div>`;
+
+      // ── Render ───────────────────────────────────────────────────────────────
+      el.innerHTML = `
+        <div class="col-center-inner ov-page">
+          <h1 class="ov-heading">Overview</h1>
+          ${_pipelineHtml}
+          ${_mainContent}
+          ${_nextHtml}
+          ${_insightsHtml}
+        </div>`;
+
+      // Pipeline chip clicks → Applications with matching filter
+      el.querySelectorAll('.ov-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          _setAppFilter(chip.dataset.ovFilter);
+          switchNav('applications');
+        });
+      });
+
+      // Role row clicks → switch to Applications and open the role
+      el.querySelectorAll('.ov-role-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const role = allRoles.find(r => r.id === row.dataset.roleId);
+          if (!role) return;
+          _setAppFilter('active');
+          switchNav('applications');
+          selectRole(role.id, { scrollIntoView: true });
+        });
+      });
+    }
+
     // ─── Review page ──────────────────────────────────────────────────────────
     async function renderReviewView() {
       const el = document.getElementById('col-overview-cards');
@@ -24040,32 +24641,47 @@ If a field cannot be determined from the message, return null for that field.`,
       requestAnimationFrame(() => { if (app) app.style.transition = ''; });
     }
 
+    // Sync all nav active states from currentNav (single source of truth).
+    // Covers both the main .nav-item buttons and the separate profile circle.
+    // Call whenever currentNav changes — never toggle nav classes directly elsewhere.
+    function _syncNavActive() {
+      document.querySelectorAll('.nav-item').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.nav === currentNav);
+      });
+      const _profileCircle = document.getElementById('btn-nav-profile');
+      if (_profileCircle) _profileCircle.classList.toggle('active', currentNav === 'profile');
+      const _appFiltersEl = document.getElementById('nav-app-filters');
+      if (_appFiltersEl) _appFiltersEl.style.display = currentNav === 'applications' ? '' : 'none';
+    }
+
     function switchNav(view) {
       currentNav = view;
       selectedRecruiterId = null;   // clear stale recruiter highlight on every nav change
-      document.querySelectorAll('.nav-item').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.nav === view);
-      });
-      // Show Applications sub-filters only when on the Applications view
-      const _appFiltersEl = document.getElementById('nav-app-filters');
-      if (_appFiltersEl) _appFiltersEl.style.display = view === 'applications' ? '' : 'none';
-      // Sync profile circle active state
-      const _profileCircle = document.getElementById('btn-nav-profile');
-      if (_profileCircle) _profileCircle.classList.toggle('active', view === 'profile');
+      _syncNavActive();
 
       // Clear compare state when leaving Applications
       if (view !== 'applications' && compareRoleIds.size > 0) {
         compareRoleIds.clear();
       }
 
-      // Right panel is only shown on Applications; hide on Radar, Recruiters, Review, Safeguards, Admin
-      const _NO_RAIL_VIEWS = new Set(['radar', 'recruiters', 'review', 'safeguards', 'admin']);
+      // Right panel is only shown on Applications; hide on Overview and all other full-page views
+      const _NO_RAIL_VIEWS = new Set(['overview', 'radar', 'recruiters', 'review', 'safeguards', 'admin']);
       rightPanelVisible = !_NO_RAIL_VIEWS.has(view);
       const _colRight = document.getElementById('col-chat');
-      if (_colRight) _colRight.style.display = rightPanelVisible ? '' : 'none';
+      if (_colRight) _colRight.style.display = 'none'; // chat panel hidden from UI
 
       // Show the role list panel only for Applications
       setListPanelVisible(view === 'applications');
+
+      // ── Overview nav ──────────────────────────────────────────────────────────
+      if (view === 'overview') {
+        selectedRoleId = null;
+        document.querySelectorAll('.inbox-role').forEach(r => r.classList.remove('active'));
+        renderOverviewView();
+        document.getElementById('col-rail-section').innerHTML = '';
+        _setRailVisible(false);
+        return;
+      }
 
       // ── Applications nav ──────────────────────────────────────────────────────
       if (view === 'applications') {
@@ -24268,7 +24884,7 @@ If a field cannot be determined from the message, return null for that field.`,
       }
     });
 
-    document.getElementById('btn-logo').addEventListener('click', () => switchNav('applications'));
+    document.getElementById('btn-logo').addEventListener('click', () => switchNav('overview'));
     document.querySelectorAll('.nav-item').forEach(btn => {
       btn.addEventListener('click', () => switchNav(btn.dataset.nav));
     });
@@ -24585,6 +25201,10 @@ If a field cannot be determined from the message, return null for that field.`,
         // appear. Without the re-render the first inbox load always shows no
         // indicators (cache is still null when renderInbox first runs above).
         _warmBoundaryCache().then(() => { renderInbox(allRoles); }).catch(() => {});
+        // Populate the center panel based on current nav
+        if (currentNav === 'overview') {
+          renderOverviewView();
+        }
         // Re-render selected role if one was open
         if (selectedRoleId) {
           const role = allRoles.find(r => r.id === selectedRoleId);
