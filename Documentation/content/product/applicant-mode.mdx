@@ -1,0 +1,63 @@
+---
+title: Applicant Mode
+description: How Rolewise analyses a role and helps the user decide whether to apply.
+---
+# Applicant Mode
+Applicant Mode is the core decision layer of Rolewise. It helps you read a job description clearly and decide if it's worth pursuing.
+## Why it exists
+Job descriptions are often dense, repetitive, and unclear.
+Important signals are buried, softened, or missing entirely. This makes it difficult to quickly understand:
+- what the role actually involves
+- what is expected
+- where the risks are
+
+Applicant Mode restructures that information into something easier to reason about.
+## What it does
+When a user provides a job description, Applicant Mode:
+- extracts the core shape of the role
+- identifies likely responsibilities and expectations
+- surfaces potential blockers and risks
+- highlights vague or missing information
+- summarises the role in plain English
+
+The goal is clarity, not judgment.
+## The decision layer
+Applicant Mode supports a simple decision: Apply, Skip, or Keep watching. It doesn't tell you what to do — it gives you a clearer basis for deciding.
+## How it behaves
+Applicant Mode follows these principles:
+### Descriptive, not predictive
+Describes what the role appears to be. No outcome predictions.
+
+### Honest about uncertainty
+Vague roles surface as vague. No confident assumptions filling gaps.
+
+### Trade-offs are visible
+Highlights scope vs clarity, ownership vs ambiguity, expectations vs support.
+
+### Calm presentation
+Easy to scan and think through. No urgency, pressure, or visual noise.
+
+## How it fits into the product
+```
+Input: Job Description
+↓
+Applicant Mode Analysis
+↓
+Decision: Apply / Skip / Watch
+```
+
+Applicant Mode sits at the start of the workflow:
+1. User provides a job description
+2. Rolewise analyses the role
+3. User decides whether to apply
+
+From there, the role can move into tracking, follow-ups, and outcome logging.
+## Over time
+As you evaluate more roles, patterns emerge. Applicant Mode feeds this learning without scoring or ranking you.
+## In one sentence
+Applicant Mode helps you understand a role clearly before deciding whether to apply.
+
+## Related pages
+- [Role DNA](/docs/product/role-dna)
+- [Decision Snapshot](/docs/product/decision-snapshot)
+- [Radar](/docs/product/radar)

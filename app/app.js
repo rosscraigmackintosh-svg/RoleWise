@@ -82,6 +82,26 @@
           setTimeout(() => { if (_w.isConnected) _w.remove(); }, 12000);
         }
       }
+
+      // ── Candidate learning hook (fire-and-forget) ──
+      // Save structured decision to role_decisions_ext and update learning counters.
+      const _decRole = allRoles.find(r => r.id === roleId);
+      if (_decRole) {
+        // Map ledger types to learning decision types
+        const _learningType = decisionType === 'other' ? 'keep_reviewing' : decisionType;
+        if (['apply', 'skip', 'keep_reviewing'].includes(_learningType)) {
+          // Always record in role_decisions_ext (available for future pattern analysis)
+          _saveCandidateDecisionExt(_decRole, _learningType, { reason, notes }).catch(() => {});
+          // Only bump counters for terminal decisions (apply/skip), not keep_reviewing
+          if (_learningType !== 'keep_reviewing') {
+            _updateCandidateLearningCounters(_learningType, _decRole, reason).catch(() => {});
+            // Rebuild learned patterns every 5th terminal decision
+            if (_candidateLearning && ((_candidateLearning.total_roles_analysed || 0) + 1) % 5 === 0) {
+              _rebuildCandidateLearningPatterns().catch(() => {});
+            }
+          }
+        }
+      }
     }
 
     // Update the confidence on the most recent decision for a role.
@@ -135,7 +155,7 @@
         if (existing && !existing.querySelector('.ws-stale-note')) {
           const note = document.createElement('div');
           note.className = 'ws-stale-note';
-          note.textContent = 'Decision history may be out of date — reload to refresh.';
+          note.textContent = 'Decision history may be out of date. Reload to refresh.';
           existing.prepend(note);
         }
       }
@@ -402,6 +422,646 @@
       } catch (e) {
         console.warn('[_saveDecisionSnapshot]', e);
       }
+    }
+
+    // ─── Candidate Profile + Learning (persistent learned behaviour layer) ────
+    // These functions manage the per-user candidate context and learned patterns.
+    // The candidate_profile stores who the user is (strengths, blockers, CV variants).
+    // The candidate_learning stores what patterns emerge from their decisions.
+
+    /**
+     * Load or create the candidate_profile for this user.
+     * Uses _profileId to scope to the current user.
+     * On first run, seeds from ROLEWISE_CANDIDATE_SEED.
+     */
+    async function _loadOrCreateCandidateProfile() {
+      if (!_profileId) return null;
+      try {
+        const { data, error } = await db
+          .from('candidate_profile')
+          .select('*')
+          .eq('profile_id', _profileId)
+          .maybeSingle();
+        if (error) throw error;
+        if (data) return data;
+
+        // First time — seed from static defaults
+        const seed = (typeof ROLEWISE_CANDIDATE_SEED !== 'undefined') ? ROLEWISE_CANDIDATE_SEED : {};
+        const { data: created, error: createErr } = await db
+          .from('candidate_profile')
+          .insert({
+            profile_id:             _profileId,
+            name:                   seed.identity?.name || '',
+            seniority:              seed.identity?.seniority || '',
+            years_experience:       seed.identity?.years_experience || '',
+            location:               seed.identity?.location || '',
+            core_strengths:         seed.core_strengths || [],
+            preferred_environments: seed.preferred_environments || [],
+            hard_blockers:          seed.hard_blockers || [],
+            known_frictions:        seed.known_frictions || [],
+            cv_variants:            seed.cv_variants || [],
+            decision_lens:          seed.decision_lens || [],
+            work_model_ideal:       seed.work_model_preference?.ideal || '',
+            work_model_hard_limit:  seed.work_model_preference?.hard_limit || '',
+            commute_tolerance:      seed.work_model_preference?.commute_tolerance || '',
+          })
+          .select('*')
+          .single();
+        if (createErr) throw createErr;
+        return created;
+      } catch (e) {
+        console.warn('[_loadOrCreateCandidateProfile]', e);
+        return null;
+      }
+    }
+
+    /**
+     * Load or create the candidate_learning row for this user.
+     * Starts empty — populated by _updateCandidateLearningCounters().
+     */
+    async function _loadOrCreateCandidateLearning() {
+      if (!_profileId) return null;
+      try {
+        const { data, error } = await db
+          .from('candidate_learning')
+          .select('*')
+          .eq('profile_id', _profileId)
+          .maybeSingle();
+        if (error) throw error;
+        if (data) return data;
+
+        const { data: created, error: createErr } = await db
+          .from('candidate_learning')
+          .insert({ profile_id: _profileId })
+          .select('*')
+          .single();
+        if (createErr) throw createErr;
+        return created;
+      } catch (e) {
+        console.warn('[_loadOrCreateCandidateLearning]', e);
+        return null;
+      }
+    }
+
+    /**
+     * Save a structured decision record to role_decisions_ext.
+     * Called when the user applies, skips, archives, or chooses keep-reviewing.
+     *
+     * @param {Object} role - The role object from allRoles
+     * @param {string} decisionType - 'apply' | 'skip' | 'keep_reviewing' | 'archive'
+     * @param {Object} [opts] - { reason, reasonOther, notes, actualCvUsed }
+     */
+    async function _saveCandidateDecisionExt(role, decisionType, opts = {}) {
+      if (!role?.id) return;
+      const output = role.latest_match_output || role.analysis || {};
+      try {
+        await db.from('role_decisions_ext').insert({
+          role_id:                     role.id,
+          decision_type:               decisionType,
+          role_title:                  role.role_title || null,
+          company_name:                role.company_name || null,
+          role_type:                   output.role_type || null,
+          company_stage:               output.company_stage || null,
+          work_model:                  role.work_model || output.practical?.work_model || null,
+          location_text:               role.location_text || output.practical?.location || null,
+          salary_text:                 role.salary_text_raw || output.practical?.salary || null,
+          engagement_type:             role.engagement_type || null,
+          candidate_fit_signals:       output.candidate_fit_signals || [],
+          candidate_specific_frictions: output.candidate_specific_frictions || [],
+          hard_blocker_triggered:      output.hard_blocker_triggered || null,
+          recommended_cv:              output.recommended_cv || null,
+          actual_cv_used:              opts.actualCvUsed || null,
+          reason:                      opts.reason || null,
+          reason_other:                opts.reasonOther || null,
+          notes:                       opts.notes || null,
+          rolewise_verdict:            output.rolewise_verdict || null,
+        });
+      } catch (e) {
+        console.warn('[_saveCandidateDecisionExt]', e);
+      }
+    }
+
+    /**
+     * Save a structured outcome record to role_outcomes_ext.
+     * Called when a role reaches a terminal state.
+     * @param {Object} role
+     * @param {string} outcomeState
+     * @param {string} [outcomeReason]
+     * @param {Object} [opts] - { actualCvUsed, outcomeQuality }
+     */
+    async function _saveCandidateOutcomeExt(role, outcomeState, outcomeReason, opts = {}) {
+      if (!role?.id) return;
+      const output = role.latest_match_output || role.analysis || {};
+      // Find the original decision
+      const decisions = await wsLoadDecisions(role.id).catch(() => []);
+      const originalDecision = decisions.length ? decisions[decisions.length - 1]?.decision_type : null;
+      // Determine stage reached
+      const stageUpdates = (role.role_updates || []).filter(u => !u.event_type || u.event_type === 'stage');
+      const stageReached = stageUpdates.length ? stageUpdates[0]?.stage_reached : null;
+
+      try {
+        await db.from('role_outcomes_ext').upsert({
+          role_id:                     role.id,
+          outcome_state:               outcomeState,
+          outcome_reason:              outcomeReason || null,
+          role_title:                  role.role_title || null,
+          company_name:                role.company_name || null,
+          role_type:                   output.role_type || null,
+          company_stage:               output.company_stage || null,
+          work_model:                  role.work_model || output.practical?.work_model || null,
+          location_text:               role.location_text || output.practical?.location || null,
+          salary_text:                 role.salary_text_raw || output.practical?.salary || null,
+          engagement_type:             role.engagement_type || null,
+          original_decision:           originalDecision,
+          candidate_fit_signals:       output.candidate_fit_signals || [],
+          candidate_specific_frictions: output.candidate_specific_frictions || [],
+          hard_blocker_triggered:      output.hard_blocker_triggered || null,
+          recommended_cv:              output.recommended_cv || null,
+          actual_cv_used:              opts.actualCvUsed || null,
+          stage_reached:               stageReached,
+          outcome_quality:             opts.outcomeQuality || null,
+        }, { onConflict: 'role_id' });
+      } catch (e) {
+        console.warn('[_saveCandidateOutcomeExt]', e);
+      }
+    }
+
+    /**
+     * Incrementally update candidate_learning counters after a decision.
+     * This does NOT rebuild the learned patterns (that's _rebuildCandidateLearningPatterns).
+     * It just bumps the right counters.
+     *
+     * @param {string} decisionType - 'apply' | 'skip' | 'archive'
+     * @param {Object} role - The role object
+     * @param {string} [reason] - Skip/archive reason
+     */
+    async function _updateCandidateLearningCounters(decisionType, role, reason) {
+      if (!_profileId || !_candidateLearning) return;
+      const output = role?.latest_match_output || role?.analysis || {};
+      const roleType = output.role_type || 'unknown';
+      const companyStage = output.company_stage || 'unknown';
+
+      try {
+        const cl = _candidateLearning;
+        const updates = {
+          total_roles_analysed: (cl.total_roles_analysed || 0) + 1,
+          last_decision_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        if (decisionType === 'apply') {
+          updates.total_applied = (cl.total_applied || 0) + 1;
+          const artMap = cl.applied_role_types || {};
+          artMap[roleType] = (artMap[roleType] || 0) + 1;
+          updates.applied_role_types = artMap;
+          const acsMap = cl.applied_company_stages || {};
+          acsMap[companyStage] = (acsMap[companyStage] || 0) + 1;
+          updates.applied_company_stages = acsMap;
+        } else if (decisionType === 'skip') {
+          updates.total_skipped = (cl.total_skipped || 0) + 1;
+          const srtMap = cl.skipped_role_types || {};
+          srtMap[roleType] = (srtMap[roleType] || 0) + 1;
+          updates.skipped_role_types = srtMap;
+          const scsMap = cl.skipped_company_stages || {};
+          scsMap[companyStage] = (scsMap[companyStage] || 0) + 1;
+          updates.skipped_company_stages = scsMap;
+          if (reason) {
+            const srcMap = cl.skip_reason_counts || {};
+            srcMap[reason] = (srcMap[reason] || 0) + 1;
+            updates.skip_reason_counts = srcMap;
+          }
+        } else if (decisionType === 'archive') {
+          updates.total_archived = (cl.total_archived || 0) + 1;
+        }
+
+        await db.from('candidate_learning')
+          .update(updates)
+          .eq('profile_id', _profileId);
+
+        // Update local cache
+        Object.assign(_candidateLearning, updates);
+      } catch (e) {
+        console.warn('[_updateCandidateLearningCounters]', e);
+      }
+    }
+
+    /**
+     * Update candidate_learning outcome counters after an outcome is recorded.
+     */
+    async function _updateCandidateLearningOutcome(outcomeState) {
+      if (!_profileId || !_candidateLearning) return;
+      try {
+        const cl = _candidateLearning;
+        const updates = {
+          last_outcome_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const outcomeMap = {
+          no_response: 'total_no_response',
+          ghosted:     'total_no_response',
+          rejected:    'total_rejected',
+          interviewed: 'total_interviewed',
+          offer:       'total_offered',
+          offer_accepted: 'total_offered',
+          withdrew:    'total_withdrew',
+        };
+        const field = outcomeMap[outcomeState];
+        if (field) {
+          updates[field] = (cl[field] || 0) + 1;
+        }
+
+        await db.from('candidate_learning')
+          .update(updates)
+          .eq('profile_id', _profileId);
+
+        Object.assign(_candidateLearning, updates);
+      } catch (e) {
+        console.warn('[_updateCandidateLearningOutcome]', e);
+      }
+    }
+
+    /**
+     * Rebuild the learned behaviour pattern arrays from role_decisions_ext + role_outcomes_ext.
+     * Called periodically (e.g. after every 5th decision, or after an outcome).
+     * This is the expensive operation — reads all decision/outcome history and extracts patterns.
+     */
+    async function _rebuildCandidateLearningPatterns() {
+      if (!_profileId || !_candidateLearning) return;
+      try {
+        // Load all decisions and outcomes
+        const [{ data: decisions }, { data: outcomes }] = await Promise.all([
+          db.from('role_decisions_ext').select('*').order('created_at', { ascending: false }).limit(100),
+          db.from('role_outcomes_ext').select('*').order('created_at', { ascending: false }).limit(100),
+        ]);
+
+        const decs = decisions || [];
+        const outs = outcomes || [];
+
+        // ── Roles you pursue: common traits of 'apply' decisions ──
+        const appliedDecs = decs.filter(d => d.decision_type === 'apply');
+        const rolesYouPursue = [];
+        if (appliedDecs.length >= 3) {
+          // Find common role types
+          const rtCounts = {};
+          appliedDecs.forEach(d => { if (d.role_type) rtCounts[d.role_type] = (rtCounts[d.role_type] || 0) + 1; });
+          const topRoleTypes = Object.entries(rtCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+          topRoleTypes.forEach(([rt, count]) => {
+            if (count >= 2) rolesYouPursue.push(rt + ' roles (applied ' + count + ' times)');
+          });
+          // Common company stages
+          const csCounts = {};
+          appliedDecs.forEach(d => { if (d.company_stage) csCounts[d.company_stage] = (csCounts[d.company_stage] || 0) + 1; });
+          const topStages = Object.entries(csCounts).sort((a, b) => b[1] - a[1]).slice(0, 2);
+          topStages.forEach(([cs, count]) => {
+            if (count >= 2) rolesYouPursue.push(cs + ' companies (applied ' + count + ' times)');
+          });
+        }
+
+        // ── Roles you skip: common traits of 'skip' decisions ──
+        const skippedDecs = decs.filter(d => d.decision_type === 'skip');
+        const rolesYouSkip = [];
+        if (skippedDecs.length >= 3) {
+          const rtCounts = {};
+          skippedDecs.forEach(d => { if (d.role_type) rtCounts[d.role_type] = (rtCounts[d.role_type] || 0) + 1; });
+          Object.entries(rtCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).forEach(([rt, count]) => {
+            if (count >= 2) rolesYouSkip.push(rt + ' roles (skipped ' + count + ' times)');
+          });
+          // Common skip reasons
+          const cl = _candidateLearning;
+          const srcMap = cl.skip_reason_counts || {};
+          Object.entries(srcMap).sort((a, b) => b[1] - a[1]).slice(0, 3).forEach(([reason, count]) => {
+            if (count >= 2) rolesYouSkip.push('Skipped for "' + reason + '" (' + count + ' times)');
+          });
+        }
+
+        // ── Successful patterns: from roles that reached interview or offer ──
+        const positiveOutcomes = outs.filter(o => ['interviewed', 'offer', 'offer_accepted'].includes(o.outcome_state));
+        const successfulPatterns = [];
+        if (positiveOutcomes.length >= 1) {
+          positiveOutcomes.forEach(o => {
+            const parts = [o.role_type, o.company_stage, o.work_model].filter(Boolean);
+            if (parts.length) successfulPatterns.push(parts.join(', ') + ' (reached ' + o.outcome_state + ')');
+          });
+        }
+
+        // ── Recurring blockers: frictions that appear in skipped + rejected ──
+        const negativeDecs = [
+          ...skippedDecs,
+          ...outs.filter(o => ['rejected', 'no_response', 'ghosted'].includes(o.outcome_state)),
+        ];
+        const frictionCounts = {};
+        negativeDecs.forEach(d => {
+          const frictions = d.candidate_specific_frictions || [];
+          frictions.forEach(f => { frictionCounts[f] = (frictionCounts[f] || 0) + 1; });
+        });
+        const recurringBlockers = Object.entries(frictionCounts)
+          .filter(([, c]) => c >= 2)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([f, c]) => f + ' (appeared ' + c + ' times)');
+
+        // ── Preferred CV by role type ──
+        const cvByType = {};
+        positiveOutcomes.forEach(o => {
+          if (o.role_type && o.recommended_cv) cvByType[o.role_type] = o.recommended_cv;
+        });
+
+        // ── Friction patterns from skipped roles ──
+        const frictionPatterns = Object.entries(frictionCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([f]) => f);
+
+        // ── Write back to candidate_learning ──
+        const updates = {
+          successful_role_patterns:  successfulPatterns.slice(0, 5),
+          recurring_blockers:        recurringBlockers.slice(0, 5),
+          preferred_cv_by_role_type: cvByType,
+          roles_you_pursue:          rolesYouPursue.slice(0, 5),
+          roles_you_skip:            rolesYouSkip.slice(0, 5),
+          friction_patterns:         frictionPatterns.slice(0, 5),
+          last_rebuilt_at:           new Date().toISOString(),
+          updated_at:                new Date().toISOString(),
+        };
+
+        await db.from('candidate_learning')
+          .update(updates)
+          .eq('profile_id', _profileId);
+
+        Object.assign(_candidateLearning, updates);
+        console.log('[_rebuildCandidateLearningPatterns] patterns rebuilt', updates);
+
+        // Update the live candidate context with new learning
+        _buildAndSetLiveCandidateContext();
+      } catch (e) {
+        console.warn('[_rebuildCandidateLearningPatterns]', e);
+      }
+    }
+
+    /**
+     * Build the live candidate context object from DB-loaded profile + learning.
+     * Calls _setLiveCandidateContext() to update the global used by prompts.
+     */
+    function _buildAndSetLiveCandidateContext() {
+      const profile = _candidateProfile;
+      const learning = _candidateLearning;
+      if (!profile) return; // No profile loaded yet — seed will be used
+
+      const ctx = {
+        identity: {
+          name:             profile.name || '',
+          seniority:        profile.seniority || '',
+          years_experience: profile.years_experience || '',
+          location:         profile.location || '',
+        },
+        core_strengths:         Array.isArray(profile.core_strengths) ? profile.core_strengths : [],
+        preferred_environments: Array.isArray(profile.preferred_environments) ? profile.preferred_environments : [],
+        work_model_preference: {
+          ideal:              profile.work_model_ideal || '',
+          hard_limit:         profile.work_model_hard_limit || '',
+          commute_tolerance:  profile.commute_tolerance || '',
+          location_base:      profile.location || '',
+        },
+        hard_blockers:    Array.isArray(profile.hard_blockers) ? profile.hard_blockers : [],
+        known_frictions:  Array.isArray(profile.known_frictions) ? profile.known_frictions : [],
+        cv_variants:      Array.isArray(profile.cv_variants) ? profile.cv_variants : [],
+        decision_lens:    Array.isArray(profile.decision_lens) ? profile.decision_lens : [],
+      };
+
+      // Attach learned behaviour if available
+      if (learning && (learning.total_roles_analysed || 0) > 0) {
+        ctx.learned_behaviour = {
+          total_roles_analysed:      learning.total_roles_analysed || 0,
+          total_applied:             learning.total_applied || 0,
+          total_skipped:             learning.total_skipped || 0,
+          total_interviewed:         learning.total_interviewed || 0,
+          total_offered:             learning.total_offered || 0,
+          roles_you_pursue:          Array.isArray(learning.roles_you_pursue) ? learning.roles_you_pursue : [],
+          roles_you_skip:            Array.isArray(learning.roles_you_skip) ? learning.roles_you_skip : [],
+          successful_role_patterns:  Array.isArray(learning.successful_role_patterns) ? learning.successful_role_patterns : [],
+          recurring_blockers:        Array.isArray(learning.recurring_blockers) ? learning.recurring_blockers : [],
+          friction_patterns:         Array.isArray(learning.friction_patterns) ? learning.friction_patterns : [],
+          preferred_cv_by_role_type: (learning.preferred_cv_by_role_type && typeof learning.preferred_cv_by_role_type === 'object')
+            ? learning.preferred_cv_by_role_type : {},
+        };
+      }
+
+      // Set the live context (updates the global used by buildCandidateContextBlock)
+      if (typeof _setLiveCandidateContext === 'function') {
+        _setLiveCandidateContext(ctx);
+      } else {
+        // Fallback: direct assignment
+        if (typeof ROLEWISE_CANDIDATE_CONTEXT !== 'undefined') {
+          ROLEWISE_CANDIDATE_CONTEXT = ctx;
+        }
+      }
+    }
+
+    // ── Candidate Setup Card ────────────────────────────────────────────────
+    // Lightweight onboarding that captures user preferences and populates
+    // candidate_profile. Renders as a non-blocking overlay inside col-center
+    // when the profile is empty or strengths are missing.
+
+    const _SETUP_ROLE_TYPES = [
+      'Founding / 0→1 product',
+      'Scaling existing product',
+      'Enterprise / complex systems',
+      'Growth / optimisation',
+      'Platform / infrastructure',
+      'AI / data-heavy products',
+    ];
+    const _SETUP_ENVIRONMENTS = [
+      'High ownership / autonomy',
+      'Small team / early stage',
+      'Structured / mature org',
+      'Fast-moving / ambiguous',
+      'Deep problem space / complexity',
+      'Clear roadmap / defined scope',
+    ];
+    const _SETUP_HARD_NOS = [
+      'On-site more than 2 days',
+      'Salary not stated',
+      'Production coding required',
+      'Contract type mismatch',
+      'US-only remote roles',
+    ];
+    const _SETUP_FRICTIONS = [
+      'Vague responsibilities',
+      'Title inflation',
+      'Generic hiring processes',
+      'Lack of ownership',
+      'Poor product clarity',
+      'Heavy stakeholder overhead',
+    ];
+    const _SETUP_CV_VARIANTS = [
+      { id: 'founding-product-designer',   label: 'Founding Product Designer' },
+      { id: 'principal-product-designer',  label: 'Principal Product Designer' },
+      { id: 'design-lead',                label: 'Lead Product Designer' },
+      { id: 'senior-product-designer',    label: 'Senior Product Designer' },
+    ];
+
+    /**
+     * Render the candidate setup card as an overlay inside col-overview-cards.
+     * @param {Object|null} existing — pre-existing profile for edit mode, or null for first-time.
+     */
+    function showCandidateSetupCard(existing = null) {
+      const container = document.getElementById('col-overview-cards');
+      if (!container) return;
+
+      // Don't double-render
+      if (document.getElementById('cs-setup-card')) return;
+
+      // Build chip HTML helper
+      const _chips = (items, group, multi = true, selected = []) => items.map(item => {
+        const val = typeof item === 'string' ? item : item.id;
+        const label = typeof item === 'string' ? item : item.label;
+        const active = selected.includes(val) ? ' cs-chip--active' : '';
+        return `<button class="cs-chip${active}" data-cs-group="${group}" data-cs-value="${esc(val)}" data-cs-multi="${multi}">${esc(label)}</button>`;
+      }).join('');
+
+      // Pre-fill from existing profile if editing
+      const _sel = (field) => {
+        if (!existing) return [];
+        const v = existing[field];
+        return Array.isArray(v) ? v : [];
+      };
+      const _selCv = existing?.default_cv || '';
+
+      const card = document.createElement('div');
+      card.id = 'cs-setup-card';
+      card.className = 'cs-setup-card';
+      card.innerHTML = `
+        <div class="cs-setup-inner">
+          <h2 class="cs-setup-title">How you like to work</h2>
+          <p class="cs-setup-subtitle">This helps Rolewise analyse roles against your actual preferences.</p>
+
+          <div class="cs-section">
+            <div class="cs-section-label">What kind of roles feel like you?</div>
+            <div class="cs-chips" data-cs-group="roles">${_chips(_SETUP_ROLE_TYPES, 'roles', true, _sel('core_strengths'))}</div>
+          </div>
+
+          <div class="cs-section">
+            <div class="cs-section-label">Where do you do your best work?</div>
+            <div class="cs-chips" data-cs-group="envs">${_chips(_SETUP_ENVIRONMENTS, 'envs', true, _sel('preferred_environments'))}</div>
+          </div>
+
+          <div class="cs-section">
+            <div class="cs-section-label">What are your hard no's?</div>
+            <div class="cs-chips" data-cs-group="hardnos">${_chips(_SETUP_HARD_NOS, 'hardnos', true, _sel('hard_blockers'))}</div>
+            <input class="cs-other-input" id="cs-hardno-other" type="text" placeholder="Other…" value="${esc(existing?._hardno_other || '')}" />
+          </div>
+
+          <div class="cs-section">
+            <div class="cs-section-label">What usually puts you off roles?</div>
+            <div class="cs-chips" data-cs-group="frictions">${_chips(_SETUP_FRICTIONS, 'frictions', true, _sel('known_frictions'))}</div>
+          </div>
+
+          <div class="cs-section">
+            <div class="cs-section-label">Which CV do you usually use?</div>
+            <div class="cs-chips" data-cs-group="cv">${_chips(_SETUP_CV_VARIANTS, 'cv', false, _selCv ? [_selCv] : [])}</div>
+          </div>
+
+          <div class="cs-actions">
+            <button class="cs-save-btn" id="cs-save-btn">Save preferences</button>
+            ${existing ? '<button class="cs-cancel-btn" id="cs-cancel-btn">Cancel</button>' : ''}
+          </div>
+        </div>
+      `;
+
+      // Insert at top of container (pushes existing content down)
+      container.prepend(card);
+
+      // ── Chip toggle logic ──
+      card.querySelectorAll('.cs-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const group = btn.dataset.csGroup;
+          const isMulti = btn.dataset.csMulti === 'true';
+          if (isMulti) {
+            btn.classList.toggle('cs-chip--active');
+          } else {
+            // Single-select: deactivate siblings, toggle this one
+            card.querySelectorAll(`.cs-chip[data-cs-group="${group}"]`).forEach(b => {
+              if (b !== btn) b.classList.remove('cs-chip--active');
+            });
+            btn.classList.toggle('cs-chip--active');
+          }
+        });
+      });
+
+      // ── Cancel (edit mode) ──
+      const cancelBtn = card.querySelector('#cs-cancel-btn');
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => card.remove());
+      }
+
+      // ── Save ──
+      card.querySelector('#cs-save-btn').addEventListener('click', async () => {
+        const _getSelected = (group) =>
+          Array.from(card.querySelectorAll(`.cs-chip[data-cs-group="${group}"].cs-chip--active`))
+            .map(b => b.dataset.csValue);
+
+        const roles       = _getSelected('roles');
+        const envs        = _getSelected('envs');
+        const hardNos     = _getSelected('hardnos');
+        const frictions   = _getSelected('frictions');
+        const cvSelection = _getSelected('cv');
+
+        // Append "Other" hard-no if typed
+        const otherInput = card.querySelector('#cs-hardno-other');
+        const otherVal   = otherInput?.value.trim();
+        if (otherVal) hardNos.push(otherVal);
+
+        const saveBtn = card.querySelector('#cs-save-btn');
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving…';
+
+        try {
+          const now = new Date().toISOString();
+          const payload = {
+            profile_id:             _profileId,
+            core_strengths:         roles,
+            preferred_environments: envs,
+            hard_blockers:          hardNos,
+            known_frictions:        frictions,
+            cv_variants:            _SETUP_CV_VARIANTS.map(v => ({ id: v.id, label: v.label, best_for: '' })),
+            default_cv:             cvSelection[0] || null,
+            preferences_confirmed:  true,
+            updated_at:             now,
+          };
+
+          const { data, error } = await db
+            .from('candidate_profile')
+            .upsert(payload, { onConflict: 'profile_id' })
+            .select('*')
+            .single();
+
+          if (error) throw error;
+
+          // Update local state
+          _candidateProfile = data;
+
+          // Rebuild live candidate context immediately
+          _buildAndSetLiveCandidateContext();
+
+          console.log('[CandidateSetupCard] saved, context rebuilt');
+
+          // Remove the card — app is ready for personalised analysis
+          card.remove();
+        } catch (e) {
+          console.error('[CandidateSetupCard] save failed:', e);
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save preferences';
+          // Show inline error
+          let errEl = card.querySelector('.cs-error');
+          if (!errEl) {
+            errEl = document.createElement('div');
+            errEl.className = 'cs-error';
+            card.querySelector('.cs-actions').prepend(errEl);
+          }
+          errEl.textContent = 'Could not save. Please try again.';
+        }
+      });
     }
 
     // Load the user's saved personal boundaries.
@@ -696,6 +1356,8 @@
     let _cachedCvVersions = null; // Loaded once on first use; re-used by computeFitAssessment
     let _boundaryKeyCache = null; // Set<string> of saved blocker keys; null = not yet loaded
     let _rwAiOutputCache  = null; // Rendered analysis output — used by Ask AI inline (RW-ROLEPAGE-AI-INTERACTION-01)
+    let _candidateProfile = null; // candidate_profile row from DB (loaded at boot)
+    let _candidateLearning = null; // candidate_learning row from DB (loaded at boot)
 
     // ─── Analysis trace stages ────────────────────────────────────────────────
     // Shared between the workspace paste trace (_wsRunAnalysis), the Add JD modal
@@ -863,18 +1525,19 @@
             ${_metaLine ? `<div class="rh-meta">${_metaLine}</div>` : ''}
             <div class="rh-added">${esc(_addedLabel)}</div>
           </div>
-          <div class="rh-actions">
-            <button class="btn-edit-details" id="rh-btn-edit-details" data-role-id="${esc(role.id)}">Edit details</button>
-            <button class="btn-share-analysis" id="rh-btn-share-analysis" data-role-id="${esc(role.id)}" style="display:none;">Share analysis</button>
-            ${window.ROLEWISE_REASONING_MAP ? `<button class="btn-reasoning-map" id="rh-btn-reasoning-map" data-role-id="${esc(role.id)}" title="Open Reasoning Map — advanced signal inspection">Reasoning Map ↗</button>` : ''}
+          <!-- Edit details + Reasoning Map moved to right panel (RW-SIDEBAR-BUTTONS) -->
+          <div class="rh-actions" style="display:none;">
+            <button class="rw-btn rw-btn-sm" id="rh-btn-share-analysis" data-role-id="${esc(role.id)}" style="display:none;">Share analysis</button>
           </div>
         </div>`;
 
-      // Prepend inside .rw-overview-wrap so the header is the first card in the flow.
-      // Falls back to #col-overview-cards if the wrap hasn't been created yet.
-      const wrap    = document.querySelector('#col-overview-cards .rw-overview-wrap');
+      // Prepend inside .rw-main-col so the header shares the exact same content
+      // column as the doc sections below it. Falls back through the wrapper chain
+      // if the two-column layout hasn't been rendered yet.
+      const mainCol  = document.querySelector('#col-overview-cards .rw-main-col');
+      const wrap     = document.querySelector('#col-overview-cards .rw-overview-wrap');
       const fallback = document.getElementById('col-overview-cards');
-      (wrap || fallback)?.prepend(headerEl);
+      (mainCol || wrap || fallback)?.prepend(headerEl);
     }
 
     function _clearRoleHeader() {
@@ -890,7 +1553,7 @@
       const wrap = document.querySelector('#col-overview-cards .rw-overview-wrap');
       if (!wrap) return;
       // Already created — nothing to do
-      if (wrap.querySelector('#ws-blockers-section')) return;
+      if (wrap.querySelector('#ws-decision-history-dl')) return;
 
       // ── Decision Summary-aware slot insertion (RW-ROLEPAGE-TOP-01) ────────
       // Decision slots (blockers, verdict, history) are appended inside
@@ -900,12 +1563,12 @@
       const faCard  = wrap.querySelector('#section-fit-assessment');
 
       const _decisionSlots = [
-        { id: 'ws-blockers-section' },           // Decision Layer V1: blockers
-        { id: 'ws-decision-capture' },
+        // ws-blockers-section removed — blockers box removed from main column (RW-REMOVE-MAIN-BLOCKERS)
+        // ws-decision-capture removed — Apply/Skip live in sidebar only (RW-REMOVE-MAIN-DECISION)
         { id: 'ws-decision-history-dl' },        // Decision Layer V1: history read view
       ];
       const _lowerSlots = [
-        { id: 'col-jd-section', cls: 'col-jd-section' },
+        // col-jd-section removed — JD accessible only via sidebar modal (RW-REMOVE-MAIN-JD)
         // role-chips-section is now embedded in Role Briefing HTML (RW-TOP-CLEANUP-08)
       ];
 
@@ -940,42 +1603,12 @@
     }
 
     // ─── Original Job Description card (overview panel) ───────────────────────
-    // Shows the pasted JD text and optional source URL in a collapsible card.
-    // Called from _wsHandlePaste (fresh JD paste), _wsRenderTimelineEntry
-    // (history restore), and the mismatch "Keep here" handler.
+    // RW-REMOVE-MAIN-JD: JD card removed from main column.
+    // Original JD is now accessible only via the right-panel modal trigger.
+    // Function kept as a no-op so existing call sites don't throw.
     function _renderJDSection(role, jdText) {
-      _ensureOverviewLowerCards();
       const el = document.getElementById('col-jd-section');
-      if (!el || !jdText) return;
-
-      const wordCount = jdText.trim().split(/\s+/).filter(Boolean).length;
-      const fullId    = 'jd-full-' + ((role && role.id) ? role.id : 'tmp');
-      const urlHtml   = (role && role.job_url)
-        ? `<div class="jd-source-row"><a href="${esc(role.job_url)}" target="_blank" rel="noopener" class="jd-source-link">View original posting</a></div>`
-        : '';
-
-      el.innerHTML = `
-        <div class="jd-card" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'jd-card', component: 'JDCard', slot: 'jd', label: 'Job Description Card' }) : ''}>
-          <div class="jd-card-header">
-            <span class="jd-card-title">Original job description</span>
-            <div class="jd-card-meta">
-              <span class="jd-word-count">${wordCount.toLocaleString()} words</span>
-              <button class="jd-toggle" data-target="${esc(fullId)}" aria-expanded="false">Show</button>
-            </div>
-          </div>
-          ${urlHtml}
-          <div class="jd-full hidden" id="${esc(fullId)}"><pre class="jd-pre">${esc(jdText)}</pre></div>
-        </div>`;
-      el.style.display = '';
-
-      el.querySelector('.jd-toggle')?.addEventListener('click', function () {
-        const target = document.getElementById(this.dataset.target);
-        if (!target) return;
-        const isOpen = !target.classList.contains('hidden');
-        target.classList.toggle('hidden', isOpen);
-        this.textContent = isOpen ? 'Show' : 'Hide';
-        this.setAttribute('aria-expanded', String(!isOpen));
-      });
+      if (el) { el.style.display = 'none'; el.innerHTML = ''; }
     }
 
     function _clearJDSection() {
@@ -1536,7 +2169,7 @@
             if (_ars.status === 'stale')   return `No response · ${_ars.days}d since applied`;
             if (_ars.status === 'ghosted') return `Ghosted · ${_ars.days}d since applied`;
           }
-          return 'Applied — awaiting response';
+          return 'Applied, awaiting response';
         }
         return 'In progress';
       };
@@ -1890,7 +2523,7 @@
         return `<tr><td class="compare-label-col">${esc(label)}</td>${cells}</tr>`;
       };
 
-      const na = `<span class="compare-na">—</span>`;
+      const na = `<span class="compare-na">-</span>`;
 
       const tableHtml = `
         <table class="compare-table">
@@ -1913,7 +2546,7 @@
               const e = _cmpEmpType(r);
               return e ? esc(e) : na;
             })}
-            ${_row('Stage', r => esc(currentStageLabel(r) || '—'))}
+            ${_row('Stage', r => esc(currentStageLabel(r) || '-'))}
             ${_row('Archetype', r => {
               const a = _cmpArchetype(r);
               return a ? esc(a) : na;
@@ -2643,6 +3276,13 @@
       const roleForLearning = allRoles.find(r => r.id === roleId) || role;
       const texts = generateLearningTexts(roleForLearning, outcomeState, outcomeReason || '');
       await saveLearnings(roleId, texts);
+
+      // ── Candidate learning hook (fire-and-forget) ──
+      _saveCandidateOutcomeExt(roleForLearning, outcomeState, outcomeReason).catch(() => {});
+      _updateCandidateLearningOutcome(outcomeState).catch(() => {});
+      // Always rebuild patterns after an outcome — outcomes are high-signal
+      _rebuildCandidateLearningPatterns().catch(() => {});
+
       return texts;
     }
 
@@ -3130,7 +3770,7 @@
     function _wsAnalysisArtefactHtml(analysis, artifactId) {
       const company = analysis._company || '';
       const title   = analysis._roleTitle || '';
-      const heading = [company, title].filter(Boolean).join(' — ') || 'Role Analysis';
+      const heading = [company, title].filter(Boolean).join(': ') || 'Role Analysis';
       return `
         <div class="ws-artifact ws-artifact--analysis" data-artifact-id="${esc(artifactId)}" data-ws-entry="${WS_ENTRY.ARTIFACT}" data-artifact-type="analysis">
           <div class="ws-artifact-header">
@@ -3354,9 +3994,9 @@
     // Acknowledge a decision and, for skip/withdraw, offer reason chips.
     async function _wsHandleDecision(role, decision, timelineEl) {
       const ackText = {
-        skip:     "Got it — passing on this one. Any particular reason?",
-        withdraw: "Understood — noted that you're withdrawing. Any particular reason?",
-        apply:    "Nice — good luck with the application! Let me know how it goes.",
+        skip:     "Got it, passing on this one. Any particular reason?",
+        withdraw: "Understood, noted that you're withdrawing. Any particular reason?",
+        apply:    "Nice, good luck with the application! Let me know how it goes.",
       }[decision] || "Got it.";
 
       const bubble = document.createElement('div');
@@ -3370,6 +4010,11 @@
       if (decision === 'apply') {
         await wsAppendDecision(role.id, 'apply', null);
         wsRefreshDecisionHistory(role.id).catch(() => {});
+        // Ask which CV was used, then show confidence prompt
+        setTimeout(() => {
+          _wsRenderCvUsedPrompt(role, timelineEl);
+          setTimeout(() => _wsRenderDecisionConfidence(role, timelineEl), 120);
+        }, 120);
       }
 
       if (decision === 'skip' || decision === 'withdraw') {
@@ -3473,26 +4118,33 @@
         barEl.remove();
         overviewEl.style.display = 'none';
         if (role._isTemp) {
-          _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">Still saving the role \u2014 give it a moment, then use the decision buttons in the panel.</div>`);
+          _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">Still saving the role. Give it a moment, then use the decision buttons in the panel.</div>`);
           return;
         }
         await _setUserDecision(role, decision);
         const ackText = decision === 'apply'
-          ? 'Noted \u2014 good luck with the application.'
+          ? 'Noted, good luck with the application.'
           : 'Saved for further exploration.';
         _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(ackText)}</div>`);
         if (decision === 'apply') wsAppendDecision(role.id, 'apply', null).catch(() => {});
         if (decision === 'save')  wsAppendDecision(role.id, 'other', null, 'explore_further').catch(() => {});
         wsRefreshDecisionHistory(role.id).catch(() => {});
-        // Decision Confidence — optional reflective prompt shown after the decision is confirmed.
-        setTimeout(() => _wsRenderDecisionConfidence(role, timelineEl), 120);
+        // Apply: ask which CV was used, then show confidence prompt
+        if (decision === 'apply') {
+          setTimeout(() => {
+            _wsRenderCvUsedPrompt(role, timelineEl);
+            setTimeout(() => _wsRenderDecisionConfidence(role, timelineEl), 120);
+          }, 120);
+        } else {
+          setTimeout(() => _wsRenderDecisionConfidence(role, timelineEl), 120);
+        }
       }
 
       async function _pass(reason) {
         barEl.remove();
         overviewEl.style.display = 'none';
         if (role._isTemp) {
-          _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">Still saving \u2014 give it a moment, then use the decision buttons in the panel.</div>`);
+          _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">Still saving. Give it a moment, then use the decision buttons in the panel.</div>`);
           return;
         }
         await _setUserDecision(role, 'skip');
@@ -3501,7 +4153,7 @@
         } else {
           wsAppendDecision(role.id, 'skip', null).catch(() => {});
           wsRefreshDecisionHistory(role.id).catch(() => {});
-          _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">Got it \u2014 archived.</div>`);
+          _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">Got it, archived.</div>`);
         }
         // Decision Confidence — optional reflective prompt shown after the decision is confirmed.
         setTimeout(() => _wsRenderDecisionConfidence(role, timelineEl), 120);
@@ -3554,7 +4206,7 @@
       const conf = document.createElement('div');
       conf.className = 'ws-assistant-reply ws-settle';
       conf.dataset.wsEntry = WS_ENTRY.CHAT_ASSISTANT;
-      conf.textContent = `Noted — saved.${patternNote}`;
+      conf.textContent = `Noted, saved.${patternNote}`;
       timelineEl.appendChild(conf);
       _wsScrollIfNear(timelineEl);
     }
@@ -3564,6 +4216,52 @@
     // Optional — the user can skip without selecting. Captured signal is stored
     // in role_decisions.confidence for product evaluation purposes.
     // Tone: calm and reflective, not survey-like.
+    /**
+     * Render "Which CV did you use?" prompt after an apply decision.
+     * Uses the CV variants from the live candidate context.
+     * Writes the selected CV ID to role_decisions_ext.actual_cv_used.
+     * Only shown for apply decisions. Skippable.
+     */
+    function _wsRenderCvUsedPrompt(role, timelineEl) {
+      if (role._isTemp || !role.id) return;
+      const ctx = _getCandidateContext();
+      const variants = (ctx && Array.isArray(ctx.cv_variants)) ? ctx.cv_variants : [];
+      if (!variants.length) return; // No CV variants configured — skip silently
+
+      const card = document.createElement('div');
+      card.className = 'ws-dc-card ws-settle';
+      card.dataset.wsEntry = WS_ENTRY.UI_TEMP;
+      card.innerHTML =
+        `<div class="ws-dc-prompt">Which CV did you use for this application?</div>` +
+        `<div class="ws-dc-options">` +
+          variants.map(v =>
+            `<button class="ws-dc-btn" data-cv-id="${v.id}">${v.label}</button>`
+          ).join('') +
+          `<button class="ws-dc-skip">Skip</button>` +
+        `</div>`;
+      timelineEl.appendChild(card);
+      _wsScrollIfNear(timelineEl);
+
+      card.querySelectorAll('.ws-dc-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const cvId = btn.dataset.cvId;
+          card.remove();
+          // Write actual_cv_used to the most recent role_decisions_ext row for this role
+          db.from('role_decisions_ext')
+            .update({ actual_cv_used: cvId })
+            .eq('role_id', role.id)
+            .eq('decision_type', 'apply')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .then(() => {
+              console.log('[_wsRenderCvUsedPrompt] actual_cv_used set:', cvId);
+            })
+            .catch(e => console.warn('[_wsRenderCvUsedPrompt]', e));
+        });
+      });
+      card.querySelector('.ws-dc-skip')?.addEventListener('click', () => card.remove());
+    }
+
     function _wsRenderDecisionConfidence(role, timelineEl) {
       if (role._isTemp || !role.id) return;
       const card = document.createElement('div');
@@ -3602,9 +4300,9 @@
 
       if (clarType === 'missing_job_url') {
         if (isNo) {
-          reply = "No problem — we can continue without the link for now. If you find it later, just paste it here and I'll attach it to this role.";
+          reply = "No problem, we can continue without the link for now. If you find it later, just paste it here and I'll attach it to this role.";
         } else if (isYes) {
-          reply = "Great — paste the URL whenever you're ready and I'll attach it.";
+          reply = "Great, paste the URL whenever you're ready and I'll attach it.";
         } else {
           // Unexpected answer — pass to AI with the full clarification context intact
           await _wsTriggerChat(role, text, timelineEl);
@@ -3630,7 +4328,7 @@
           db.from('roles').update({ source: text.trim() }).eq('id', role.id).catch(() => {});
           role.source = text.trim();
           const srcLabel = text.trim().charAt(0).toUpperCase() + text.trim().slice(1);
-          reply = `Got it — noted as "${srcLabel}".`;
+          reply = `Got it, noted as "${srcLabel}".`;
         } else {
           await _wsTriggerChat(role, text, timelineEl);
           return;
@@ -3780,17 +4478,17 @@
       // Interaction signals can add context when stage is still early.
       let interview_focus;
       if (stage === 'Recruiter Screen' || (!hadInterview && hadRecruiter)) {
-        const noticePart = pd.notice_period ? ` Your notice period is ${pd.notice_period} — have this ready.` : '';
+        const noticePart = pd.notice_period ? ` Your notice period is ${pd.notice_period}. Have this ready.` : '';
         interview_focus = `A fit and availability check. Lead with what you do, what you are looking for, and why ${company || 'this role'} is interesting to you now.${noticePart}`;
       } else if (stage === 'Hiring Manager') {
         const scopeHint = wtado[0] ? ` The role centres on: ${wtado[0].toLowerCase().replace(/\.$/, '')}.` : '';
         interview_focus = `The hiring manager is assessing whether your experience directly maps to the role's scope and ownership expectations.${scopeHint} Come with specific examples of impact, not just responsibilities.`;
       } else if (stage === 'Panel') {
-        interview_focus = `A panel interview tests depth across multiple dimensions. Different interviewers typically own distinct areas — technical depth, collaboration, culture. Prepare examples that show both breadth of context and precision in your own domain.`;
+        interview_focus = `A panel interview tests depth across multiple dimensions. Different interviewers typically own distinct areas: technical depth, collaboration, culture. Prepare examples that show both breadth of context and precision in your own domain.`;
       } else if (stage === 'Final') {
         interview_focus = `Finals evaluate conviction and culture fit as much as capability. They want to see that you have thought hard about why this role, at this company, at this point in your career. Have a clear and honest answer.`;
       } else if (stage === 'Applied') {
-        interview_focus = `You have applied — now prepare for first contact. Most initial screens are recruiter-led fit checks focused on availability, motivation, and salary alignment.`;
+        interview_focus = `You have applied. Now prepare for first contact. Most initial screens are recruiter-led fit checks focused on availability, motivation, and salary alignment.`;
       } else {
         // JD Review / unknown — general but not throwaway
         interview_focus = company
@@ -3805,9 +4503,9 @@
         if (!pd.salary_annual && !pd.salary_range && !role.salary_text_raw)
           questions_to_ask.push('What is the salary range or day rate for this role?');
         if (!pd.remote_model || pd.remote_model === 'Not stated')
-          questions_to_ask.push('What does the working arrangement look like — remote, hybrid, or on-site?');
+          questions_to_ask.push('What does the working arrangement look like (remote, hybrid, or on-site)?');
         questions_to_ask.push('What does the interview process look like from here and what is the timeline?');
-        questions_to_ask.push('Why is this role open — new headcount or a replacement?');
+        questions_to_ask.push('Why is this role open (new headcount or a replacement)?');
       } else if (stage === 'Hiring Manager') {
         // HM screen: scope, autonomy, success definition
         if (arch) questions_to_ask.push(`What does good look like for someone in a ${arch} role here in the first 6 months?`);
@@ -3830,7 +4528,7 @@
         if (!pd.salary_annual && !pd.salary_range && !role.salary_text_raw)
           questions_to_ask.push('What is the salary range or compensation structure?');
         if (!pd.remote_model || pd.remote_model === 'Not stated')
-          questions_to_ask.push('What does the working arrangement look like — remote, hybrid, or on-site?');
+          questions_to_ask.push('What does the working arrangement look like (remote, hybrid, or on-site)?');
         if (arch)
           questions_to_ask.push(`Given the ${arch} nature of the role, how is success measured in the first 6 months?`);
         questions_to_ask.push('What does the team structure look like and who would I work most closely with?');
@@ -3841,7 +4539,7 @@
       const concerns_to_prepare = [];
       // Hard constraints surface first — these are non-negotiables
       hardConstraints.forEach(hc => {
-        concerns_to_prepare.push(`Hard constraint: ${hc.label}. ${hc.reason || ''} Clarify this early — do not invest time if it is a dealbreaker.`.trim());
+        concerns_to_prepare.push(`Hard constraint: ${hc.label}. ${hc.reason || ''} Clarify this early. Do not invest time if it is a dealbreaker.`.trim());
       });
       // Salary reality as concern when it looks problematic
       if (salaryReality && /below|under|lower|less than/i.test(salaryReality)) {
@@ -3874,7 +4572,7 @@
         concerns_to_prepare.push('Know what you would do differently and be ready to articulate it honestly.');
       } else if (stage === 'Final') {
         if (!concerns_to_prepare.length)
-          concerns_to_prepare.push('Any residual concerns about fit will surface here — address them proactively.');
+          concerns_to_prepare.push('Any residual concerns about fit will surface here. Address them proactively.');
         concerns_to_prepare.push('Have a clear, honest answer for why you want this role specifically.');
       } else {
         if (!concerns_to_prepare.length) {
@@ -3889,7 +4587,7 @@
 
       if (stage === 'Recruiter Screen' || stage === 'Applied') {
         if (what_to_clarify.length < 3 && !pd.salary_annual && !pd.salary_range)
-          what_to_clarify.push('Clarify salary band on this call — it saves time for both sides.');
+          what_to_clarify.push('Clarify salary band on this call. It saves time for both sides.');
         if (what_to_clarify.length < 3)
           what_to_clarify.push('Ask how many stages are left and who makes the final decision.');
       } else if (stage === 'Hiring Manager') {
@@ -3899,7 +4597,7 @@
           what_to_clarify.push('Understand the decision-making process and timeline for the offer.');
       } else if (stage === 'Panel') {
         if (what_to_clarify.length < 3)
-          what_to_clarify.push('Clarify what each panellist specifically owns — adapt your answers to their context.');
+          what_to_clarify.push('Clarify what each panellist specifically owns. Adapt your answers to their context.');
         if (what_to_clarify.length < 3)
           what_to_clarify.push('Understand whether there is a practical exercise or presentation expected.');
       } else if (stage === 'Final') {
@@ -3926,7 +4624,7 @@
       // Fallbacks if analysis gave us nothing
       if (!talking_points.length) {
         if (title)   talking_points.push(`Articulate your specific experience relevant to ${title} with concrete examples.`);
-        if (company) talking_points.push(`Explain why ${company} interests you at this point — be specific, not generic.`);
+        if (company) talking_points.push(`Explain why ${company} interests you at this point. Be specific, not generic.`);
         if (!talking_points.length) talking_points.push('Prepare a clear, honest narrative of your relevant background and what you are looking for.');
       }
 
@@ -3953,14 +4651,14 @@
 
     // Build the preparation artefact HTML block
     function _wsPrepArtefactHtml(prep, artifactId, updatedLabel = null) {
-      const heading = [prep.company, prep.title].filter(Boolean).join(' — ') || 'Interview Preparation';
+      const heading = [prep.company, prep.title].filter(Boolean).join(': ') || 'Interview Preparation';
       // Stage label doubles as the freshness carrier when both are present:
       // "Recruiter Screen — Updated just now" keeps the header to one right-aligned element.
       const _stageText  = prep.stage && prep.stage !== 'JD Review' ? prep.stage : null;
       const _updateText = updatedLabel || null;
       let stageLabelHtml = '';
       if (_stageText && _updateText) {
-        stageLabelHtml = `<span class="ws-artifact-stage-label">${esc(_stageText)} — ${esc(_updateText)}</span>`;
+        stageLabelHtml = `<span class="ws-artifact-stage-label">${esc(_stageText)}, ${esc(_updateText)}</span>`;
       } else if (_stageText) {
         stageLabelHtml = `<span class="ws-artifact-stage-label">${esc(_stageText)}</span>`;
       } else if (_updateText) {
@@ -4030,7 +4728,7 @@
       try {
         const memory   = await wsLoadMemory(role.id);
         const prep     = _wsBuildPrep(role, memory);
-        const heading  = [prep.company, prep.title].filter(Boolean).join(' — ') || 'Interview Preparation';
+        const heading  = [prep.company, prep.title].filter(Boolean).join(': ') || 'Interview Preparation';
         const content  = JSON.stringify(prep);
 
         // Find existing preparation artifact (most recent)
@@ -4123,7 +4821,7 @@
         const existing = memory.artifacts.find(a => a.artifact_type === 'thoughts');
         const company  = role.company_name || '';
         const title    = role.role_title   || '';
-        const heading  = [company, title].filter(Boolean).join(' — ') || 'Thoughts';
+        const heading  = [company, title].filter(Boolean).join(': ') || 'Thoughts';
 
         let thoughts;
         if (existing) {
@@ -4217,12 +4915,12 @@
       const TYPE_LABELS = { skip: 'Skipped', apply: 'Applied', withdraw: 'Withdrew', accept: 'Accepted', other: 'Other' };
       const fmt = iso => {
         try { return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
-        catch (_) { return iso?.slice(0, 10) || '—'; }
+        catch (_) { return iso?.slice(0, 10) || '-'; }
       };
       const items = decisions.slice(0, 5).map(d => {
         const date = fmt(d.created_at);
         const type = TYPE_LABELS[d.decision_type] || d.decision_type;
-        const reason = d.reason ? ` — ${esc(d.reason)}` : '';
+        const reason = d.reason ? `: ${esc(d.reason)}` : '';
         return `<li class="ws-dh-entry">${esc(date)} · ${esc(type)}${reason}</li>`;
       }).join('');
       const el = document.createElement('div');
@@ -4366,20 +5064,22 @@
       const { favoured = [], weaker = [], note = null } = lensData;
       if (!favoured.length && !weaker.length) return;
 
-      const _li = arr => arr.map(s => `<li>${esc(s)}</li>`).join('');
+      // RW-CMP-PANEL: flat prose format — no chips, no tick-lists
+      const _liFavoured = favoured.map(s => `<li>${esc(s)}</li>`).join('');
+      const _liWeaker   = weaker.map(s => `<li>${esc(s)}</li>`).join('');
 
       const favouredHtml = favoured.length
-        ? `<div class="rw-lens-panel__label">You tend to favour roles where:</div>
-           <ul class="rw-lens-panel__list">${_li(favoured)}</ul>`
+        ? `<div class="rw-cmp-intro" style="margin-bottom:8px;">You tend toward:</div>
+           <ul class="rw-cmp-tension-list" style="margin-bottom:${weaker.length ? '14px' : '0'}">${_liFavoured}</ul>`
         : '';
 
       const weakerHtml = weaker.length
-        ? `<div class="rw-lens-panel__label rw-lens-panel__label--weaker">Roles where outcomes have been weaker often include:</div>
-           <ul class="rw-lens-panel__list rw-lens-panel__list--weaker">${_li(weaker)}</ul>`
+        ? `<div class="rw-cmp-tension-hdr" style="margin-top:${favoured.length ? '4px' : '0'}">Weaker fit patterns</div>
+           <ul class="rw-cmp-tension-list">${_liWeaker}</ul>`
         : '';
 
       const noteHtml = note
-        ? `<div class="rw-lens-panel__note">${esc(note)}</div>`
+        ? `<p class="rw-cmp-intro" style="margin-top:12px;margin-bottom:0;">${esc(note)}</p>`
         : '';
 
       // Persistent intelligence card — renders in the overview panel, not chat timeline.
@@ -4389,10 +5089,12 @@
       panel.id        = 'section-your-lens';
       panel.className = 'rw-card rw-card--full rw-card--intel ws-settle';
       panel.innerHTML = `
-        <div class="rw-lens-panel__heading">Your Lens</div>
-        ${favouredHtml}
-        ${weakerHtml}
-        ${noteHtml}`;
+        <div class="doc-section-heading">Your pattern</div>
+        <div class="rw-cmp-block">
+          ${favouredHtml}
+          ${weakerHtml}
+          ${noteHtml}
+        </div>`;
 
       const _ovCards  = document.getElementById('col-overview-cards');
       // Prefer anchoring after Search Pattern (if rendered); fall back to Fit Reality Summary,
@@ -4487,7 +5189,7 @@
       if (Array.isArray(decisions) && decisions.length > 0) {
         const d = decisions[0];
         const date = d.created_at ? d.created_at.slice(0, 10) : null;
-        const parts = [d.decision_type, date ? `(${date})` : null, d.reason ? `— ${d.reason}` : null];
+        const parts = [d.decision_type, date ? `(${date})` : null, d.reason ? `: ${d.reason}` : null];
         briefing.last_decision = parts.filter(Boolean).join(' ');
       }
 
@@ -4552,6 +5254,9 @@
     // can frame answers relative to known constraints and preferences.
     // Update these fields as the user's situation changes.
     // Future: replace with a live read from a user_profile DB table.
+    // Legacy thin profile — kept for backwards compatibility with chat context.
+    // The richer candidate context for AI analysis is in rolewise-prompts.js
+    // as ROLEWISE_CANDIDATE_CONTEXT.
     const _ROLEWISE_USER_PROFILE = {
       location:             'Effingham Junction, Surrey',
       seniority:            'Senior / Lead Product Designer',
@@ -4566,6 +5271,14 @@
     // The edge function formats it into a USER CONTEXT block in the prompt.
     function _buildUserContext() {
       return { ..._ROLEWISE_USER_PROFILE };
+    }
+
+    // Returns the full candidate context for AI analysis (Pass 1 + Pass 2).
+    // At runtime this is the LIVE context (loaded from DB via _buildAndSetLiveCandidateContext).
+    // Falls back to seed data if the DB hasn't been loaded yet.
+    // Includes learned_behaviour when available.
+    function _getCandidateContext() {
+      return (typeof ROLEWISE_CANDIDATE_CONTEXT !== 'undefined') ? ROLEWISE_CANDIDATE_CONTEXT : null;
     }
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -4754,8 +5467,8 @@
           context.decision_history = decisions.slice(0, 5).map(d => {
             const date = d.created_at ? d.created_at.slice(0, 10) : 'unknown';
             return d.reason
-              ? `${date} — ${d.decision_type}\nReason: ${d.reason}`
-              : `${date} — ${d.decision_type}`;
+              ? `${date}, ${d.decision_type}\nReason: ${d.reason}`
+              : `${date}, ${d.decision_type}`;
           });
         }
 
@@ -5184,13 +5897,8 @@
         _renderStickyHeader(role);
       }
 
-      // ── Decision Bar ──────────────────────────────────────────────────────────
-      // Show the decision prompt a moment after the analysis appears.
-      // Replaces the old static checkpoint — the user now gets actionable buttons
-      // (Apply / Explore Further / Pass) rather than a static suggestions list.
-      setTimeout(() => {
-        _wsRenderDecisionBar(role, timelineEl);
-      }, 900);
+      // Decision bar removed. The overview panel's decision-action-bar
+      // (renderDecisionBar) handles Apply / Save / Skip.
 
       // ── Phase 2: Save/promotion ────────────────────────────────────────────────
       // All DB writes happen here. Failure does not affect the already-visible artefact.
@@ -5357,7 +6065,7 @@
         try {
           const _artMem    = await wsLoadMemory(role.id);
           const _artExist  = _artMem.artifacts.find(a => a.artifact_type === 'analysis');
-          const _artTitle  = [_company, _title].filter(Boolean).join(' — ') || 'Role Analysis';
+          const _artTitle  = [_company, _title].filter(Boolean).join(': ') || 'Role Analysis';
           const _artContent = JSON.stringify(analysis);
           let _realArtId;
           if (_artExist) {
@@ -5480,7 +6188,7 @@
         if (!role._isTemp) {
           // LinkedIn search page — not a specific job posting, invalid as a source URL
           if (/linkedin\.com\/jobs\/search/i.test(text)) {
-            const _invalidMsg = 'That looks like a LinkedIn search page — open the specific job posting and copy the URL from there.';
+            const _invalidMsg = 'That looks like a LinkedIn search page. Open the specific job posting and copy the URL from there.';
             _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_invalidMsg)}</div>`);
             wsAddMessage(role.id, 'assistant', _invalidMsg).catch(() => {});
             return;
@@ -5520,20 +6228,20 @@
               );
             } else {
               // Fetch failed or no fields — plain acknowledgement
-              const _ackMsg = 'Got it \u2014 I\'ve attached the original job posting to this role.';
+              const _ackMsg = 'Got it, I\'ve attached the original job posting to this role.';
               _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_ackMsg)}</div>`);
               wsAddMessage(role.id, 'assistant', _ackMsg).catch(() => {});
             }
           } else {
             // Unsupported URL — plain acknowledgement
-            const _ackMsg = 'Got it \u2014 I\'ve attached the original job posting to this role.';
+            const _ackMsg = 'Got it, I\'ve attached the original job posting to this role.';
             _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_ackMsg)}</div>`);
             wsAddMessage(role.id, 'assistant', _ackMsg).catch(() => {});
           }
         } else {
           // Temp role: keep URL in memory, plain acknowledgement (no DB write yet)
           role.job_url = text;
-          const _ackMsg = 'Got it \u2014 I\'ve attached the original job posting to this role.';
+          const _ackMsg = 'Got it, I\'ve attached the original job posting to this role.';
           _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_ackMsg)}</div>`);
         }
         return;
@@ -5791,7 +6499,7 @@
     // "Create new role" → opens a blank workspace and passes the text through.
     // "Keep here"       → removes the card and runs analysis on the current role.
     function _wsShowMismatchPrompt(role, text, timelineEl) {
-      const label = [role.company_name, role.role_title].filter(Boolean).join(' — ') || 'the current role';
+      const label = [role.company_name, role.role_title].filter(Boolean).join(': ') || 'the current role';
       const card = document.createElement('div');
       card.className = 'ws-mismatch-prompt';
       card.dataset.wsEntry = WS_ENTRY.UI_TEMP;
@@ -6187,7 +6895,7 @@
         `<table class="ws-enrich-table">${rowsHtml}</table>` +
         (hasNewFields
           ? `<div class="ws-enrich-note">Only empty fields will be updated.</div>`
-          : `<div class="ws-enrich-note">All fields are already set — nothing to apply.</div>`) +
+          : `<div class="ws-enrich-note">All fields are already set, nothing to apply.</div>`) +
         `<div class="ws-enrich-actions">` +
           (hasNewFields
             ? `<button class="ws-mismatch-btn-primary ws-enrich-btn-apply">Apply to role</button>`
@@ -6332,7 +7040,7 @@
         parts.push('The user describes their preferences and background as: "' + _rpn.trim().slice(0, 300) + '".');
       }
 
-      parts.push('Use these specifics to write 3–4 short paragraphs. Be direct, specific, and grounded in the role details — not generic. Avoid flattery and clichés. If user background context is provided, weave it naturally into the letter.');
+      parts.push('Use these specifics to write 3-4 short paragraphs. Be direct, specific, and grounded in the role details, not generic. Avoid flattery and clichés. If user background context is provided, weave it naturally into the letter.');
 
       return parts.join(' ');
     }
@@ -6385,7 +7093,7 @@
         parts.push('The user describes their background as: "' + _rpn.trim().slice(0, 300) + '".');
       }
 
-      parts.push('Focus on language, emphasis, and what to highlight, reorder, or de-emphasise. Reference specific criteria from the analysis — not generic advice. If user background or CV context is available, tailor suggestions to their actual experience.');
+      parts.push('Focus on language, emphasis, and what to highlight, reorder, or de-emphasise. Reference specific criteria from the analysis, not generic advice. If user background or CV context is available, tailor suggestions to their actual experience.');
 
       return parts.join(' ');
     }
@@ -6502,19 +7210,78 @@
           btn.style.opacity = '';
         }
       });
+
+      // ── JD modal: open / close (RW-TWO-COL-LAYOUT) ───────────────────────
+      // RW-REMOVE-MAIN-JD: now loads JD text directly from role data
+      // instead of cloning from the (removed) col-jd-section element.
+      function _rwOpenJdModal() {
+        const modal = document.getElementById('rw-jd-modal');
+        if (!modal) return;
+        const body = document.getElementById('rw-jd-modal-body');
+        if (body) {
+          // Always refresh from current role data (no stale cache across role switches)
+          const _role = selectedRoleId ? allRoles.find(r => r.id === selectedRoleId) : null;
+          const _jdRaw = _role?.job_description_raw || null;
+          if (_jdRaw) {
+            body.innerHTML = `<pre class="jd-pre" style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--text);margin:0;">${esc(_jdRaw)}</pre>`;
+          } else {
+            body.innerHTML = '<p style="color:var(--text-secondary);font-size:14px;">No job description available.</p>';
+          }
+        }
+        modal.hidden = false;
+        document.body.style.overflow = 'hidden';
+      }
+      function _rwCloseJdModal() {
+        const modal = document.getElementById('rw-jd-modal');
+        if (!modal) return;
+        modal.hidden = true;
+        document.body.style.overflow = '';
+      }
+      _ovCards.addEventListener('click', e => {
+        if (e.target.closest('#rw-jd-modal-trigger')) { _rwOpenJdModal(); return; }
+        if (e.target.closest('#rw-jd-modal-close'))   { _rwCloseJdModal(); return; }
+        if (e.target.closest('#rw-jd-modal-backdrop')){ _rwCloseJdModal(); return; }
+        // ── Edit details + Reasoning Map (RW-SIDEBAR-BUTTONS) ──
+        if (e.target.closest('#rw-sidebar-edit-details')) {
+          const _role = selectedRoleId ? allRoles.find(r => r.id === selectedRoleId) : null;
+          if (_role) openEditRoleModal(_role);
+          return;
+        }
+        if (e.target.closest('#rw-sidebar-reasoning-map')) {
+          const _role = selectedRoleId ? allRoles.find(r => r.id === selectedRoleId) : null;
+          if (_role && window.openReasoningMap) window.openReasoningMap(_role);
+          return;
+        }
+        // ── Admin actions (RW-SIDEBAR-ADMIN) — delegated from sidebar buttons ──
+        if (e.target.closest('#btn-archive-role')) {
+          if (selectedRoleId) archiveRole(selectedRoleId);
+          return;
+        }
+        if (e.target.closest('#btn-delete-role')) {
+          if (selectedRoleId) deleteRole(selectedRoleId);
+          return;
+        }
+      });
+      // Dismiss modal on Escape key
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+          const modal = document.getElementById('rw-jd-modal');
+          if (modal && !modal.hidden) _rwCloseJdModal();
+        }
+      });
     }
 
     // ── Ask AI inline section explanations (RW-ROLEPAGE-AI-INTERACTION-01) ────
     // Build a focused prompt for a specific section key.
     function _rwBuildAskPrompt(sectionKey) {
       const _prompts = {
-        'briefing':       'Based on the role briefing signals — the role summary, why this role exists, what they are really looking for, the hiring context, and fit reality — give me a 3–4 sentence plain-English explanation of what this role is really about, why it probably exists, and what I should be thinking about before pursuing it.',
+        'briefing':       'Based on the role briefing signals (the role summary, why this role exists, what they are really looking for, the hiring context, and fit reality), give me a 3-4 sentence plain-English explanation of what this role is really about, why it probably exists, and what I should be thinking about before pursuing it.',
         'role-signals':   'Based on the structural and operational signals detected in this job description, what do they suggest about the day-to-day reality of working in this role? Be specific about what stands out and what I should probe in an interview.',
-        'jd-clarity':     'Based on the JD transparency signals, watch points, and missing information, what does this job posting reveal — or conceal — about the role? What are the most important things I should verify or ask about before applying?',
+        'jd-clarity':     'Based on the JD transparency signals, watch points, and missing information, what does this job posting reveal, or conceal, about the role? What are the most important things I should verify or ask about before applying?',
         'market-reality': 'Based on the hiring reality data for this type of role, what should I expect from the hiring process and timeline? What patterns are worth knowing about when deciding whether to apply?',
         'career-pattern': 'Based on the career pattern intelligence and decision signals visible in the analysis, what patterns are worth paying attention to? What does this role suggest about my search trajectory, and is there anything I should weigh carefully?',
       };
-      return _prompts[sectionKey] || `Explain the key signals in the ${sectionKey} section of this role analysis in 3–4 sentences.`;
+      return _prompts[sectionKey] || `Explain the key signals in the ${sectionKey} section of this role analysis in 3-4 sentences.`;
     }
 
     // Build a minimal context object for a section-specific Ask AI call.
@@ -6630,14 +7397,14 @@
             btn.dataset.askShown = '1';
           } else {
             _panel.innerHTML =
-              '<div class="rw-ask-ai-error">Couldn’t get a response — try again.</div>' +
+              '<div class="rw-ask-ai-error">Couldn\'t get a response. Try again.</div>' +
               '<div class="rw-ask-ai-foot"><button class="rw-ask-ai-dismiss" data-ws-ask-dismiss>Dismiss</button></div>';
           }
         } catch (_err) {
           console.warn('[_wsInitAskAIActions] error', _err);
           _panel.classList.remove('rw-ask-ai-panel--loading');
           _panel.innerHTML =
-            '<div class="rw-ask-ai-error">Something went wrong — try again.</div>' +
+            '<div class="rw-ask-ai-error">Something went wrong. Try again.</div>' +
             '<div class="rw-ask-ai-foot"><button class="rw-ask-ai-dismiss" data-ws-ask-dismiss>Dismiss</button></div>';
         } finally {
           delete btn.dataset.askBusy;
@@ -6717,7 +7484,7 @@
 
       insertEvent(role.id, {
         event_type: 'recruiter_linked',
-        title:      `Recruiter linked from email${extracted.name ? ' — ' + extracted.name : ''}`,
+        title:      `Recruiter linked from email${extracted.name ? ': ' + extracted.name : ''}`,
       });
 
       return { linked: true, name: extracted.name };
@@ -6752,7 +7519,7 @@
       if (role._isTemp) {
         role._pendingRecruiter = extracted;
         const who = extracted.name || extracted.email;
-        const st = _wsStatusLine(timelineEl, `Recruiter email noted${who ? ' — ' + who : ''}.`);
+        const st = _wsStatusLine(timelineEl, `Recruiter email noted${who ? ': ' + who : ''}.`);
         setTimeout(() => { if (st.isConnected) st.classList.add('ws-status-faded'); }, 5000);
         return;
       }
@@ -6763,7 +7530,7 @@
           const result = await _wsLinkRecruiterFromEmail(role, extracted);
           let msg;
           if (result.linked) {
-            msg = `Recruiter email captured — linked to ${extracted.name || extracted.email}.`;
+            msg = `Recruiter email captured, linked to ${extracted.name || extracted.email}.`;
             // Refresh recruiter meta in doc header and inbox card immediately
             _refreshDocRecruiterMeta(role);
             renderInbox(allRoles);
@@ -6945,8 +7712,8 @@
         roleId:    role.id,
         isTemp:    role._isTemp || false,
         memory:    memory ? 'loaded' : 'null',
-        convLen:   memory?.conversations?.length ?? '—',
-        artLen:    memory?.artifacts?.length     ?? '—',
+        convLen:   memory?.conversations?.length ?? '-',
+        artLen:    memory?.artifacts?.length     ?? '-',
         hasHistory: !!hasHistory,
       });
 
@@ -7444,9 +8211,10 @@
 
       const _itemsHtml = _sorted.map(r => {
         const _label = [r.company_name, r.role_title].filter(Boolean).join(' · ') || 'Role';
+        const _rawStage = currentStageLabel(r);
         const _state = r.outcome_state
           ? outcomeDisplayLabel(r.outcome_state)
-          : currentStageLabel(r);
+          : (_rawStage === 'JD Review' ? 'In review' : _rawStage);
         return `<div class="role-contact-history-item"><span class="role-contact-history-label">${esc(_label)}</span><span class="role-contact-history-outcome">${esc(_state)}</span></div>`;
       }).join('');
 
@@ -7521,179 +8289,79 @@
         }
       }
 
-      // ── 2. Full Role Contacts section (always visible) ─────────────────────
-      // #doc-recruiter-row only exists in the legacy doc view HTML template.
-      // In workspace view it is absent, so we create it on-demand and append
-      // it to .rw-overview-wrap so contacts always render.
-      let _rowEl = document.getElementById('doc-recruiter-row');
-      if (!_rowEl) {
-        const _wrap = document.querySelector('#col-overview-cards .rw-overview-wrap');
-        if (!_wrap) return;
-        _rowEl = document.createElement('div');
-        _rowEl.id = 'doc-recruiter-row';
-        _rowEl.className = 'doc-recruiter-row';
-        _wrap.appendChild(_rowEl);
-      }
+      // ── 2. Legacy main-column Role Contacts — hidden ──────────────────────
+      // (RW-REMOVE-MAIN-CONTACTS) Card removed from main column.
+      const _rowEl = document.getElementById('doc-recruiter-row');
+      if (_rowEl) { _rowEl.style.display = 'none'; _rowEl.innerHTML = ''; }
 
-      const _contacts    = role.role_recruiters || [];
-      const _hasNudge    = !!_roleNudge(role);
+      // ── 3. Populate sidebar recruiter slot (RW-SIDEBAR-CONTACTS) ──────────
+      const _sidebarRecEl = document.getElementById('rw-sidebar-recruiter');
+      if (!_sidebarRecEl) return;
 
-      let _rowHtml = `<div class="role-contacts-section">
-        <div class="role-contacts-header">
-          <span class="role-contacts-title">Role Contacts</span>
-          <button class="role-contacts-add-btn" id="btn-add-role-contact">+ Add Contact</button>
-        </div>`;
-
+      const _contacts = role.role_recruiters || [];
       if (_contacts.length === 0) {
-        _rowHtml += `<div class="role-contacts-empty">No contacts linked to this role yet.</div>`;
-      } else {
-        _rowHtml += `<div class="role-contacts-list">`;
-        for (const _link of _contacts) {
-          const _rec = _link.recruiters;
-          if (!_rec) continue;
-          const _cType  = _link.contact_type || 'Recruiter';
-          const _nameHtml = _rec.linkedin_url
-            ? `<a href="${esc(_rec.linkedin_url)}" target="_blank" rel="noopener" class="role-contact-name-link">${esc(_rec.name || '—')}</a>`
-            : `<span class="role-contact-name">${esc(_rec.name || '—')}</span>`;
-          const _recFull  = allRecruiters.find(r => r.id === _rec.id);
-          const _histHtml = _recruiterHistoryHtml(_recFull, role.id);
-
-          // Follow-up panel: visible when role has a stale nudge signal
-          const _followUpHtml = _hasNudge ? `
-            <div class="role-contact-followup-row">
-              <button class="role-contact-followup-btn" data-followup-rec-id="${esc(_rec.id)}">Follow up</button>
-            </div>
-            <div class="role-contact-followup-panel" data-panel-rec-id="${esc(_rec.id)}" style="display:none;">
-              <textarea class="role-contact-followup-msg" rows="5" spellcheck="true"></textarea>
-              <div class="role-contact-followup-actions">
-                <button class="role-contact-followup-copy">Copy message</button>
-                <button class="role-contact-followup-log">Log follow-up</button>
-              </div>
-            </div>` : '';
-
-          _rowHtml += `<div class="role-contact-item" data-rec-id="${esc(_rec.id)}">
-            <div class="role-contact-main">
-              ${_nameHtml}
-              <span class="role-contact-type-badge">${esc(_cType)}</span>
-              ${_rec.company ? `<span class="role-contact-company">· ${esc(_rec.company)}</span>` : ''}
-            </div>
-            ${_rec.email ? `<div class="role-contact-detail"><a href="mailto:${esc(_rec.email)}">${esc(_rec.email)}</a></div>` : ''}
-            ${(_rec.mobile_phone || _rec.office_phone) ? `<div class="role-contact-detail"><a href="tel:${esc(_rec.mobile_phone || _rec.office_phone)}">${esc(_rec.mobile_phone || _rec.office_phone)}</a></div>` : ''}
-            ${_histHtml}
-            ${_followUpHtml}
-          </div>`;
-        }
-        _rowHtml += `</div>`;
+        _sidebarRecEl.innerHTML = '';
+        _sidebarRecEl.style.display = 'none';
+        return;
       }
 
-      _rowHtml += `<div id="role-contact-add-form"></div></div>`;
-      _rowEl.innerHTML = _rowHtml;
-      _rowEl.style.display = '';
+      let _sHtml = `<div class="rw-rail-section rw-rail-contacts-section">
+        <h3 class="rw-rail-h3">Contacts</h3>`;
 
-      // Wire up Add Contact button
-      document.getElementById('btn-add-role-contact')?.addEventListener('click', () => {
-        _showAddRoleContactForm(role);
-      });
+      for (const _link of _contacts) {
+        const _rec = _link.recruiters;
+        if (!_rec) continue;
+        const _cType = _link.contact_type || 'Recruiter';
+        const _nameHtml = _rec.linkedin_url
+          ? `<a href="${esc(_rec.linkedin_url)}" target="_blank" rel="noopener" class="rw-rail-contact-name">${esc(_rec.name || '-')}</a>`
+          : `<span class="rw-rail-contact-name">${esc(_rec.name || '-')}</span>`;
 
-      // Wire up contact item clicks — open in Role Contacts directory
-      _rowEl.querySelectorAll('.role-contact-item[data-rec-id]').forEach(item => {
-        item.style.cursor = 'pointer';
-        item.addEventListener('click', e => {
+        const _recFull = allRecruiters.find(r => r.id === _rec.id);
+        const _recRoles = _recFull?.roles || [];
+        const _roleCount = _recRoles.length;
+        const _histLine = _roleCount > 1
+          ? `<div class="rw-rail-contact-meta">${_roleCount} previous role${_roleCount !== 1 ? 's' : ''}</div>`
+          : '';
+
+        // Current role info
+        const _roleTitle = role.role_title || '';
+        const _company   = role.company_name || '';
+        const _roleLine  = (_company || _roleTitle)
+          ? `<div class="rw-rail-contact-meta">${esc(_company)}${_company && _roleTitle ? ' · ' : ''}${esc(_roleTitle)}</div>`
+          : '';
+
+        // Stage
+        const _stage = role.status || role._stage || '';
+        const _stageLine = _stage
+          ? `<div class="rw-rail-contact-meta">${esc(_stage.charAt(0).toUpperCase() + _stage.slice(1).replace(/_/g, ' '))}</div>`
+          : '';
+
+        _sHtml += `<div class="rw-rail-contact-card" data-rec-id="${esc(_rec.id)}">
+          <div class="rw-rail-contact-header">
+            ${_nameHtml}
+            <span class="rw-rail-contact-type">${esc(_cType)}</span>
+          </div>
+          ${_histLine}
+          ${_roleLine}
+          ${_stageLine}
+          ${_rec.email ? `<div class="rw-rail-contact-detail"><a href="mailto:${esc(_rec.email)}">${esc(_rec.email)}</a></div>` : ''}
+          ${(_rec.mobile_phone || _rec.office_phone) ? `<div class="rw-rail-contact-detail"><a href="tel:${esc(_rec.mobile_phone || _rec.office_phone)}">${esc(_rec.mobile_phone || _rec.office_phone)}</a></div>` : ''}
+        </div>`;
+      }
+
+      _sHtml += `</div>`;
+      _sidebarRecEl.innerHTML = _sHtml;
+      _sidebarRecEl.style.display = '';
+
+      // Wire up contact card clicks → open in Recruiter directory
+      _sidebarRecEl.querySelectorAll('.rw-rail-contact-card[data-rec-id]').forEach(card => {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', e => {
           if (e.target.tagName === 'A') return;
-          if (e.target.closest('.role-contact-followup-row, .role-contact-followup-panel')) return;
-          _openRecruiterById(item.dataset.recId);
+          _openRecruiterById(card.dataset.recId);
         });
       });
-
-      // Wire up Follow up toggle buttons
-      _rowEl.querySelectorAll('.role-contact-followup-btn').forEach(btn => {
-        btn.addEventListener('click', e => {
-          e.stopPropagation();
-          const _recId = btn.dataset.followupRecId;
-          const _panel = _rowEl.querySelector(`.role-contact-followup-panel[data-panel-rec-id="${_recId}"]`);
-          if (!_panel) return;
-          const _open  = _panel.style.display !== 'none';
-          if (_open) {
-            _panel.style.display = 'none';
-            btn.textContent = 'Follow up';
-            return;
-          }
-          // Pre-fill scaffold on first open (or if textarea has been cleared)
-          const _ta = _panel.querySelector('.role-contact-followup-msg');
-          if (_ta && !_ta.value.trim()) {
-            const _recRaw = _contacts.find(l => l.recruiters?.id === _recId)?.recruiters;
-            _ta.value = _buildFollowUpMessage(_recRaw, role);
-          }
-          _panel.style.display = '';
-          btn.textContent = 'Close';
-          _panel.querySelector('.role-contact-followup-msg')?.focus();
-        });
-      });
-
-      // Wire up Copy message buttons
-      _rowEl.querySelectorAll('.role-contact-followup-copy').forEach(copyBtn => {
-        copyBtn.addEventListener('click', e => {
-          e.stopPropagation();
-          const _ta  = copyBtn.closest('.role-contact-followup-panel')?.querySelector('.role-contact-followup-msg');
-          const _msg = _ta?.value.trim();
-          if (!_msg) return;
-          const _done = () => {
-            copyBtn.textContent = 'Copied!';
-            setTimeout(() => { copyBtn.textContent = 'Copy message'; }, 2000);
-          };
-          if (navigator.clipboard?.writeText) {
-            navigator.clipboard.writeText(_msg).then(_done).catch(() => {
-              _ta.select(); document.execCommand('copy'); _done();
-            });
-          } else {
-            _ta.select(); document.execCommand('copy'); _done();
-          }
-        });
-      });
-
-      // Wire up Log follow-up buttons
-      _rowEl.querySelectorAll('.role-contact-followup-log').forEach(logBtn => {
-        logBtn.addEventListener('click', async e => {
-          e.stopPropagation();
-          const _panel  = logBtn.closest('.role-contact-followup-panel');
-          const _recId  = _panel?.dataset.panelRecId;
-          const _recRaw = _contacts.find(l => l.recruiters?.id === _recId)?.recruiters;
-          const _name   = _recRaw?.name || null;
-          const _note   = _name ? `Followed up with ${_name}` : 'Followed up';
-          logBtn.disabled = true;
-          const _today  = new Date().toISOString().slice(0, 10);
-          try {
-            const { data: _newEv, error: _evErr } = await db.from('role_events').insert({
-              role_id:    role.id,
-              event_type: 'note_added',
-              title:      'Note',
-              source:     'user',
-              event_date: _today,
-              note:       _note,
-              detail:     _note,
-            }).select('id, event_type, title, created_at, source, event_date, note, detail').single();
-            if (_evErr) throw _evErr;
-
-            // Prepend to timeline if visible
-            const _eventsEl = document.getElementById('role-memory-events');
-            if (_eventsEl) {
-              const _emptyEl = _eventsEl.querySelector('.role-memory-empty');
-              if (_emptyEl) _eventsEl.innerHTML = '';
-              _eventsEl.insertAdjacentHTML('afterbegin', _renderTimelineRow(_newEv));
-            }
-
-            // Close panel
-            if (_panel) _panel.style.display = 'none';
-            const _followupBtn = _rowEl.querySelector(`.role-contact-followup-btn[data-followup-rec-id="${_recId}"]`);
-            if (_followupBtn) _followupBtn.textContent = 'Follow up';
-
-            logBtn.textContent = 'Logged ✓';
-            setTimeout(() => { logBtn.textContent = 'Log follow-up'; logBtn.disabled = false; }, 2500);
-          } catch (_) {
-            logBtn.disabled = false;
-          }
-        });
-      });
+      // Legacy main-column Role Contacts code removed (RW-REMOVE-MAIN-CONTACTS)
     }
 
     // ─── Follow-up message scaffold ───────────────────────────────────────────
@@ -7719,7 +8387,7 @@
       _formEl.innerHTML = `<div class="role-contact-form">
         <div class="role-contact-form-title">Add contact to this role</div>
         <div class="rc-form-row">
-          <label class="rc-form-label" for="rcf-name">Name <span style="color:#c0392b">*</span></label>
+          <label class="rc-form-label" for="rcf-name">Name <span style="color:var(--error)">*</span></label>
           <input class="rc-form-input" id="rcf-name" type="text" placeholder="e.g. Sarah Mitchell" autocomplete="off">
         </div>
         <div class="rc-form-row">
@@ -7903,7 +8571,7 @@
       let docBody = '';
       // Primary content slot — async block below replaces the placeholder with
       // renderMatchOutput(output_json) from jd_matches, or falls back to raw JD.
-      docBody = '<div id="match-output-panel"><p class="doc-no-analysis" style="color:#aaa;font-style:italic;">Loading analysis…</p></div>';
+      docBody = '<div id="match-output-panel"><p class="doc-no-analysis" style="color:var(--text-light);font-style:italic;">Loading analysis…</p></div>';
 
       // Response Time — computed from role_updates; only shown when applied event exists.
       // Only stage rows are considered — outcome rows and legacy status values are ignored.
@@ -8182,8 +8850,8 @@
               <div id="doc-meta-application" class="doc-meta-application" style="display:none;"></div>
             </div>
             <div class="doc-header-right">
-              <button class="btn-edit-details" id="btn-edit-role-details" data-role-id="${esc(role.id)}">Edit details</button>
-              <button class="btn-share-analysis" id="btn-share-analysis" style="display:none;" data-role-id="${esc(role.id)}">Share analysis</button>
+              <button class="rw-btn rw-btn-sm" id="btn-edit-role-details" data-role-id="${esc(role.id)}">Edit details</button>
+              <button class="rw-btn rw-btn-sm" id="btn-share-analysis" style="display:none;" data-role-id="${esc(role.id)}">Share analysis</button>
             </div>
           </div>
           <!-- Recruiter row — filled synchronously from role.role_recruiters -->
@@ -8812,8 +9480,8 @@
                     ? `You\u2019ve usually pursued roles with ${_labels}.`
                     : `You\u2019ve usually pursued roles with: ${_labels}.`;
                   _prefBodyHtml =
-                    `<p class="doc-prose" style="color:var(--text-muted);margin-bottom:6px;">${esc(_line1)}</p>` +
-                    `<p class="doc-prose" style="color:var(--text-muted);">This role shares those patterns.</p>`;
+                    `<p class="doc-prose" style="color:var(--text-secondary);margin-bottom:6px;">${esc(_line1)}</p>` +
+                    `<p class="doc-prose" style="color:var(--text-secondary);">This role shares those patterns.</p>`;
                 } else if (_conflictSigs.length > 0) {
                   // Avoidance pattern — user has consistently skipped roles with these traits
                   const _sigs = _conflictSigs.slice(0, 3);
@@ -8822,8 +9490,8 @@
                     ? `You\u2019ve often skipped roles with ${_labels}.`
                     : `You\u2019ve often skipped roles with: ${_labels}.`;
                   _prefBodyHtml =
-                    `<p class="doc-prose" style="color:var(--text-muted);margin-bottom:6px;">${esc(_line1)}</p>` +
-                    `<p class="doc-prose" style="color:var(--text-muted);">This role contains those signals.</p>`;
+                    `<p class="doc-prose" style="color:var(--text-secondary);margin-bottom:6px;">${esc(_line1)}</p>` +
+                    `<p class="doc-prose" style="color:var(--text-secondary);">This role contains those signals.</p>`;
                 }
 
                 // Only render if there is something meaningful to show — insert inside analysis panel
@@ -8860,7 +9528,7 @@
               if (_dsEl2) {
                 _dsEl2.innerHTML = `<div class="decision-summary ds-empty">
                   <div class="decision-summary-header">Ready to analyse</div>
-                  <p class="doc-prose" style="color:var(--text-muted);margin-bottom:12px;">Run the analysis to see fit, risks, and a recommended action for this role.</p>
+                  <p class="doc-prose" style="color:var(--text-secondary);margin-bottom:12px;">Run the analysis to see fit, risks, and a recommended action for this role.</p>
                   <button id="btn-generate-analysis" class="btn-primary" style="font-size:13px;">Generate analysis</button>
                 </div>`;
                 _dsEl2.style.display = '';
@@ -8933,7 +9601,7 @@
                     genBtn.disabled = false;
                     genBtn.textContent = 'Generate analysis';
                     const errP = document.createElement('p');
-                    errP.style.cssText = 'color:#c0392b;font-size:12px;margin-top:8px;';
+                    errP.style.cssText = 'color:var(--error);font-size:12px;margin-top:8px;';
                     errP.textContent = 'Failed to generate: ' + (genErr.message || 'Unknown error');
                     genBtn.insertAdjacentElement('afterend', errP);
                   }
@@ -9025,7 +9693,7 @@
                   genBtn.disabled = false;
                   genBtn.textContent = 'Generate analysis';
                   const errP = document.createElement('p');
-                  errP.style.cssText = 'color:#c0392b;font-size:12px;margin-top:8px;';
+                  errP.style.cssText = 'color:var(--error);font-size:12px;margin-top:8px;';
                   errP.textContent = 'Failed to generate: ' + (genErr.message || 'Unknown error');
                   genBtn.insertAdjacentElement('afterend', errP);
                 }
@@ -9083,7 +9751,7 @@
       { label: 'Interviewing',   outcomeState: 'interviewing',   hasReason: false, progress: true },
       { label: 'Offer received', outcomeState: 'offer_received', hasReason: false, progress: true },
       { label: 'Rejected',       outcomeState: 'rejected',       hasReason: true  },
-      { label: 'No response',    outcomeState: 'no_response',    hasReason: false, desc: 'Applied — nothing came back' },
+      { label: 'No response',    outcomeState: 'no_response',    hasReason: false, desc: 'Applied, nothing came back' },
       { label: 'Ghosted',        outcomeState: 'ghosted',        hasReason: false, desc: 'Had contact, then they went silent' },
       { label: 'Stopped pursuing', outcomeState: 'skipped',       hasReason: true  },
       { label: 'Withdrew',       outcomeState: 'withdrew',       hasReason: true  },
@@ -9300,9 +9968,11 @@
     // ─── StageTracker: meta state helper ────────────────────────────────────
     // Returns the role's macro health state for Layer 2 (meta badge).
     // Evaluated in display priority order — archived first, then flags.
+    // Uses _roleNudge() as the single source of truth for "needs attention" so
+    // the rail badge always matches the overview / inbox filter criteria exactly.
     function _roleMetaState(role) {
-      if (isArchivedRole(role))         return 'archived';
-      if (needsAttentionDot(role))      return 'needs_attention';
+      if (isArchivedRole(role))                            return 'archived';
+      if (!!_roleNudge(role))                              return 'needs_attention';
       if (PROGRESSED_STAGES.has(currentStageLabel(role))) return 'in_progress';
       return 'active';
     }
@@ -9405,15 +10075,7 @@
             <div class="rail-outcome-form" id="rail-outcome-form"></div>
             <div class="rail-confirm" id="rail-confirm"></div>
 
-            <div class="rail-admin">
-              ${role.archived
-                ? ''
-                : `<button class="rail-admin-btn" id="btn-archive-role">Archive role</button>
-                   <div class="rail-admin-confirm" id="archive-confirm"></div>`
-              }
-              <button class="rail-admin-btn danger" id="btn-delete-role">Delete role</button>
-              <div class="rail-admin-confirm" id="delete-confirm"></div>
-            </div>
+            <!-- Archive / Delete moved to right sidebar panel (RW-SIDEBAR-ADMIN) -->
           </div>
         `;
 
@@ -9487,9 +10149,7 @@
           });
         });
 
-        // Admin action handlers (archive button absent for already-archived roles)
-        document.getElementById('btn-archive-role')?.addEventListener('click', () => archiveRole(role.id));
-        document.getElementById('btn-delete-role').addEventListener('click', () => deleteRole(role.id));
+        // Admin action handlers moved to sidebar — wired via delegated click on #col-overview-cards (RW-SIDEBAR-ADMIN)
       }
 
       // Wire stage stepper (all clickable steps, not just upcoming)
@@ -9525,6 +10185,12 @@
             if (error) throw error;
             insertEvent(roleId, { event_type: 'role_archived', title: 'Archived' });
             allRoles = allRoles.map(r => r.id === roleId ? { ...r, archived: true } : r);
+            // Candidate learning: record archive decision
+            const _archRole = allRoles.find(r => r.id === roleId);
+            if (_archRole) {
+              _saveCandidateDecisionExt(_archRole, 'archive').catch(() => {});
+              _updateCandidateLearningCounters('archive', _archRole).catch(() => {});
+            }
             renderInbox(allRoles);
             selectedRoleId = null;
             document.getElementById('col-rail-section').innerHTML = '';
@@ -9836,7 +10502,7 @@
               }
               undoBar.innerHTML = '';
             } catch (e) {
-              undoBar.innerHTML = `<span style="color:#c0392b;">Undo failed: ${esc(e.message)}</span>`;
+              undoBar.innerHTML = `<span style="color:var(--error);">Undo failed: ${esc(e.message)}</span>`;
             }
           });
 
@@ -9856,63 +10522,13 @@
     }
 
     // ─── Decision Capture ─────────────────────────────────────────────────────
-    // Renders a 3-button verdict card into #ws-decision-capture.
-    // Reflects the role's current verdict_state ('fits'|'not_for_me'|'undecided'|null).
-    // Clicking a selected button deselects (clears to null); clicking another sets it.
-    // If the role is nudge-eligible, also renders the Nudge Card below (Phase 6).
+    // RW-REMOVE-MAIN-DECISION: "Your decision" section removed from main column.
+    // Apply / Skip now live exclusively in the right-hand sidebar panel.
+    // Function kept as a no-op so existing call sites don't throw.
     function _renderDecisionCapture(role) {
       _ensureOverviewLowerCards();
       const el = document.getElementById('ws-decision-capture');
-      if (!el) return;
-      if (!role) { el.style.display = 'none'; el.innerHTML = ''; return; }
-
-      const state = role.verdict_state || null;
-      const opts = [
-        { label: 'This fits me', value: 'fits'       },
-        { label: 'Not for me',   value: 'not_for_me' },
-        { label: 'Undecided',    value: 'undecided'  },
-      ];
-
-      // Build nudge card HTML if role is eligible (Phase 6)
-      const _nudgeHtml = _isNudgeEligible(role) ? `
-        <div class="ws-nudge-card">
-          <div class="ws-nudge-label">What happened?</div>
-          <div class="ws-nudge-body">You marked this as a fit — did anything come of it?</div>
-          <div class="ws-nudge-buttons">
-            <button class="ws-nudge-btn" data-nudge-action="applied">I applied</button>
-            <button class="ws-nudge-btn" data-nudge-action="interviewing">In conversation</button>
-            <button class="ws-nudge-btn" data-nudge-action="no_response">Nothing came back</button>
-            <button class="ws-nudge-btn ws-nudge-btn--soft" data-nudge-action="snooze">Remind me later</button>
-          </div>
-        </div>
-      ` : '';
-
-      el.style.display = '';
-      el.innerHTML = `
-        <div class="ws-dc-card">
-          <div class="ws-dc-label">My verdict</div>
-          <div class="ws-dc-buttons">
-            ${opts.map(o => `
-              <button class="ws-dc-btn${state === o.value ? ' ws-dc-btn--selected' : ''}"
-                      data-dc-val="${esc(o.value)}">${esc(o.label)}</button>
-            `).join('')}
-          </div>
-        </div>
-        ${_nudgeHtml}
-      `;
-
-      el.querySelectorAll('.ws-dc-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const newState = btn.dataset.dcVal;
-          // Clicking the active selection clears it; otherwise set the new state
-          setDecision(role.id, newState === state ? null : newState);
-        });
-      });
-
-      // Wire nudge action buttons (Phase 7)
-      el.querySelectorAll('.ws-nudge-btn').forEach(btn => {
-        btn.addEventListener('click', () => _handleNudgeAction(role.id, btn.dataset.nudgeAction));
-      });
+      if (el) { el.style.display = 'none'; el.innerHTML = ''; }
     }
 
     // ─── Decision Layer V1 — Blocker detection ────────────────────────────────
@@ -10046,10 +10662,13 @@
 
     // ─── Decision Layer V1 — Blockers section UI ─────────────────────────────
     // Renders "Potential blockers" in the #ws-blockers-section slot.
-    // Detects from analysis, loads any saved user states, renders confirm checklist.
+    // RW-REMOVE-MAIN-BLOCKERS: Blockers box removed from main column.
+    // Blocker info is surfaced through the Risks and unknowns section instead.
+    // Function kept as a no-op so existing call sites don't throw.
     async function _renderBlockersSection(role) {
       const el = document.getElementById('ws-blockers-section');
-      if (!el) return;
+      if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+      return; // no-op — all code below preserved for reference but unreachable
 
       // Require analysis data; hide for temp/unanalysed roles
       const output = role?.latest_match_output || role?.analysis || null;
@@ -10076,6 +10695,9 @@
       savedBlockers.forEach(b => { blockerStateMap[b.blocker_key] = b; });
       const boundaryKeys = new Set(boundaries.map(b => b.blocker_key));
 
+      // Render blockers as plain text list — no tag buttons, no interactivity.
+      // Interactive state buttons (Hard blocker / Soft concern) removed per RW-DOCVIEW-REFACTOR.
+      // Underlying save/load logic preserved below; wiring is no-op with no buttons.
       const itemsHtml = detected.map(blocker => {
         const saved      = blockerStateMap[blocker.key] || null;
         const state      = saved?.user_state || null;
@@ -10083,40 +10705,26 @@
         const stateClass = state ? ` dl-blocker-item--${state}` : '';
 
         const evidenceHtml = blocker.evidence
-          ? `<div class="dl-blocker-evidence">${esc(blocker.evidence)}</div>`
+          ? `<span class="dl-blocker-evidence-inline">: ${esc(blocker.evidence)}</span>`
           : '';
 
         const boundaryHtml = isBoundary
-          ? `<span class="dl-boundary-indicator">&#x25CF; Saved boundary</span>`
-          : (state === 'hard'
-              ? `<button class="dl-boundary-cta" data-bkey="${esc(blocker.key)}" data-blabel="${esc(blocker.label)}">Save as boundary</button>`
-              : '');
+          ? `<span class="dl-boundary-indicator">Saved boundary</span>`
+          : '';
 
         return `
-          <div class="dl-blocker-item${stateClass}"
-               data-bkey="${esc(blocker.key)}"
-               data-blabel="${esc(blocker.label)}"
-               data-bevid="${esc(blocker.evidence || '')}">
-            <div class="dl-blocker-top">
-              <span class="dl-blocker-label">${esc(blocker.label)}</span>
-              ${evidenceHtml}
-            </div>
-            <div class="dl-blocker-actions">
-              <button class="dl-blocker-btn${state === 'hard'  ? ' dl-blocker-btn--active' : ''}" data-state="hard">Hard blocker</button>
-              <button class="dl-blocker-btn${state === 'soft'  ? ' dl-blocker-btn--active' : ''}" data-state="soft">Soft concern</button>
-              <button class="dl-blocker-btn${state === 'clear' ? ' dl-blocker-btn--active' : ''}" data-state="clear">Not an issue</button>
-            </div>
-            <div class="dl-blocker-boundary-row">${boundaryHtml}</div>
-          </div>`;
+          <li class="dl-blocker-item${stateClass}"
+              data-bkey="${esc(blocker.key)}"
+              data-blabel="${esc(blocker.label)}"
+              data-bevid="${esc(blocker.evidence || '')}">
+            <span class="dl-blocker-label">${esc(blocker.label)}</span>${evidenceHtml}
+            ${boundaryHtml ? `<span class="dl-blocker-boundary-row">${boundaryHtml}</span>` : ''}
+          </li>`;
       }).join('');
 
       el.innerHTML = `
-        <div class="dl-blockers-section">
-          <div class="dl-blockers-header">
-            <span class="dl-blockers-title">Potential blockers</span>
-            <span class="dl-blockers-hint">Confirm which apply to you</span>
-          </div>
-          <div class="dl-blockers-list">${itemsHtml}</div>
+        <div class="dl-blockers-section rw-doc-blockers-list">
+          <ul class="rw-doc-bullets rw-doc-bullets--muted">${itemsHtml}</ul>
         </div>`;
       el.style.display = '';
 
@@ -10217,7 +10825,7 @@
       const fmt = iso => {
         try {
           return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-        } catch (_) { return iso?.slice(0, 10) || '—'; }
+        } catch (_) { return iso?.slice(0, 10) || '-'; }
       };
 
       const entriesHtml = snaps.map(snap => {
@@ -10238,7 +10846,7 @@
           ? (SKIP_REASON_LABELS[snap.skip_reason] || snap.skip_reason)
           : null;
         const skipReasonHtml = skipReasonLabel
-          ? `<div class="dl-dh-entry-reason">Reason: ${esc(skipReasonLabel)}${snap.skip_reason_other ? ` — ${esc(snap.skip_reason_other)}` : ''}</div>`
+          ? `<div class="dl-dh-entry-reason">Reason: ${esc(skipReasonLabel)}${snap.skip_reason_other ? `: ${esc(snap.skip_reason_other)}` : ''}</div>`
           : '';
 
         const notesHtml = snap.notes
@@ -10395,7 +11003,7 @@
       const _subtextHtml = _isRejection
         ? `<div class="rw-of__subtext">What happened? A quick note helps you spot patterns later.</div>`
         : _isOfferAccepted
-        ? `<div class="rw-of__subtext">Add a note if you like — start date, team, anything worth remembering.</div>`
+        ? `<div class="rw-of__subtext">Add a note if you like (start date, team, anything worth remembering).</div>`
         : '';
 
       // Rejection-only: optional email paste
@@ -10415,6 +11023,14 @@
           ${_chipsHtml}
           <textarea id="outcome-reason-input" class="rw-of__textarea" placeholder="${_isOfferAccepted ? 'Note (optional)' : 'Reason (optional)'}" spellcheck="true"></textarea>
           ${_emailHtml}
+          <div class="rw-of__quality">
+            <div class="rw-of__quality-label">How do you feel about this outcome?</div>
+            <div class="rw-of__quality-options">
+              <button class="rw-of__quality-btn" data-quality="positive">Positive</button>
+              <button class="rw-of__quality-btn" data-quality="neutral">Neutral</button>
+              <button class="rw-of__quality-btn" data-quality="negative">Negative</button>
+            </div>
+          </div>
           <div class="rw-of__actions">
             <button id="outcome-confirm-btn" class="rw-of__btn-confirm">Confirm</button>
             <button id="outcome-cancel-btn" class="rw-of__btn-cancel">Cancel</button>
@@ -10442,6 +11058,15 @@
         });
       });
 
+      // Quality chip toggle (single-select, toggle off on re-click)
+      formEl.querySelectorAll('.rw-of__quality-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const isActive = btn.classList.contains('rw-of__quality-btn--active');
+          formEl.querySelectorAll('.rw-of__quality-btn').forEach(b => b.classList.remove('rw-of__quality-btn--active'));
+          if (!isActive) btn.classList.add('rw-of__quality-btn--active');
+        });
+      });
+
       document.getElementById('outcome-confirm-btn').addEventListener('click', () => {
         const reason    = document.getElementById('outcome-reason-input')?.value.trim() || null;
         const emailText = document.getElementById('outcome-rejection-email')?.value.trim() || null;
@@ -10451,7 +11076,10 @@
         const noteText  = emailText
           ? [reason, `[Rejection email]\n${emailText}`].filter(Boolean).join('\n\n')
           : null;
-        setOutcome(roleId, outcomeState, reason, noteText || null);
+        // Read selected outcome quality (nullable — user can skip it)
+        const _qualityBtn = formEl.querySelector('.rw-of__quality-btn--active');
+        const outcomeQuality = _qualityBtn ? _qualityBtn.dataset.quality : null;
+        setOutcome(roleId, outcomeState, reason, noteText || null, outcomeQuality);
       });
 
       document.getElementById('outcome-cancel-btn').addEventListener('click', () => {
@@ -10467,7 +11095,7 @@
     // Allows callers to attach richer context (e.g. pasted rejection email) to
     // the timeline entry without contaminating the outcome_reason field used for
     // chips and analytics.
-    async function setOutcome(roleId, outcomeState, reason, noteOverride = null) {
+    async function setOutcome(roleId, outcomeState, reason, noteOverride = null, outcomeQuality = null) {
       const formEl    = document.getElementById('rail-outcome-form');
       const confirmEl = document.getElementById('rail-confirm');
 
@@ -10522,7 +11150,7 @@
         insertEvent(roleId, {
           event_type: 'decision_changed',
           title:      'Outcome set',
-          detail:     outcomeState + (reason ? ` — ${reason}` : ''),
+          detail:     outcomeState + (reason ? `: ${reason}` : ''),
         });
         const _outcomeTitle = {
           rejected:       'Rejected',
@@ -10554,6 +11182,14 @@
         const _ledgerType = { skipped: 'skip', withdrew: 'withdraw', offer_accepted: 'accept' }[outcomeState] || 'other';
         await wsAppendDecision(roleId, _ledgerType, reason || null);
         wsRefreshDecisionHistory(roleId).catch(() => {});
+
+        // ── Candidate learning hook — record outcome + rebuild patterns ──
+        const _outcomeRole = allRoles.find(r => r.id === roleId);
+        if (_outcomeRole) {
+          _saveCandidateOutcomeExt(_outcomeRole, outcomeState, reason, { outcomeQuality }).catch(() => {});
+          _updateCandidateLearningOutcome(outcomeState).catch(() => {});
+          _rebuildCandidateLearningPatterns().catch(() => {});
+        }
 
         renderInbox(allRoles);
 
@@ -10616,7 +11252,7 @@
         insertEvent(roleId, {
           event_type: 'decision_changed',
           title:      'Role re-opened',
-          detail:     'Outcome cleared — role returned to active tracking',
+          detail:     'Outcome cleared. Role returned to active tracking',
         });
 
         allRoles = allRoles.map(r =>
@@ -10653,7 +11289,7 @@
         insertEvent(roleId, {
           event_type: 'decision_changed',
           title:      'Role restored',
-          detail:     'Removed from archive — returned to active tracking',
+          detail:     'Removed from archive. Returned to active tracking',
         });
 
         allRoles = allRoles.map(r => r.id === roleId ? { ...r, archived: false } : r);
@@ -10690,7 +11326,7 @@
       }
       // Degraded notice
       if (output._degraded) {
-        html += `<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 12px;margin-bottom:14px;font-size:12px;color:#92400E;">Full analysis unavailable. Review the JD manually.</div>`;
+        html += `<div style="background:var(--warning-bg-alt);border:1px solid var(--warning-border);border-radius:6px;padding:8px 12px;margin-bottom:14px;font-size:12px;color:var(--warning);">Full analysis unavailable. Review the JD manually.</div>`;
       }
 
       const peekSection = (heading, content) => content
@@ -10716,9 +11352,9 @@
         ? `<p style="color:var(--text-light);font-style:italic;">${esc(str || 'Not stated')}</p>`
         : `<p>${esc(str)}</p>`;
 
-      html += peekSection('Fit Reality Summary',        taggedBulletHtml(output.fit_reality_summary,       'fit_reality_summary'));
-      html += peekSection('Role Summary',               proseHtml(output.role_summary));
-      html += peekSection('What You Would Actually Do', taggedBulletHtml(output.what_you_would_actually_do, 'what_you_would_actually_do'));
+      html += peekSection('Fit reality',                 taggedBulletHtml(output.fit_reality_summary,       'fit_reality_summary'));
+      html += peekSection('What this role actually is',  proseHtml(output.role_reality || output.role_reality_summary || output.role_summary));
+      html += peekSection('What you would actually do',  taggedBulletHtml(output.what_you_would_actually_do, 'what_you_would_actually_do'));
       return html || '<div style="font-size:13px;color:var(--text-light);font-style:italic;padding:8px 0;">No analysis available yet.</div>';
     }
 
@@ -10824,7 +11460,7 @@
       errEl.classList.add('hidden');
       const btn = document.getElementById('btn-save-add');
       btn.disabled = true;
-      btn.textContent = 'Saving...';
+      btn.textContent = 'Saving…';
 
       try {
         // ── Step 1: Create role ───────────────────────────────────────────────
@@ -11117,7 +11753,7 @@
       try {
         renderCvList(await loadCvVersions());
       } catch (e) {
-        el.innerHTML = `<div class="cv-empty" style="color:#B91C1C;">${esc(e.message)}</div>`;
+        el.innerHTML = `<div class="cv-empty" style="color:var(--error);">${esc(e.message)}</div>`;
       }
     }
 
@@ -11401,7 +12037,7 @@
 
         // Retrieve the profile id stored in the hidden element
         const profileId = document.getElementById('pref-profile-id')?.dataset.id;
-        if (!profileId) throw new Error('Profile not loaded — try reloading the view.');
+        if (!profileId) throw new Error('Profile not loaded. Try reloading the view.');
 
         const { error } = await db
           .from('profiles')
@@ -11444,7 +12080,7 @@
       document.getElementById('col-overview-cards').innerHTML = `
         <div class="col-center-inner">
           <h1 class="doc-role-title" style="margin-bottom:4px;">Profile</h1>
-          <p style="font-size:13px;color:var(--text-light);margin:0 0 32px;line-height:1.5;">Your preferences and CV context. Rolewise can use this to understand you better over time.</p>
+          <p style="font-size:13px;color:var(--text-secondary);margin:0 0 32px;line-height:1.5;">Your preferences and CV context. Rolewise can use this to understand you better over time.</p>
 
           <!-- A: Identity ────────────────────────────────── -->
           <div class="doc-section" style="margin-bottom:28px;">
@@ -11506,8 +12142,8 @@
 
             <!-- Contract baseline sub-section -->
             <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border-light);">
-              <div style="font-size:11px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:var(--text-light);margin-bottom:14px;">Contract baseline</div>
-              <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">Used to calculate compensation context when reviewing role analysis.</div>
+              <div style="font-size:11px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:var(--text-muted);margin-bottom:14px;">Contract baseline</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">Used to calculate compensation context when reviewing role analysis.</div>
 
               <div class="field-group" style="margin-bottom:16px;">
                 <label class="field-label" for="pref-day-rate">Day rate <span class="opt">(£/day)</span></label>
@@ -11668,14 +12304,14 @@
       const remote_model    = legacy.remote_model || 'Not stated';
       const employment_type = legacy.role_type === 'contract' ? 'Contract'
                             : legacy.role_type === 'permanent' ? 'Permanent' : 'Not stated';
-      const salary_annual   = legacy.salary_detected ? 'Salary mentioned — see original JD' : 'Not stated';
+      const salary_annual   = legacy.salary_detected ? 'Salary mentioned, see original JD' : 'Not stated';
 
       return {
         fit_reality_summary:              fitPoints,
         role_summary:                     'This record was saved with the previous analysis engine. Limited detail available.',
         why_this_role_exists:             'Not recorded in this format.',
-        what_you_would_actually_do:       ['Not recorded — see original JD for detail.'],
-        what_they_are_really_looking_for: ['Not recorded — see original JD for detail.'],
+        what_you_would_actually_do:       ['Not recorded, see original JD for detail.'],
+        what_they_are_really_looking_for: ['Not recorded, see original JD for detail.'],
         practical_details: {
           location: 'Not stated', remote_model, employment_type,
           salary_annual, salary_monthly: null, reporting_line: 'Not stated', visa: 'Not stated',
@@ -11690,7 +12326,7 @@
         suggested_actions: {
           next_step:      decision === 'Skip' ? 'Skip' : decision === 'Apply' ? 'Apply' : 'Review',
           recommended_cv: 'Senior Product Designer',
-          cv_reasoning:   `Legacy record — original decision was: ${decision}.`,
+          cv_reasoning:   `Legacy record, original decision was: ${decision}.`,
         },
         hard_no:        decision === 'Skip' && !!legacy.production_coding_required,
         hard_no_reason: legacy.production_coding_required ? 'Production coding requirement detected.' : null,
@@ -11951,7 +12587,7 @@
       const fmt = n => `${symbol}${Math.round(n).toLocaleString('en-GB')}`;
 
       const roleMonthStr = (roleMonthMax && roleMonthMax !== roleMonthMin)
-        ? `${fmt(roleMonthMin)} – ${fmt(roleMonthMax)}`
+        ? `${fmt(roleMonthMin)}-${fmt(roleMonthMax)}`
         : fmt(roleMonthMin);
 
       const ir35Label = ir35Raw === 'outside' ? ' outside IR35'
@@ -12122,7 +12758,7 @@
       if (topStage && topStage[1] >= Math.ceil(analysedRoles.length * 0.35)) {
         const stageLabels = { scaleup: 'scale-up', startup: 'start-up', enterprise: 'enterprise' };
         const label = stageLabels[topStage[0]] || topStage[0];
-        signals.push(`Across the roles you've analysed so far, ${label} companies appear most frequently — making up around ${Math.round(topStage[1] / analysedRoles.length * 100)}% of your explored roles.`);
+        signals.push(`Across the roles you've analysed so far, ${label} companies appear most frequently. Making up around ${Math.round(topStage[1] / analysedRoles.length * 100)}% of your explored roles.`);
       }
 
       // ── Craft vs strategy balance ─────────────────────────────────────────
@@ -12135,7 +12771,7 @@
       if (topBal && topBal[1] >= Math.ceil(analysedRoles.length * 0.4)) {
         const balLabels = { craft_heavy: 'craft-heavy', strategy_heavy: 'strategy-focused', balanced: 'balanced craft and strategy' };
         const label = balLabels[topBal[0]] || topBal[0];
-        signals.push(`A pattern emerging across your explored roles is a lean toward ${label} environments — this may reflect the types of organisations you tend to explore.`);
+        signals.push(`A pattern emerging across your explored roles is a lean toward ${label} environments. This may reflect the types of organisations you tend to explore.`);
       }
 
       // ── Work model (remote vs hybrid) ─────────────────────────────────────
@@ -12148,7 +12784,7 @@
       if (topWm && topWm[1] >= Math.ceil(analysedRoles.length * 0.45)) {
         const wmLabels = { remote: 'fully remote', hybrid: 'hybrid', onsite: 'on-site' };
         const label = wmLabels[topWm[0]] || topWm[0];
-        signals.push(`The majority of roles you've explored appear to be ${label} — this may explain the types of environments you're gravitating toward.`);
+        signals.push(`The majority of roles you've explored appear to be ${label}. This may explain the types of environments you're gravitating toward.`);
       }
 
       // ── Contract vs permanent ─────────────────────────────────────────────
@@ -12160,7 +12796,7 @@
         }
         const topEng = Object.entries(engCounts).sort((a, b) => b[1] - a[1])[0];
         if (topEng && topEng[1] >= Math.ceil(analysedRoles.length * 0.5)) {
-          signals.push(`Across the roles you've analysed, ${topEng[0].toLowerCase()} roles appear most consistently — this may reflect where your current search is focused.`);
+          signals.push(`Across the roles you've analysed, ${topEng[0].toLowerCase()} roles appear most consistently. This may reflect where your current search is focused.`);
         }
       }
 
@@ -12272,11 +12908,11 @@
         const _fitBad = _fits.filter(r => ['rejected', 'no_response', 'ghosted'].includes(r.outcome_state));
         const _fitPct = Math.round((_fitBad.length / _fits.length) * 100);
         if (_fitPct >= 60) {
-          _ds.push(`${_fitPct}% of roles you marked as a fit ended in rejection or no response — your optimism may be running ahead of the market signal.`);
+          _ds.push(`${_fitPct}% of roles you marked as a fit ended in rejection or no response. Your optimism may be running ahead of the market signal.`);
         }
         const _fitOffers = _fits.filter(r => r.outcome_state === 'offer_accepted');
         if (_fitOffers.length > 0) {
-          _ds.push(`${_fitOffers.length} of your fits resulted in an offer — when you call it, you call it right.`);
+          _ds.push(`${_fitOffers.length} of your fits resulted in an offer. When you call it, you call it right.`);
         }
       }
 
@@ -12284,7 +12920,7 @@
       if (_notFits.length >= 3) {
         const _notFitProgress = _notFits.filter(r => _progressStates.has(r.outcome_state) || r.outcome_state === 'offer_accepted');
         if (_notFitProgress.length >= 2) {
-          _ds.push(`You progressed with ${_notFitProgress.length} roles you had marked as "not for me" — worth revisiting your criteria.`);
+          _ds.push(`You progressed with ${_notFitProgress.length} roles you had marked as "not for me". Worth revisiting your criteria.`);
         }
       }
 
@@ -12292,7 +12928,7 @@
       const _resolved = dataset.filter(r => _terminalStates.has(r.outcome_state));
       const _resolvedPct = Math.round((_resolved.length / dataset.length) * 100);
       if (_resolvedPct >= 70 && dataset.length >= 8 && _ds.length < 2) {
-        _ds.push(`${_resolvedPct}% of roles with a recorded verdict have now closed — a useful base for reading patterns.`);
+        _ds.push(`${_resolvedPct}% of roles with a recorded verdict have now closed. A useful base for reading patterns.`);
       }
 
       return _ds.slice(0, 3);
@@ -12455,7 +13091,7 @@
           const _wmLabel = _wmTop[0] === 'remote' ? 'remote'
                          : _wmTop[0] === 'hybrid' ? 'hybrid'
                          : 'on-site';
-          obs.push(`${_wmPct}% of your tracked roles with a known work model are ${_wmLabel} — an early lean is becoming visible in your search.`);
+          obs.push(`${_wmPct}% of your tracked roles with a known work model are ${_wmLabel}. An early lean is becoming visible in your search.`);
         }
       }
 
@@ -12472,9 +13108,9 @@
       }).length;
       if (_snrCount + _jnrCount >= Math.round(n * 0.5)) {
         if (_snrCount > _jnrCount * 2 && _snrCount >= 5) {
-          obs.push(`Most of the roles you're tracking are senior or lead-level — your search appears to be anchored at the upper end of the market.`);
+          obs.push(`Most of the roles you're tracking are senior or lead-level. Your search appears to be anchored at the upper end of the market.`);
         } else if (_jnrCount > _snrCount && _jnrCount >= 4) {
-          obs.push(`Your pipeline includes a notable share of associate or entry-level roles — this may reflect openness to a wider range of entry points.`);
+          obs.push(`Your pipeline includes a notable share of associate or entry-level roles. This may reflect openness to a wider range of entry points.`);
         }
       }
 
@@ -12487,9 +13123,9 @@
         if (_withSal >= 5) {
           const _salPct = Math.round(_withSal / n * 100);
           if (_salPct >= 60) {
-            obs.push(`${_salPct}% of your tracked roles include salary information — you're engaging with relatively transparent employers.`);
+            obs.push(`${_salPct}% of your tracked roles include salary information. You're engaging with relatively transparent employers.`);
           } else if (_salPct < 30) {
-            obs.push(`Most roles in your pipeline don't publish salary ranges — pay transparency could be worth weighing as a filter.`);
+            obs.push(`Most roles in your pipeline don't publish salary ranges. Pay transparency could be worth weighing as a filter.`);
           }
         }
       }
@@ -12538,9 +13174,9 @@
         if (topLoc && topLoc[1] >= Math.ceil(n * 0.45)) {
           const pct = Math.round(topLoc[1] / n * 100);
           if (topLoc[0] === 'remote') {
-            obs.push(`Most of the roles reviewed so far are listed as remote — around ${pct}% of the search to date.`);
+            obs.push(`Most of the roles reviewed so far are listed as remote. Around ${pct}% of the search to date.`);
           } else {
-            obs.push(`Most of the roles reviewed so far are ${topLoc[0]}-based — around ${pct}% of the search to date.`);
+            obs.push(`Most of the roles reviewed so far are ${topLoc[0]}-based. Around ${pct}% of the search to date.`);
           }
         }
       }
@@ -12557,9 +13193,9 @@
         if (total >= Math.ceil(n * 0.5)) {
           const recruiterPct = Math.round(recruiterLed / total * 100);
           if (recruiterPct >= 65) {
-            obs.push(`A significant portion of the search so far is recruiter-mediated rather than direct — this may be shaping which roles surface and how quickly they move.`);
+            obs.push(`A significant portion of the search so far is recruiter-mediated rather than direct. This may be shaping which roles surface and how quickly they move.`);
           } else if (recruiterPct <= 35) {
-            obs.push(`Most of the roles reviewed so far have come through direct-apply routes rather than recruiters — a pattern worth tracking as the search develops.`);
+            obs.push(`Most of the roles reviewed so far have come through direct-apply routes rather than recruiters. A pattern worth tracking as the search develops.`);
           }
         }
       }
@@ -12573,7 +13209,7 @@
         }
         const noPct = noSalary / n;
         if (noPct >= 0.5) {
-          obs.push(`Salary transparency has been limited across much of the search so far — around ${Math.round(noPct * 100)}% of roles reviewed did not include clear compensation information.`);
+          obs.push(`Salary transparency has been limited across much of the search so far. Around ${Math.round(noPct * 100)}% of roles reviewed did not include clear compensation information.`);
         }
       }
 
@@ -12591,7 +13227,7 @@
           const wmLabels = { remote: 'remote-first', hybrid: 'hybrid', onsite: 'on-site',
             fullyremote: 'remote-first', officebased: 'office-based', remoteonly: 'remote-only' };
           const label = wmLabels[topWm[0]] || topWm[0];
-          obs.push(`Most of the roles reviewed so far are ${label} positions — a recurring characteristic across the search to date.`);
+          obs.push(`Most of the roles reviewed so far are ${label} positions. A recurring characteristic across the search to date.`);
         }
       }
 
@@ -12607,7 +13243,7 @@
           const stageLabels = { scaleup: 'scale-up', startup: 'start-up', enterprise: 'enterprise', sme: 'SME' };
           const label = stageLabels[topStage[0]] || topStage[0];
           const pct   = Math.round(topStage[1] / n * 100);
-          obs.push(`A recurring theme across the roles reviewed so far is the ${label} environment — around ${pct}% of the search fits this profile.`);
+          obs.push(`A recurring theme across the roles reviewed so far is the ${label} environment. Around ${pct}% of the search fits this profile.`);
         }
       }
 
@@ -12657,10 +13293,10 @@
         if (rate < worstHsRate) { worstHsRate = rate; worstHsType = type; }
       }
       if (bestHsType && bestHsRate > 0.3 && hsTypeLabels[bestHsType]) {
-        signals.push(`Across the roles you've explored so far, ${hsTypeLabels[bestHsType]} appear more likely to progress to real conversations — this may reflect how those processes are structured rather than anything about the roles themselves.`);
+        signals.push(`Across the roles you've explored so far, ${hsTypeLabels[bestHsType]} appear more likely to progress to real conversations. This may reflect how those processes are structured rather than anything about the roles themselves.`);
       }
       if (signals.length < 3 && worstHsType && worstHsType !== bestHsType && worstHsRate < 0.15 && hsTypeLabels[worstHsType]) {
-        signals.push(`${hsTypeLabels[worstHsType].charAt(0).toUpperCase() + hsTypeLabels[worstHsType].slice(1)} appear less likely to progress past the initial stage based on outcomes so far — a pattern worth keeping in mind when evaluating new roles.`);
+        signals.push(`${hsTypeLabels[worstHsType].charAt(0).toUpperCase() + hsTypeLabels[worstHsType].slice(1)} appear less likely to progress past the initial stage based on outcomes so far. A pattern worth keeping in mind when evaluating new roles.`);
       }
 
       // ── Company stage patterns ─────────────────────────────────────────────
@@ -12680,7 +13316,7 @@
           if (rate > bestStageRate) { bestStageRate = rate; bestStage = stage; }
         }
         if (bestStage && bestStageRate > 0.25 && stageLabels[bestStage]) {
-          signals.push(`A pattern emerging is that ${stageLabels[bestStage]} appear more likely to progress beyond initial contact — this may explain why some roles feel more alive than others.`);
+          signals.push(`A pattern emerging is that ${stageLabels[bestStage]} appear more likely to progress beyond initial contact. This may explain why some roles feel more alive than others.`);
         }
       }
 
@@ -12689,7 +13325,7 @@
         const ghosted = rolesWithOutcomes.filter(r => r.outcome_state === 'ghosted' || r.outcome_state === 'no_response');
         const ghostRate = ghosted.length / rolesWithOutcomes.length;
         if (ghostRate >= 0.3) {
-          signals.push(`Across the roles you've explored, around ${Math.round(ghostRate * 100)}% appear to have gone quiet after application — this reflects broader hiring process behaviour rather than anything about individual applications.`);
+          signals.push(`Across the roles you've explored, around ${Math.round(ghostRate * 100)}% appear to have gone quiet after application. This reflects broader hiring process behaviour rather than anything about individual applications.`);
         }
       }
 
@@ -12757,10 +13393,10 @@
         if (best && worst && best.label !== worst.label && (best.rate - worst.rate) >= 0.15) {
           const bestLabel  = stageLabels[best.label]  || best.label;
           const worstLabel = stageLabels[worst.label] || worst.label;
-          signals.push(`Across the roles you've explored so far, ${bestLabel} appear more likely to lead to real conversations than ${worstLabel} — a pattern that has emerged from the outcomes recorded so far.`);
+          signals.push(`Across the roles you've explored so far, ${bestLabel} appear more likely to lead to real conversations than ${worstLabel}. A pattern that has emerged from the outcomes recorded so far.`);
         } else if (best && best.rate >= 0.3) {
           const bestLabel = stageLabels[best.label] || best.label;
-          signals.push(`A pattern emerging from your recorded outcomes is that ${bestLabel} tend to progress further than average — roles in this category have moved beyond initial contact more consistently.`);
+          signals.push(`A pattern emerging from your recorded outcomes is that ${bestLabel} tend to progress further than average. Roles in this category have moved beyond initial contact more consistently.`);
         }
       }
 
@@ -12800,7 +13436,7 @@
         if (best && worst && best.label !== worst.label && (best.rate - worst.rate) >= 0.15) {
           const bestLabel  = balLabels[best.label]  || best.label;
           const worstLabel = balLabels[worst.label] || worst.label;
-          signals.push(`A pattern emerging is that ${bestLabel} tend to lead to further progress than ${worstLabel} — this has appeared consistently across your recorded outcomes.`);
+          signals.push(`A pattern emerging is that ${bestLabel} tend to lead to further progress than ${worstLabel}. This has appeared consistently across your recorded outcomes.`);
         }
       }
 
@@ -12825,7 +13461,7 @@
         if (best && worst && best.label !== worst.label && (best.rate - worst.rate) >= 0.15) {
           const bestLabel  = hsLabels[best.label]  || best.label;
           const worstLabel = hsLabels[worst.label] || worst.label;
-          signals.push(`Roles progressing through ${bestLabel} have tended to move further than those via ${worstLabel} — a pattern that has emerged across the outcomes recorded so far.`);
+          signals.push(`Roles progressing through ${bestLabel} have tended to move further than those via ${worstLabel}. A pattern that has emerged across the outcomes recorded so far.`);
         } else if (best && best.rate >= 0.3) {
           const bestLabel = hsLabels[best.label] || best.label;
           signals.push(`${bestLabel.charAt(0).toUpperCase() + bestLabel.slice(1)} appear more likely to lead to real conversations based on the outcomes recorded so far.`);
@@ -12951,11 +13587,11 @@
       if (estimate) {
         const round = n => Math.round(n * 2) / 2; // nearest 0.5 hr
         if (type === 'hybrid') {
-          officeDaysLabel = '2–3 days/week in office';
+          officeDaysLabel = '2-3 days/week in office';
           weeklyLow  = round(estimate.minMins * 2 * 2 / 60); // 2 days × return
           weeklyHigh = round(estimate.maxMins * 3 * 2 / 60); // 3 days × return
         } else {
-          officeDaysLabel = '4–5 days/week';
+          officeDaysLabel = '4-5 days/week';
           weeklyLow  = round(estimate.minMins * 4 * 2 / 60);
           weeklyHigh = round(estimate.maxMins * 5 * 2 / 60);
         }
@@ -12969,32 +13605,32 @@
     function _renderCommuteCard(data) {
       if (data.type === 'remote') {
         return `
-          <div class="cs-row">
-            <span class="cs-row-label">Work model</span>
-            <span class="cs-row-value">Remote</span>
+          <div class="rw-rail-row">
+            <div class="rw-rail-row-label">Work model</div>
+            <div class="rw-rail-row-value">Remote</div>
           </div>
           <div class="commute-note">No regular commute required.</div>`;
       }
 
       const commuteStr = data.estimate
-        ? `≈ ${data.estimate.minMins}–${data.estimate.maxMins} mins each way`
+        ? `≈ ${data.estimate.minMins}-${data.estimate.maxMins} mins each way`
         : 'Travel time not estimated';
 
       const weeklyStr = (data.weeklyLow !== null && data.weeklyHigh !== null)
-        ? `<div class="commute-note">${esc(data.officeDaysLabel)}: ≈ ${data.weeklyLow}–${data.weeklyHigh} hrs weekly travel</div>`
+        ? `<div class="commute-note">${esc(data.officeDaysLabel)}: ≈ ${data.weeklyLow}-${data.weeklyHigh} hrs weekly travel</div>`
         : '';
 
       return `
-        <div class="cs-row">
-          <span class="cs-row-label">Role location</span>
-          <span class="cs-row-value">${esc(data.jobLocation)}</span>
+        <div class="rw-rail-row">
+          <div class="rw-rail-row-label">Role location</div>
+          <div class="rw-rail-row-value">${esc(data.jobLocation)}</div>
         </div>
-        <div class="cs-row">
-          <span class="cs-row-label">From ${esc(data.homeShort)}</span>
-          <span class="cs-row-value">${commuteStr}</span>
+        <div class="rw-rail-row">
+          <div class="rw-rail-row-label">From ${esc(data.homeShort)}</div>
+          <div class="rw-rail-row-value">${commuteStr}</div>
         </div>
         ${data.type === 'hybrid'
-          ? `<div class="cs-row"><span class="cs-row-label">Work model</span><span class="cs-row-value">Hybrid</span></div>`
+          ? `<div class="rw-rail-row"><div class="rw-rail-row-label">Work model</div><div class="rw-rail-row-value">Hybrid</div></div>`
           : ''}
         ${weeklyStr}`;
     }
@@ -13061,23 +13697,23 @@
       if (_isHardNo) {
         return {
           verdict:    'no',
-          label:      'No — Likely not aligned',
-          summary:    'A hard conflict was detected — this role likely requires production coding.',
+          label:      'No, likely not aligned',
+          summary:    'A hard conflict was detected. This role likely requires production coding.',
           mainReason: 'Production coding likely required.',
           confidence: 'high',
           confLabel:  'High confidence',
-          bullets:    ['Production coding required — conflicts with your saved role preferences.'],
+          bullets:    ['Production coding required. Conflicts with your saved role preferences.'],
           watchouts:  [],
         };
       }
 
       // ── Work model ──────────────────────────────────────────────────────
       if (_wm === 'remote') {
-        _bullets.push('Remote role — no office requirement.');
+        _bullets.push('Remote role, no office requirement.');
       } else if (_wm === 'hybrid') {
-        _watchouts.push('Hybrid arrangement — worth confirming required office days.');
+        _watchouts.push('Hybrid arrangement. Worth confirming required office days.');
       } else if (_wm === 'onsite') {
-        _watchouts.push('On-site role — confirm location viability before progressing.');
+        _watchouts.push('On-site role. Confirm location viability before progressing.');
       }
 
       // ── Salary visibility ────────────────────────────────────────────────
@@ -13107,15 +13743,15 @@
         if (_seniority.includes('head of')) {
           const _m = _seniority.match(/head of\s+([\w\s]+?)(?:\s*[\/,]|$)/);
           const _domain = _m ? _m[1].trim().replace(/^(.)/, c => c.toUpperCase()) : 'Function';
-          _snBullet = `Head of ${_domain} scope — senior leadership level.`;
+          _snBullet = `Head of ${_domain} scope (senior leadership level).`;
         } else if (_seniority.includes('director') || _seniority.includes('vp ') || _seniority.includes('vice president')) {
-          _snBullet = 'Director-level scope — senior leadership track.';
+          _snBullet = 'Director-level scope (senior leadership track).';
         } else if (_seniority.includes('principal') || _seniority.includes('staff')) {
-          _snBullet = 'Principal/Staff scope — senior IC level.';
+          _snBullet = 'Principal/Staff scope (senior IC level).';
         } else if (_seniority.includes('lead')) {
-          _snBullet = 'Lead scope — senior level with coordination responsibility.';
+          _snBullet = 'Lead scope (senior level with coordination responsibility).';
         } else {
-          _snBullet = 'Senior scope — seniority level aligns with your background.';
+          _snBullet = 'Senior scope (seniority level aligns with your background).';
         }
         _bullets.push(_snBullet);
       }
@@ -13137,10 +13773,9 @@
         if (_SKIP_PATTERNS.some(p => p.test(_t))) return;
         const _tl = _t.toLowerCase();
         if (_coveredTopics.some(topic => _tl.includes(topic))) return;
-        // Cap at 80 chars and deduplicate by first 25 chars
-        const _capped = _t.length > 80 ? _t.slice(0, 77).trim() + '…' : _t;
-        if (_watchouts.some(w => w.toLowerCase().slice(0, 25) === _capped.toLowerCase().slice(0, 25))) return;
-        _watchouts.push(_capped);
+        // Deduplicate by first 25 chars — no truncation, full text shown
+        if (_watchouts.some(w => w.toLowerCase().slice(0, 25) === _t.toLowerCase().slice(0, 25))) return;
+        _watchouts.push(_t);
       };
       _fri.forEach(_addWatchout);
       _ru.forEach(_addWatchout);
@@ -13181,7 +13816,7 @@
       } else {
         // maybe — vary slightly by what's known
         if (!_wm && !_salaryStated) {
-          _summary = 'Key details are missing — this role may be worth a quick look to fill the gaps.';
+          _summary = 'Key details are missing. This role may be worth a quick look to fill the gaps.';
         } else {
           _summary = 'This role may be worth investigating further before committing time.';
         }
@@ -13231,7 +13866,7 @@
         } else if (_wm === 'remote' && _isSenior) {
           _mainReason = 'Remote role with senior scope aligned.';
         } else if (_wm === 'remote') {
-          _mainReason = 'Remote role — no office requirement detected.';
+          _mainReason = 'Remote role, no office requirement detected.';
         } else if (_salaryStated && _isSenior) {
           _mainReason = 'Compensation stated and senior scope aligned.';
         } else if (_salaryStated) {
@@ -13244,7 +13879,7 @@
       } else if (_verdict === 'no') {
         // Hard conflict drove NO (hasFrontend/onsite already handled above)
         if (_wm === 'onsite') {
-          _mainReason = 'On-site role — location viability needs confirming.';
+          _mainReason = 'On-site role. Location viability needs confirming.';
         } else {
           _mainReason = 'Multiple conflicting signals detected across key role criteria.';
         }
@@ -13255,9 +13890,9 @@
         } else if (_wm === 'hybrid' && !_salaryStated) {
           _mainReason = 'Hybrid work expectation and unstated salary require clarification.';
         } else if (_wm === 'hybrid') {
-          _mainReason = 'Hybrid work expectation — confirm office days required.';
+          _mainReason = 'Hybrid work expectation. Confirm office days required.';
         } else if (!_salaryStated) {
-          _mainReason = 'Salary not stated — worth clarifying before committing time.';
+          _mainReason = 'Salary not stated. Worth clarifying before committing time.';
         } else if (!_wm) {
           _mainReason = 'Work model is not clearly defined in this listing.';
         } else {
@@ -13266,9 +13901,9 @@
       }
 
       const _verdictLabels = {
-        yes:   'Yes — Worth pursuing',
-        maybe: 'Maybe — Investigate first',
-        no:    'No — Likely not aligned',
+        yes:   'Yes, worth pursuing',
+        maybe: 'Maybe, investigate first',
+        no:    'No, likely not aligned',
       };
       const _confLabels = {
         high:     'High confidence',
@@ -13460,24 +14095,24 @@
 
       // ── Build HTML ────────────────────────────────────────────────────────
       let html = `
-        <div class="rc-contact-row">
-          <span class="rc-contact-label">Similar roles in Rolewise</span>
-          <span class="rc-contact-val">${_similar.length}</span>
+        <div class="rw-rail-row">
+          <div class="rw-rail-row-label">Similar roles in Rolewise</div>
+          <div class="rw-rail-row-value">${_similar.length}</div>
         </div>
-        <div class="rc-contact-row">
-          <span class="rc-contact-label">Applications submitted</span>
-          <span class="rc-contact-val">${_applied}</span>
+        <div class="rw-rail-row">
+          <div class="rw-rail-row-label">Applications submitted</div>
+          <div class="rw-rail-row-value">${_applied}</div>
         </div>
-        <div class="rc-contact-row">
-          <span class="rc-contact-label">Reached interview stage</span>
-          <span class="rc-contact-val">${_interview}</span>
+        <div class="rw-rail-row">
+          <div class="rw-rail-row-label">Reached interview stage</div>
+          <div class="rw-rail-row-value">${_interview}</div>
         </div>`;
 
       if (_offer > 0) {
         html += `
-        <div class="rc-contact-row">
-          <span class="rc-contact-label">Offers recorded</span>
-          <span class="rc-contact-val">${_offer}</span>
+        <div class="rw-rail-row">
+          <div class="rw-rail-row-label">Offers recorded</div>
+          <div class="rw-rail-row-value">${_offer}</div>
         </div>`;
       }
 
@@ -13487,11 +14122,11 @@
         const _max    = _sorted[_sorted.length - 1];
         const _range  = _min === _max
           ? `${_min} day${_min !== 1 ? 's' : ''}`
-          : `${_min}–${_max} days`;
+          : `${_min}-${_max} days`;
         html += `
-        <div class="rc-contact-row">
-          <span class="rc-contact-label">Typical first response</span>
-          <span class="rc-contact-val">${_range}</span>
+        <div class="rw-rail-row">
+          <div class="rw-rail-row-label">Typical first response</div>
+          <div class="rw-rail-row-value">${_range}</div>
         </div>`;
       }
 
@@ -13687,37 +14322,62 @@
         .map(([k]) => _traitLabels[k] || k);
 
       // ── Build HTML ────────────────────────────────────────────────────────
+      // Prose-style pattern context: one opening line, one outcome summary,
+      // one interpretation. No pills, no dashboard aesthetic.
       const _noun = _n === 1 ? 'role' : 'roles';
       let _html = '';
 
-      // Intro sentence
-      _html += `<div class="rw-srim-intro">${_n} ${_noun} in your history share structural traits with this one.</div>`;
+      // ── Heading ─────────────────────────────────────────────────────────
+      _html += `<div class="rw-srim-heading">What your history suggests</div>`;
 
-      // Outcomes row
-      const _outcomeOrder = [
-        ['offer',     'Offer',     'rw-srim-chip--offer'],
-        ['interview', 'Interview', 'rw-srim-chip--interview'],
-        ['applied',   'Applied',   ''],
-        ['rejected',  'Rejected',  'rw-srim-chip--rejected'],
-        ['ghosted',   'Ghosted',   'rw-srim-chip--muted'],
-        ['passed',    'Passed',    'rw-srim-chip--muted'],
-      ];
-      const _activeOutcomes = _outcomeOrder.filter(([k]) => _outcomes[k] > 0);
-
-      if (_activeOutcomes.length > 0) {
-        _html += `<div class="rw-srim-section-label">Outcomes</div>`;
-        _html += `<div class="rw-srim-outcomes">`;
-        for (const [key, label, mod] of _activeOutcomes) {
-          _html += `<span class="rw-srim-chip${mod ? ' ' + mod : ''}">${_outcomes[key]} × ${esc(label)}</span>`;
-        }
-        _html += `</div>`;
-      }
-
-      // Common traits
+      // ── Opening sentence (fold traits in if present) ────────────────────
+      let _openParts = [];
       if (_commonTraits.length > 0) {
-        _html += `<div class="rw-srim-section-label">Common traits</div>`;
-        _html += `<ul class="rw-srim-traits">${_commonTraits.map(t => `<li>${esc(t)}</li>`).join('')}</ul>`;
+        _openParts.push(_commonTraits.map(t => t.toLowerCase()).join(', '));
       }
+      const _traitFragment = _openParts.length > 0
+        ? `, most of them ${_openParts.join(' and ')}`
+        : '';
+      _html += `<div class="rw-srim-prose">You\u2019ve evaluated ${_n} structurally similar ${_noun} before${_traitFragment}.</div>`;
+
+      // ── Outcome summary (plain sentence, no chips) ──────────────────────
+      const _outcomeFrags = [];
+      if (_outcomes.offer > 0)     _outcomeFrags.push(`${_outcomes.offer} led to an offer`);
+      if (_outcomes.interview > 0) _outcomeFrags.push(`${_outcomes.interview} reached interview`);
+      if (_outcomes.applied > 0)   _outcomeFrags.push(`${_outcomes.applied} were applied to`);
+      if (_outcomes.rejected > 0)  _outcomeFrags.push(`${_outcomes.rejected} ended in rejection`);
+      if (_outcomes.ghosted > 0)   _outcomeFrags.push(`${_outcomes.ghosted} went silent`);
+      if (_outcomes.passed > 0)    _outcomeFrags.push(`${_outcomes.passed} were passed on`);
+
+      if (_outcomeFrags.length > 0) {
+        // Join with commas and "and" before the last item
+        const _joined = _outcomeFrags.length === 1
+          ? _outcomeFrags[0]
+          : _outcomeFrags.slice(0, -1).join(', ') + ', and ' + _outcomeFrags[_outcomeFrags.length - 1];
+        _html += `<div class="rw-srim-prose">Of those, ${_joined}.</div>`;
+      }
+
+      // ── Interpretation line ─────────────────────────────────────────────
+      // One calm sentence that explains why the pattern matters.
+      const _progressed = _outcomes.offer + _outcomes.interview;
+      const _negCount   = _outcomes.rejected + _outcomes.ghosted;
+      let _interp = '';
+      if (_n >= 5 && _progressed === 0 && _negCount > _n * 0.5) {
+        _interp = 'Roles with this profile have been difficult to progress. Worth considering what might be different here.';
+      } else if (_outcomes.offer >= 2) {
+        _interp = 'This type of role has produced offers for you before.';
+      } else if (_outcomes.offer === 1) {
+        _interp = 'One similar role led to an offer previously.';
+      } else if (_outcomes.interview >= 3) {
+        _interp = 'You\u2019ve frequently reached interview stage with roles like this.';
+      } else if (_outcomes.interview >= 1) {
+        _interp = 'A few similar roles progressed to interview.';
+      } else if (_n >= 10 && _progressed === 0) {
+        _interp = 'None of the similar roles in your history progressed beyond application.';
+      } else {
+        _interp = 'Not enough outcome data yet to identify a clear pattern.';
+      }
+      _html += `<div class="rw-srim-interp">${_interp}</div>`;
 
       return `<div class="rw-card rw-card--full rw-srim" id="section-similar-roles">${_html}</div>`;
     }
@@ -13737,6 +14397,7 @@
       }
 
       let html = '';
+      let sidebarHtml = ''; // RW-TWO-COL-LAYOUT: sidebar rail content
       _rwAiOutputCache = output; // RW-ROLEPAGE-AI-INTERACTION-01
 
       // Helpers
@@ -13823,73 +14484,249 @@
         }).join('')}</ul>`;
       };
 
-      // ── Fit Assessment card (top of overview; full-width) ─────────────────
-      // Shows verdict, confidence, alignment bullets, watchouts, and CV recommendation.
-      // Positioned above all other cards so users get an immediate answer.
+      // ── 8-section candidate-aware decision narrative ────────────────────────
+      // Strict order: Fit reality → What this role actually is → What they
+      // really need from you → What you would actually do → Practical details
+      // → Risks & unknowns → Questions worth asking → Decision.
+      // Personalisation is woven into existing sections, not a separate panel.
+      // recommended_cv is a top-level field; the renderer appends it to Practical details.
+      // Each section adds something new.
+      //
+      // TWO RENDER PATHS:
+      //   1. Narrative path (preferred): output._narrative contains structured
+      //      JSON from Pass 2 (generate-narrative). Each key maps directly
+      //      to typed sub-fields (paragraphs[], bullets[], items[]). No
+      //      parsing heuristics — the renderer maps keys to HTML elements.
+      //   2. Template path (fallback): builds sections from Pass 1 structured
+      //      JSON fields when _narrative is absent (local analysis, Pass 2
+      //      failure, edge function not deployed, etc.).
+      //
+      // Dynamic slots (blockers, verdict, history) are appended inside
+      // #section-decision-summary by _ensureOverviewLowerCards as before.
+      //
+      // _narrativeRenderedRisksQwa tracks whether the narrative card already
+      // rendered Risks & Questions, so the standalone sections below can skip
+      // them and avoid duplication.
+      let _narrativeRenderedRisksQwa = false;
       {
+        const _narr = output._narrative || null;
         const _fa = computeFitAssessment(output);
-        if (_fa) {
-          const _verdictMod = { yes: 'rw-fa-verdict--yes', maybe: 'rw-fa-verdict--maybe', no: 'rw-fa-verdict--no' };
-          const _bulletsHtml = _fa.bullets.length
-            ? `<ul class="rw-fa-bullets">${_fa.bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`
-            : '';
-          const _watchoutsHtml = _fa.watchouts.length
-            ? `<div class="rw-fa-section">
-                <div class="rw-fa-section-heading">Watchouts</div>
-                <ul class="rw-fa-bullets rw-fa-bullets--warn">${_fa.watchouts.map(w => `<li>${esc(w)}</li>`).join('')}</ul>
-               </div>`
-            : '';
-          html += `<div class="rw-decision-summary" id="section-decision-summary"><div class="rw-ds-header"><span class="rw-ds-title">Decision Summary</span></div><div class="rw-fa-card" id="section-fit-assessment" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'fit-assessment', component: 'FitAssessmentCard', slot: 'overview-card', label: 'Fit Assessment Card' }) : ''}>
-            <div class="rw-fa-title">Fit Assessment</div>
-            <div class="rw-fa-summary">${esc(_fa.summary)}</div>
-            ${_fa.mainReason ? `<div class="rw-fa-main-reason"><span class="rw-fa-main-reason-label">Main reason:</span> ${esc(_fa.mainReason)}</div>` : ''}
-            <div class="rw-fa-verdict-row">
-              <span class="rw-fa-verdict ${_verdictMod[_fa.verdict] || ''}">${esc(_fa.label)}</span>
-              <span class="rw-fa-confidence">${esc(_fa.confLabel)}</span>
+
+        if (_narr || _fa) {
+          _narrativeRenderedRisksQwa = true;
+
+          // ── Typed helpers — no parsing, just direct array→HTML ─────────
+          const _paragraphs = arr => (Array.isArray(arr) ? arr : [])
+            .filter(Boolean).map(s => `<p class="rw-doc-prose">${esc(s)}</p>`).join('');
+
+          const _bullets = arr => {
+            const items = (Array.isArray(arr) ? arr : []).filter(Boolean);
+            return items.length
+              ? `<ul class="rw-doc-bullets">${items.map(s => `<li>${esc(s)}</li>`).join('')}</ul>`
+              : '';
+          };
+
+          const _dlItems = arr => {
+            const items = (Array.isArray(arr) ? arr : []).filter(i => i && i.label);
+            return items.length
+              ? `<dl class="rw-doc-dl">${items.map(i => `<dt>${esc(i.label)}</dt><dd>${esc(i.value || 'Not stated')}</dd>`).join('')}</dl>`
+              : '';
+          };
+
+          // ── Build section content (narrative path or template fallback) ──
+
+          // 1. Fit reality
+          // Hard blockers are woven into the prose by the AI, not rendered as a banner.
+          let _fitHtml = '';
+          if (_narr?.fit_reality?.paragraphs) {
+            _fitHtml = _paragraphs(_narr.fit_reality.paragraphs);
+          } else if (_fa) {
+            _fitHtml = `<p class="rw-doc-prose">${esc(_fa.summary)}</p>`;
+          }
+
+          // 2. What this role actually is
+          let _whatIsItHtml = '';
+          if (_narr?.what_this_role_actually_is?.paragraphs) {
+            _whatIsItHtml = _paragraphs(_narr.what_this_role_actually_is.paragraphs);
+          } else if (output.role_reality && output.role_reality !== 'Not stated' && output.role_reality !== 'Unknown') {
+            _whatIsItHtml = `<p class="rw-doc-prose">${esc(output.role_reality)}</p>`;
+          } else {
+            const _rrs = Array.isArray(output.role_reality_summary) && output.role_reality_summary.length
+              ? output.role_reality_summary.slice(0, 4) : null;
+            if (_rrs) {
+              _whatIsItHtml = `<ul class="rw-doc-bullets">${_rrs.map(s => `<li>${esc(String(s))}</li>`).join('')}</ul>`;
+            } else if (output.role_summary && output.role_summary !== 'Unknown' && output.role_summary !== 'Not stated') {
+              _whatIsItHtml = `<p class="rw-doc-prose">${esc(output.role_summary)}</p>`;
+            } else if (output.role_archetype) {
+              const _archText = typeof output.role_archetype === 'object' ? output.role_archetype.primary : output.role_archetype;
+              if (_archText) _whatIsItHtml = `<p class="rw-doc-prose">${esc(_archText)}</p>`;
+            }
+          }
+
+          // 3. What they really need from you
+          let _wtrlfHtml = '';
+          if (_narr?.what_they_really_need_from_you) {
+            const _sec = _narr.what_they_really_need_from_you;
+            _wtrlfHtml = _paragraphs(_sec.paragraphs) + _bullets(_sec.bullets);
+          } else {
+            const _wtrlf = Array.isArray(output.what_they_are_really_looking_for)
+              ? output.what_they_are_really_looking_for.filter(s => String(s) !== 'Not stated') : [];
+            _wtrlfHtml = _wtrlf.length
+              ? `<ul class="rw-doc-bullets">${_wtrlf.map(s => `<li>${esc(String(s))}</li>`).join('')}</ul>`
+              : '';
+          }
+
+          // 4. What you would actually do
+          let _wtadoHtml = '';
+          if (_narr?.what_you_would_actually_do) {
+            const _sec = _narr.what_you_would_actually_do;
+            const _framing = _sec.framing ? `<p class="rw-doc-prose">${esc(_sec.framing)}</p>` : '';
+            _wtadoHtml = _framing + _bullets(_sec.bullets);
+          } else {
+            const _wtado = Array.isArray(output.what_you_would_actually_do)
+              ? output.what_you_would_actually_do.filter(s => String(s) !== 'Not stated') : [];
+            _wtadoHtml = _wtado.length
+              ? `<ul class="rw-doc-bullets">${_wtado.map(s => `<li>${esc(String(s))}</li>`).join('')}</ul>`
+              : '';
+          }
+
+          // 5. Practical details
+          // recommended_cv and why_that_cv are TOP-LEVEL fields only.
+          // The renderer owns placement — strip any AI-injected CV item,
+          // then always append the controlled one from top-level fields.
+          let _pdHtml = '';
+          if (_narr?.practical_details?.items) {
+            // Strip any CV item the AI may have injected despite the prompt
+            let _pdItems = _narr.practical_details.items.filter(
+              i => !(i.label && i.label.toLowerCase().includes('cv'))
+            );
+            // Always append from the single source of truth: top-level fields
+            if (_narr.recommended_cv) {
+              const _cvVariants = (typeof ROLEWISE_CANDIDATE_CONTEXT !== 'undefined' && Array.isArray(ROLEWISE_CANDIDATE_CONTEXT.cv_variants))
+                ? ROLEWISE_CANDIDATE_CONTEXT.cv_variants : [];
+              const _cvMatch = _cvVariants.find(v => v.id === _narr.recommended_cv);
+              const _cvLabel = _cvMatch ? _cvMatch.label : _narr.recommended_cv;
+              const _cvValue = _narr.why_that_cv ? `${_cvLabel} — ${_narr.why_that_cv}` : _cvLabel;
+              _pdItems = [..._pdItems, { label: 'Recommended CV', value: _cvValue }];
+            }
+            _pdHtml = _dlItems(_pdItems);
+          } else {
+            const _pd = output.practical_details || {};
+            const _pdItems = [
+              (_pd.location       && _pd.location       !== 'Not stated') ? ['Location',        _pd.location]        : null,
+              (_pd.remote_model   && _pd.remote_model   !== 'Not stated') ? ['Work model',      _pd.remote_model]    : null,
+              (_pd.employment_type && _pd.employment_type !== 'Not stated') ? ['Employment type', _pd.employment_type] : null,
+              ['Salary', (_pd.salary_annual && _pd.salary_annual !== 'Not stated') ? _pd.salary_annual : 'Not stated'],
+              (_pd.company_type   && _pd.company_type   !== 'Not stated') ? ['Company type',    _pd.company_type]    : null,
+            ].filter(Boolean);
+            _pdHtml = _pdItems.length
+              ? `<dl class="rw-doc-dl">${_pdItems.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`
+              : '';
+          }
+
+          // 6. Risks & unknowns
+          let _risksHtml = '';
+          if (_narr?.risks_and_unknowns) {
+            const _sec = _narr.risks_and_unknowns;
+            // stated_intro provides the contextual lead-in
+            const _intro = _sec.stated_intro
+              ? `<p class="rw-doc-prose">${esc(_sec.stated_intro)}</p>` : '';
+            const _stated = (Array.isArray(_sec.stated) && _sec.stated.length)
+              ? _bullets(_sec.stated) : '';
+            const _inferred = (Array.isArray(_sec.inferred) && _sec.inferred.length)
+              ? `<p class="rw-doc-prose" style="margin-top:8px;">Inferred:</p>` + _bullets(_sec.inferred) : '';
+            _risksHtml = _intro + _stated + _inferred;
+          } else {
+            _risksHtml = _fa && _fa.watchouts.length
+              ? `<ul class="rw-doc-bullets rw-doc-bullets--muted">${_fa.watchouts.map(w => `<li>${esc(w)}</li>`).join('')}</ul>`
+              : '';
+          }
+
+          // 7. Candidate match (personalisation section)
+          // 7. Questions worth asking
+          let _qwaHtml = '';
+          if (_narr?.questions_worth_asking) {
+            const _nqwa = Array.isArray(_narr.questions_worth_asking)
+              ? _narr.questions_worth_asking : [];
+            _qwaHtml = _bullets(_nqwa.slice(0, 5));
+          } else {
+            const _qwa = Array.isArray(output.questions_worth_asking)
+              ? output.questions_worth_asking.filter(Boolean).slice(0, 5) : [];
+            _qwaHtml = _qwa.length
+              ? `<ul class="rw-doc-bullets">${_qwa.map(q => `<li>${esc(String(q))}</li>`).join('')}</ul>`
+              : '';
+          }
+
+          // 9. Decision
+          let _decisionHtml = '';
+          if (_narr?.decision?.paragraphs) {
+            _decisionHtml = _paragraphs(_narr.decision.paragraphs);
+          } else {
+            const _rv = output.rolewise_verdict || null;
+            const _sa = output.suggested_actions || {};
+            const _hn = output.hard_no || false;
+
+            if (_hn) {
+              const _hnReason = output.hard_no_reason || 'This role does not meet your criteria.';
+              _decisionHtml = `<p class="rw-doc-prose">${esc(_hnReason)}</p>`;
+            } else if (_rv && _rv.reasoning) {
+              _decisionHtml = `<p class="rw-doc-prose">${esc(_rv.reasoning)}</p>`;
+            } else if (_fa && _fa.summary) {
+              const _next = _sa.next_step || 'Review';
+              _decisionHtml = `<p class="rw-doc-prose">Suggested next step: ${esc(_next.charAt(0).toUpperCase() + _next.slice(1))}.</p>`;
+            }
+          }
+
+          html += `<div class="rw-doc-view" id="section-decision-summary">
+
+            <div class="rw-doc-section" id="section-fit-assessment" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'fit-assessment', component: 'FitAssessmentCard', slot: 'overview-card', label: 'Fit Assessment Card' }) : ''}>
+              <h2 class="rw-doc-h2">Fit reality</h2>
+              ${_fitHtml}
             </div>
-            ${_bulletsHtml ? `<div class="rw-fa-section">
-              <div class="rw-fa-section-heading">Why this role may fit</div>
-              ${_bulletsHtml}
+
+            ${_whatIsItHtml ? `<div class="rw-doc-section">
+              <h2 class="rw-doc-h2">What this role actually is</h2>
+              ${_whatIsItHtml}
             </div>` : ''}
-            ${_watchoutsHtml}
-            <div class="rw-fa-cv" id="rw-fa-cv-placeholder">
-              <div class="rw-fa-cv-label">Recommended CV</div>
-              <div class="rw-fa-cv-empty">Loading recommendation…</div>
+
+            ${_wtrlfHtml ? `<div class="rw-doc-section">
+              <h2 class="rw-doc-h2">What they really need from you</h2>
+              ${_wtrlfHtml}
+            </div>` : ''}
+
+            ${_wtadoHtml ? `<div class="rw-doc-section">
+              <h2 class="rw-doc-h2">What you would actually do</h2>
+              ${_wtadoHtml}
+            </div>` : ''}
+
+            ${_pdHtml ? `<div class="rw-doc-section">
+              <h2 class="rw-doc-h2">Practical details</h2>
+              ${_pdHtml}
+            </div>` : ''}
+
+            <div class="rw-doc-section">
+              <h2 class="rw-doc-h2">Risks & unknowns</h2>
+              ${_risksHtml || '<p class="rw-doc-prose rw-doc-prose--muted">None identified.</p>'}
             </div>
-          </div></div>`;
+
+            ${_qwaHtml ? `<div class="rw-doc-section">
+              <h2 class="rw-doc-h2">Questions worth asking</h2>
+              ${_qwaHtml}
+            </div>` : ''}
+
+            <div class="rw-doc-section">
+              <h2 class="rw-doc-h2">Decision</h2>
+              ${_decisionHtml || '<p class="rw-doc-prose rw-doc-prose--muted">Not enough information to form a recommendation.</p>'}
+              <div id="rw-fa-cv-placeholder" class="rw-doc-cv-value" style="margin-top:8px;">Loading recommendation…</div>
+            </div>
+
+            <p class="rw-doc-prose rw-doc-prose--muted" style="margin-top:16px;font-style:italic;">Use this as context, not a verdict.</p>
+
+          </div>`;
         }
       }
 
-      // ── Quick-action strip: Apply + Skip (RW-TOP-CLEANUP-08) ────────────────
-      // Salary (when known) rendered as inline context text inside the strip —
-      // not a separate card element. data-ws-quick delegation unchanged.
-      {
-        const _hasSalary = !!(output.practical_details && output.practical_details.salary_annual &&
-          output.practical_details.salary_annual !== 'Not stated');
-
-        // Salary as lightweight inline context span inside the strip
-        const _salInline = _hasSalary
-          ? `<span class="rw-qa-salary" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'salary-display', component: 'SalaryCard', slot: 'salary', label: 'Salary Display' }) : ''}>${esc(output.practical_details.salary_annual)}</span>`
-          : '';
-
-        // Quick-action buttons: Apply · Skip
-        // data-ws-quick is handled by the panel action delegator (_wsInitLensPanelActions).
-        html += `<div class="rw-lens-qa-strip" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'primary-actions', component: 'QuickActionStrip', slot: 'actions', label: 'Primary Action Area' }) : ''}>${_salInline}<button class="rw-intent-btn rw-intent-btn--apply rw-lens-qa-btn rw-lens-qa-btn--apply" data-ws-quick="applied"
-            aria-label="Mark as Applied" title="Mark this role as Applied">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Apply
-          </button>
-          <button class="rw-intent-btn rw-intent-btn--neutral rw-lens-qa-btn rw-lens-qa-btn--skip" data-ws-quick="skipped"
-            aria-label="Skip this role" title="Skip — not pursuing this role">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-            </svg>
-            Skip
-          </button>
-        </div>`;
-      }
+      // Quick-action strip removed — Apply/Skip live in sidebar only (RW-REMOVE-MAIN-DECISION).
 
       // Analysis quality: indicator removed (RW-TOP-CLEANUP-08).
       // Only the weak-signal notice (below) is shown when signal is limited.
@@ -13898,178 +14735,34 @@
       // Typically means a partial page paste rather than a focused job description copy.
       // The artefact still renders with whatever could be extracted.
       if (output._weakSignal) {
-        html += `<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:10px 14px;margin-bottom:20px;">
-          <div class="doc-prose" style="color:#92400E;">This looks like a partial page paste rather than a full job description, but here\u2019s what I could extract. If you paste the core job description text, the analysis will be stronger.</div>
+        html += `<div style="background:var(--warning-bg-alt);border:1px solid var(--warning-border);border-radius:6px;padding:10px 14px;margin-bottom:20px;">
+          <div class="doc-prose" style="color:var(--warning);">This looks like a partial page paste rather than a full job description, but here\u2019s what I could extract. If you paste the core job description text, the analysis will be stronger.</div>
         </div>`;
       }
 
       // Degraded mode notice
       if (output._degraded) {
-        html += `<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:10px 14px;margin-bottom:20px;">
-          <div class="doc-prose" style="color:#92400E;">Full analysis unavailable. Showing limited output extracted from JD text only.</div>
+        html += `<div style="background:var(--warning-bg-alt);border:1px solid var(--warning-border);border-radius:6px;padding:10px 14px;margin-bottom:20px;">
+          <div class="doc-prose" style="color:var(--warning);">Full analysis unavailable. Showing limited output extracted from JD text only.</div>
         </div>`;
       }
 
-      // ── Role Intelligence Summary ─────────────────────────────────────────
-      // Compact briefing block — sits between quality indicator/notices and the
-      // card grid. Shows key signals at a glance without opening any cards.
-      {
-        const _risSigs = _buildIntelSummary(output);
-        if (_risSigs.length > 0) {
-          const _risHtml = _risSigs.map(s =>
-            `<div class="ris-signal ris-signal--${esc(s.tone)}">` +
-              `<span class="ris-dot"></span>` +
-              `<span class="ris-label">${esc(s.label)}</span>` +
-              `<span class="ris-sep">&middot;</span>` +
-              `<span class="ris-value">${esc(s.value)}</span>` +
-            `</div>`
-          ).join('');
-          html += `<div class="rw-intel-summary" id="section-intel-summary" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'intel-summary', component: 'IntelSummary', slot: 'signals', label: 'Intel Summary' }) : ''}>${_risHtml}</div>`;
-        }
-      }
+      // ── Role Intelligence Summary — removed (RW-DOCVIEW-REFACTOR)
+      // Badge/pill-style signals removed in favour of the flat document layout.
+      // Data still available via _buildIntelSummary(output) if reinstated.
 
       // ── Single-column card grid (RW-ROLEPAGE-LAYOUT-01) ──────────────────────
       html += `<div class="rw-card-grid">`;
 
-      // ── Role Briefing card — Archetype + Briefing Header (full width) ──────────
-      let _briefHtml = '';
+      // Role Briefing card removed from main column (RW-REMOVE-BRIEFING)
+
+      // Role Briefing section removed from main column (RW-REMOVE-BRIEFING)
+      // Sidebar signal sections (Structural, Operational, Practical Details) are preserved below.
       {
-        // Role Archetype
-        const _arch = output.role_archetype;
-        const _comp = output.jd_completeness;
-        if (_arch || _comp) {
-          const _archHtml = _arch
-            ? `<div style="font-size:13.5px;color:var(--text);line-height:1.5;margin-bottom:${_comp ? '8px' : '0'};">${esc(_arch)}</div>`
-            : '';
-          const _compHtml = _comp
-            ? `<div style="font-size:11px;color:var(--text-light);letter-spacing:0.03em;">JD CLARITY &thinsp;&middot;&thinsp; <span style="color:var(--text-muted);font-weight:600;">${esc(_comp.grade)}</span>&thinsp;&middot;&thinsp;${esc(_comp.label)}&ensp;(${_comp.score}/${_comp.total})</div>`
-            : '';
-          _briefHtml += `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-light);">${_archHtml}${_compHtml}</div>`;
-        }
-      }
-
-      // Rolewise Briefing Header — role_summary paragraph + practical quick grid
-      {
-        const _rs  = output.role_summary;
-        const _pd  = output.practical_details || {};
-        const _hs  = output.hiring_system;
-        const _rrs = Array.isArray(output.role_reality_summary) && output.role_reality_summary.length
-          ? output.role_reality_summary : null;
-
-        const hasBrief = (_rs && _rs !== 'Not stated') || _rrs;
-        const _loc    = _pd.location     || null;
-        const _wm     = _pd.remote_model || null;
-        const _sal    = (_pd.salary_annual && _pd.salary_annual !== 'Not stated') ? _pd.salary_annual : null;
-        const _bhHsLabels = {
-          direct_employer:    'Direct employer',
-          recruiter_mediated: 'Recruiter-mediated',
-          high_volume_funnel: 'High-volume funnel',
-          founder_led:        'Founder-led',
-          enterprise_matrix:  'Enterprise / matrix',
-          agency_search:      'Agency search',
-        };
-        const _hsLabel = (_hs && _hs.type) ? (_bhHsLabels[_hs.type] || _hs.type) : null;
-        const hasGrid  = _loc || _wm || _sal || _hsLabel;
-
-        if (hasBrief || hasGrid) {
-          let _bh = '';
-          if (_rs && _rs !== 'Not stated') {
-            _bh += `<div class="rw-bh-paragraph">${esc(_rs)}</div>`;
-          } else if (_rrs) {
-            _bh += `<div class="rw-bh-paragraph">${_rrs.map(s => esc(String(s))).join(' ')}</div>`;
-          }
-          if (hasGrid) {
-            const _bhCells = [
-              _loc     ? ['Location',      _loc]     : null,
-              _wm      ? ['Work model',    _wm]      : null,
-              _sal     ? ['Salary',        _sal]     : null,
-              _hsLabel ? ['Hiring source', _hsLabel] : null,
-            ].filter(Boolean);
-            _bh += `<div class="rw-bh-grid">${_bhCells.map(([k, v]) =>
-              `<div class="rw-bh-cell"><span class="rw-bc-label">${esc(k)}</span><span class="rw-bc-value">${esc(v)}</span></div>`
-            ).join('')}</div>`;
-          }
-          _briefHtml += `<div class="rw-briefing-header" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'role-briefing', component: 'RoleBriefing', slot: 'briefing', label: 'Role Briefing' }) : ''}>${_bh}</div>`;
-        }
-      }
-      html += sectionHeader('Role Briefing', true, 'briefing');
-      // ── Stage/Outcome chips slot (RW-TOP-CLEANUP-08) ────────────────────────
-      // role-chips-section lives here (Role Briefing area) instead of being
-      // inserted by _ensureOverviewLowerCards() near the top of the wrap.
-      html += `<div id="role-chips-section" class="role-chips-section" style="display:none;"></div>`;
-
-      // ── ROLEWISE BRIEFING — merged: role summary + why role exists + what they want + hiring context + fit reality ──
-      {
-        let _leftHtml = ''; let _rightHtml = ''; // RW-ROLEPAGE-LAYOUT-02: two-column briefing
-
-        // ── Role Summary ──
-        if (_briefHtml) {
-          _leftHtml += `<div class="rw-sub-section"><div class="rw-sub-label">Role Summary</div>${_briefHtml}</div>`;
-        }
-
-        // ── Why This Role Exists ──
-        {
-          const _why = output.why_this_role_exists;
-          if (_why && _why !== 'Not recorded in this format.' && _why !== 'Unknown' && _why !== 'Not stated') {
-            _leftHtml += `<div class="rw-sub-section"><div class="rw-sub-label">Why This Role Exists</div><div class="doc-prose" style="font-size:13.5px;color:var(--text);line-height:1.6;">${esc(_why)}</div></div>`;
-          }
-        }
-
-        // ── What The Company Is Trying To Solve ──
-        {
-          const _wtrlf = Array.isArray(output.what_they_are_really_looking_for)
-            ? output.what_they_are_really_looking_for.filter(s => s && s !== 'Not stated' && s !== 'Not recorded \u2014 see original JD for detail.')
-            : [];
-          if (_wtrlf.length > 0) {
-            _leftHtml += `<div class="rw-sub-section"><div class="rw-sub-label">What They\u2019re Looking For</div>${bullets(_wtrlf)}</div>`;
-          }
-        }
-
-        // ── Hiring Context — from Hiring System Insight ──
-        {
-          const _hs = output.hiring_system;
-          if (_hs && _hs.type) {
-            const _hsLabels = {
-              direct_employer:    'Direct employer',
-              recruiter_mediated: 'Recruiter-mediated',
-              high_volume_funnel: 'High-volume funnel',
-              founder_led:        'Founder-led',
-              enterprise_matrix:  'Enterprise / matrix',
-              agency_search:      'Agency search',
-            };
-            const _hsTypeDesc = {
-              direct_employer:    'The company is hiring directly. Expect first-person communication and fewer intermediary steps.',
-              recruiter_mediated: 'A recruitment agency is advertising on behalf of a client. There are two layers to navigate: the agency and the employer.',
-              high_volume_funnel: 'This appears to be a high-volume, ATS-driven process. Expect screening tests, slower response times, and less personalisation.',
-              founder_led:        'Signals suggest a founder or early senior team is directly involved. Expect faster, more personal, and higher-variance interactions.',
-              enterprise_matrix:  'This looks like a large corporate with committee-based hiring. Expect a longer process, multiple stakeholders, and formal approval stages.',
-              agency_search:      'A boutique or specialist recruiter appears to be leading this search. The process is likely more personalised, and the search may be confidential.',
-            };
-            const _hsLabel    = _hsLabels[_hs.type] || _hs.type;
-            const _hsConf     = _hs.confidence === 'high' ? '' : ` <span style="color:var(--text-light);font-weight:400;">(${_hs.confidence} confidence)</span>`;
-            const _hsDesc     = _hsTypeDesc[_hs.type] || null;
-            const _hsSig      = Array.isArray(_hs.signals) && _hs.signals.length
-              ? _hs.signals.join(' \u00b7 ') : null;
-            let _hsHtml2 = `<div style="font-size:13.5px;font-weight:600;color:var(--text);margin-bottom:${_hsDesc ? '6px' : '0'};">${esc(_hsLabel)}${_hsConf}</div>`;
-            if (_hsDesc) {
-              _hsHtml2 += `<div class="doc-prose" style="margin-bottom:${_hsSig ? '6px' : '0'};">${esc(_hsDesc)}</div>`;
-            }
-            if (_hsSig) {
-              _hsHtml2 += `<div style="font-size:11.5px;color:var(--text-light);font-style:italic;line-height:1.4;">\u201c${esc(_hsSig)}\u201d</div>`;
-            }
-            _leftHtml += `<div class="rw-sub-section" id="section-hiring-system" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'hiring-context', component: 'HiringContext', slot: 'hiring', label: 'Hiring Context' }) : ''}><div class="rw-sub-label">Hiring Context</div>${_hsHtml2}</div>`;
-          }
-        }
-
-        // ── Fit Reality removed (RW-ROLEPAGE-FITREALITY-02) ──
-        // Content redistributed: fit-confirming bullets → Fit Assessment;
-        // cautionary signals → Risks & Unknowns + Fit Assessment watchouts;
-        // role-defining interpretation → "What They're Looking For" in Role Briefing.
 
         // ── Key Signals (RW-ROLEPAGE-BRIEFING-05) — Structural, Operational, Practical Details ──
         // Moved from standalone Role Signals card into Role Briefing.
-        let _roleSignalsHtml = '';
-        let _roleSignalsHas = false;
+        let _roleSignalsHas = false; // tracks whether any signal sub-section was emitted
 
         // ── Structural Signals — from role_shape_signals (RW-ROLEPAGE-SIGNALS-03) ──
         // Primary: work_model, role_type, salary_transparency, company_stage,
@@ -14099,10 +14792,11 @@
               _primaryRows.push(['Role type', _rtLabels[_rt] || _cap(_rt), null]);
             }
 
-            const _salaryVal = rss.salary_signal || null;
-            if (_salaryVal) {
-              const _salLabels = { range: 'Range stated', stated: 'Stated', not_stated: 'Not stated' };
-              _primaryRows.push(['Salary transparency', _salLabels[_salaryVal] || _cap(_salaryVal), null]);
+            // Salary — show actual value, fall back to "Not specified" (RW-SALARY-FIX)
+            {
+              const _pdSal = output.practical_details?.salary_annual;
+              const _salDisplay = (_pdSal && _pdSal !== 'Not stated') ? _pdSal : 'Not specified';
+              _primaryRows.push(['Salary', _salDisplay, null]);
             }
 
             const _cs = rss.company_stage || rss.company_stage_signal || null;
@@ -14136,15 +14830,17 @@
 
             const _allRows = _primaryRows.length + _secondaryRows.length;
             if (_allRows > 0) {
-              const _renderRows = (rows, dimmed) => rows.map(([k, v, ev], i) => `
-                <tr${i < rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
-                  <td style="padding:5px 0;font-size:12.5px;color:${dimmed ? 'var(--text-light)' : 'var(--text-muted)'};width:38%;vertical-align:top;">${esc(k)}</td>
-                  <td style="padding:5px 0;font-size:${dimmed ? '12px' : '13px'};color:${dimmed ? 'var(--text-light)' : 'var(--text)'};">${esc(v)}${ev ? `<div style="font-size:11px;color:var(--text-light);font-style:italic;margin-top:2px;line-height:1.35;">\u201c${esc(ev)}\u201d</div>` : ''}</td>
-                </tr>`).join('');
+              const _renderRows = (rows, dimmed) => rows.map(([k, v, ev]) => `
+                <div class="rw-rail-row${dimmed ? ' rw-rail-row--dimmed' : ''}">
+                  <div class="rw-rail-row-label">${esc(k)}</div>
+                  <div class="rw-rail-row-value">${esc(v)}${ev ? `<div class="rw-rail-row-evidence">\u201c${esc(ev)}\u201d</div>` : ''}</div>
+                </div>`).join('');
 
-              let _structHtml = `<table style="width:100%;border-collapse:collapse;">${_renderRows(_primaryRows, false)}${_primaryRows.length && _secondaryRows.length ? `<tr style="border-bottom:1px solid var(--border-light);"><td colspan="2" style="padding:0;"></td></tr>` : ''}${_renderRows(_secondaryRows, true)}</table>`;
+              let _structHtml = `${_renderRows(_primaryRows, false)}${_renderRows(_secondaryRows, true)}`;
 
-              _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-shape" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'role-shape-signals', component: 'RoleShapeSignals', slot: 'signals', label: 'Structural Signals' }) : ''}><div class="rw-sub-label">Structural Signals</div>${_structHtml}</div>`;
+              sidebarHtml += `<div class="rw-rail-section" id="section-role-shape" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'role-shape-signals', component: 'RoleShapeSignals', slot: 'signals', label: 'Structural Signals' }) : ''}>
+                <h3 class="rw-rail-h3">Structural Signals</h3>${_structHtml}
+              </div>`;
               _roleSignalsHas = true;
             }
           }
@@ -14208,15 +14904,17 @@
           const _opSecondary = _buildOpRows(_v2SecondaryKeys);
 
           if (_opPrimary.length + _opSecondary.length > 0) {
-            const _renderOpRows = (rows, dimmed) => rows.map(([k, v, accentCss], i) => `
-              <tr${i < rows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
-                <td style="padding:5px 0;font-size:12.5px;color:${dimmed ? 'var(--text-light)' : 'var(--text-muted)'};width:38%;vertical-align:top;">${esc(k)}</td>
-                <td style="padding:5px 0;font-size:${dimmed ? '12px' : '13px'};color:${dimmed ? 'var(--text-light)' : 'var(--text)'}${dimmed ? '' : accentCss};">${esc(v)}</td>
-              </tr>`).join('');
+            const _renderOpRows = (rows, dimmed) => rows.map(([k, v, accentCss]) => `
+              <div class="rw-rail-row${dimmed ? ' rw-rail-row--dimmed' : ''}">
+                <div class="rw-rail-row-label">${esc(k)}</div>
+                <div class="rw-rail-row-value"${!dimmed && accentCss ? ` style="${accentCss.replace(/^;/, '')}"` : ''}>${esc(v)}</div>
+              </div>`).join('');
 
-            const _opTable = `<table style="width:100%;border-collapse:collapse;">${_renderOpRows(_opPrimary, false)}${_opPrimary.length && _opSecondary.length ? `<tr style="border-bottom:1px solid var(--border-light);"><td colspan="2" style="padding:0;"></td></tr>` : ''}${_renderOpRows(_opSecondary, true)}</table>`;
+            const _opTable = `${_renderOpRows(_opPrimary, false)}${_renderOpRows(_opSecondary, true)}`;
 
-            _roleSignalsHtml += `<div class="rw-sub-section" id="section-role-reality-signals" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'role-reality-signals', component: 'RoleRealitySignals', slot: 'signals', label: 'Operational Signals' }) : ''}><div class="rw-sub-label">Operational Signals</div>${_opTable}</div>`;
+            sidebarHtml += `<div class="rw-rail-section" id="section-role-reality-signals" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'role-reality-signals', component: 'RoleRealitySignals', slot: 'signals', label: 'Operational Signals' }) : ''}>
+              <h3 class="rw-rail-h3">Operational Signals</h3>${_opTable}
+            </div>`;
             _roleSignalsHas = true;
           }
         }
@@ -14237,9 +14935,7 @@
           // Location — unique to PD
           if (_pdObj.location && _pdObj.location !== 'Not stated')
             _pdRows.push(['Location', _pdObj.location]);
-          // Salary — actual figure; distinct from the "Salary transparency" signal
-          if (_pdSalStr)
-            _pdRows.push(['Salary', _pdSalStr]);
+          // Salary — now rendered in Structural Signals; removed here to avoid duplication (RW-SALARY-FIX)
           // Reporting to — unique to PD
           if (_pdObj.reporting_line && _pdObj.reporting_line !== 'Not stated')
             _pdRows.push(['Reporting to', _pdObj.reporting_line]);
@@ -14262,41 +14958,29 @@
           const _pdVn    = Array.isArray(_pdObj._verification_needed) ? _pdObj._verification_needed : [];
           const _pdNotes = Array.isArray(_pdObj._extraction_notes)    ? _pdObj._extraction_notes    : [];
           const _pdVerifyHtml = (_pdVn.length || _pdNotes.length)
-            ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);">${_pdNotes.map(n =>
-                `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5;margin-bottom:3px;">\u26A0 ${esc(n)}</div>`
+            ? `<div style="margin-top:8px;padding-top:8px;">${_pdNotes.map(n =>
+                `<div style="font-size:11px;color:var(--text-muted);line-height:1.4;margin-bottom:3px;">\u26A0 ${esc(n)}</div>`
               ).join('')}</div>`
             : '';
 
           if (_pdRows.length > 0) {
-            const _pdTable = `<table style="width:100%;border-collapse:collapse;">${_pdRows.map(([k, v], i) => `
-              <tr${i < _pdRows.length - 1 ? ' style="border-bottom:1px solid var(--border-light);"' : ''}>
-                <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${esc(k)}</td>
-                <td style="padding:6px 0;font-size:13px;color:var(--text);">${esc(v)}</td>
-              </tr>`).join('')}
-            </table>${_pdVerifyHtml}`;
-            _roleSignalsHtml += `<div class="rw-sub-section" id="section-practical"><div class="rw-sub-label">Practical Details</div>${_pdTable}</div>`;
+            const _pdTable = `${_pdRows.map(([k, v]) => `
+              <div class="rw-rail-row">
+                <div class="rw-rail-row-label">${esc(k)}</div>
+                <div class="rw-rail-row-value">${esc(v)}</div>
+              </div>`).join('')}${_pdVerifyHtml}`;
+            sidebarHtml += `<div class="rw-rail-section" id="section-practical">
+              <h3 class="rw-rail-h3">Practical Details</h3>${_pdTable}
+            </div>`;
             _roleSignalsHas = true;
           }
         }
 
-        if (_roleSignalsHas) {
-          _rightHtml += `<div class="rw-sub-section" id="section-role-signals"><div class="rw-sub-label">Key Signals</div>${_roleSignalsHtml}</div>`;
-        }
+        // Key Signals → each sub-section is now its own rw-rail-section (RW-TWO-COL-LAYOUT)
+        // No parent wrapper — Structural, Operational, Practical Details are
+        // appended directly to sidebarHtml above with individual rw-rail-section containers.
 
-        // RW-ROLEPAGE-LAYOUT-02: two-column grid when both columns have content
-        {
-          let _rbHtml = '';
-          if (_leftHtml && _rightHtml) {
-            _rbHtml = `<div class="rw-briefing-grid"><div class="rw-briefing-left">${_leftHtml}</div><div class="rw-briefing-right">${_rightHtml}</div></div>`;
-          } else if (_leftHtml) {
-            _rbHtml = _leftHtml;
-          } else if (_rightHtml) {
-            _rbHtml = _rightHtml;
-          }
-          if (_rbHtml) {
-            html += `<div class="rw-card rw-card--full rw-card--narrative" id="section-briefing">${_rbHtml}</div>`;
-          }
-        }
+        // Role Briefing card removed from main column (RW-REMOVE-BRIEFING)
       }
 
       // ── Similar Roles Insight (RW-ROLEPAGE-SIMILAR-ROLES-01) ─────────────────
@@ -14305,7 +14989,7 @@
         if (_srimHtml) html += _srimHtml;
       }
 
-      // ── Role Signals merged into Role Briefing as “Key Signals” (RW-ROLEPAGE-BRIEFING-05) ──
+      // ── Role Signals merged into Role Briefing as "Key Signals" (RW-ROLEPAGE-BRIEFING-05) ──
 
 
       // ── Practical Reality section header removed (RW-ROLEPAGE-SIGNALS-04) ───
@@ -14416,7 +15100,11 @@
                          || _ROLEWISE_USER_PROFILE.location
                          || 'Egham, Surrey';
           const _coData = _buildCommuteData(_coLocClean, _coWmRaw, _homeRaw);
-          html += card('Commute Impact', _renderCommuteCard(_coData), 'section-commute', false, 'rw-card--data');
+          // Commute → sidebar rail (RW-TWO-COL-LAYOUT)
+          sidebarHtml += `<div class="rw-rail-section" id="section-commute">
+            <h3 class="rw-rail-h3">Commute</h3>
+            <div class="rw-rail-commute">${_renderCommuteCard(_coData)}</div>
+          </div>`;
         }
       }
 
@@ -14485,8 +15173,7 @@
       }
 
 
-      // ── Your Decision Context ─────────────────────────────────────────────
-      html += sectionHeader('Your Decision Context');
+      // ── Your Decision Context heading removed (RW-REMOVE-SECTION-HEADERS) ──
 
       // ── Decision Lens — rendered inline in card grid (RW-ROLEPAGE-LAYOUT-01) ──
       {
@@ -14494,70 +15181,122 @@
         if (_dlHtml) html += _dlHtml;
       }
 
-      // ── Your Lens ──────────────────────────────────────────────────────────
+      // ── Your Pattern vs This Role (RW-CMP-PANEL) ──────────────────────────
       {
         const _lens = _computeUserLens(allRoles);
         if (_lens) {
-          const _comparison = _compareRoleToLens(output, _lens);
-          let _lensBody = '';
+          const _pd      = output.practical_details || {};
+          const _summary = (output.role_summary || '').toLowerCase();
+          const _wtado   = Array.isArray(output.what_you_would_actually_do)
+            ? output.what_you_would_actually_do.join(' ').toLowerCase() : '';
+          const _combined = _summary + ' ' + _wtado;
 
-          // Summary line
-          const _srcNote = _lens.signal_source === 'liked_roles'
-            ? `roles you've saved or applied to`
-            : `roles you've analysed`;
-          _lensBody += `<div class="ul-intro">Based on ${_lens.sample_size} roles you\u2019ve analysed, patterns are emerging.</div>`;
+          // Human-readable labels per dimension
+          const _CMP_LABELS = {
+            work_model:   'Work model',
+            domain:       'Product type',
+            ownership:    'Ownership',
+            location:     'Location',
+            complexity:   'Complexity',
+            company_type: 'Company type',
+            seniority:    'Seniority',
+          };
 
-          // Emerging patterns
-          if (_lens.emerging_patterns.length) {
-            _lensBody += `<div class="ul-section-label">You tend toward</div>`;
-            _lensBody += `<div class="ul-patterns">${_lens.emerging_patterns.map(p =>
-              `<span class="ul-chip">${esc(p.label)}</span>`
-            ).join('')}</div>`;
+          // Extract this role's signal for a given dimension
+          // (mirrors the detection logic in _compareRoleToLens — display only)
+          const _roleSignalFor = dim => {
+            if (dim === 'work_model') {
+              const wm = (_pd.remote_model || '').toLowerCase();
+              if (/\bremote\b/.test(wm) && !/hybrid/i.test(wm)) return 'Remote';
+              if (/hybrid/i.test(wm))                             return 'Hybrid';
+              if (/\bon[- ]?site\b|\bin[- ]?office\b/.test(wm))  return 'On-site';
+              return null;
+            }
+            if (dim === 'domain') {
+              if (/\bb2b\b|enterprise|saas|platform/.test(_combined))  return 'B2B';
+              if (/\bb2c\b|consumer|marketplace/.test(_combined))       return 'B2C';
+              return null;
+            }
+            if (dim === 'complexity') {
+              return /complex|technical|data[- ]?heavy|api|infrastructure|platform|system/i.test(_combined)
+                ? 'Technically complex' : null;
+            }
+            if (dim === 'ownership') {
+              if (/\bic\b|individual\s+contributor|hands[- ]?on|own.*design/i.test(_combined))
+                return 'High-ownership IC';
+              if (/\bmanag|lead\s+a\s+team|team\s+of\s+\d|director|head\s+of/i.test(_combined))
+                return 'Leadership / management';
+              return null;
+            }
+            if (dim === 'company_type') {
+              const ct = (_pd.company_type || '').trim();
+              return (ct && ct.toLowerCase() !== 'not stated') ? ct : null;
+            }
+            if (dim === 'seniority') {
+              const sen = (_pd.role_seniority || '').trim();
+              return (sen && sen.toLowerCase() !== 'not stated') ? sen : null;
+            }
+            if (dim === 'location') {
+              const loc = (_pd.location || '').trim();
+              if (!loc || loc.toLowerCase() === 'not stated') return null;
+              return loc.split(/[,|]/)[0].replace(/\s*Area\s*$/i, '').trim() || null;
+            }
+            return null;
+          };
+
+          // Build comparison rows
+          const _cmpRows     = [];
+          const _cmpTensions = [];
+
+          for (const pat of _lens.emerging_patterns) {
+            const dimLabel = _CMP_LABELS[pat.dimension];
+            if (!dimLabel) continue;
+
+            const yourPattern = pat.values
+              .map(v => v.charAt(0).toUpperCase() + v.slice(1))
+              .join(' / ');
+
+            const roleSignal = _roleSignalFor(pat.dimension);
+            if (!roleSignal) continue;
+
+            const isMatch = pat.values.some(v =>
+              v.toLowerCase() === roleSignal.toLowerCase()
+            );
+
+            _cmpRows.push({ dimLabel, yourPattern, roleSignal, isMatch });
+
+            if (!isMatch) {
+              _cmpTensions.push(
+                `${esc(roleSignal)} vs your pattern of ${esc(yourPattern.toLowerCase())}`
+              );
+            }
           }
 
-          // Role comparison
-          if (_comparison) {
-            if (_comparison.matches.length) {
-              _lensBody += `<div class="ul-section-label" style="margin-top:14px;">This role aligns with</div>`;
-              _lensBody += `<div class="ul-matches">${_comparison.matches.map(m =>
-                `<div class="ul-match-row"><span class="ul-match-icon">\u2713</span> ${esc(m.label)}</div>`
-              ).join('')}</div>`;
-            }
-            if (_comparison.tensions.length) {
-              _lensBody += `<div class="ul-section-label ul-tension-label" style="margin-top:14px;">Possible tension</div>`;
-              _lensBody += `<div class="ul-tensions">${_comparison.tensions.map(t =>
-                `<div class="ul-tension-row"><span class="ul-tension-icon">\u2022</span> ${esc(t.label)}</div>`
-              ).join('')}</div>`;
-            }
-          }
+          if (_cmpRows.length) {
+            const _rowsHtml = _cmpRows.map(r =>
+              `<div class="rw-cmp-row">
+                <span class="rw-cmp-dim">${esc(r.dimLabel)}</span>
+                <span class="rw-cmp-val rw-cmp-val--your">${esc(r.yourPattern)}</span>
+                <span class="rw-cmp-pipe" aria-hidden="true">|</span>
+                <span class="rw-cmp-val rw-cmp-val--role${r.isMatch ? '' : ' rw-cmp-val--mismatch'}">${esc(r.roleSignal)}</span>
+              </div>`
+            ).join('');
 
-          const _lensHtml = `
-            <div class="ul-block">${_lensBody}</div>
-            <style>
-              .ul-block { font-size: 13px; line-height: 1.55; color: var(--text); }
-              .ul-intro { color: var(--text-muted); font-size: 12.5px; margin-bottom: 12px; }
-              .ul-section-label {
-                font-size: 11.5px; font-weight: 600; text-transform: uppercase;
-                letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 8px;
-              }
-              .ul-patterns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
-              .ul-chip {
-                display: inline-block; padding: 4px 10px; font-size: 12.5px;
-                background: var(--bg-subtle, #fafaf9); border: 1px solid var(--border-light);
-                border-radius: 14px; color: var(--text);
-              }
-              .ul-match-row {
-                padding: 3px 0; font-size: 13px; color: var(--text);
-              }
-              .ul-match-icon { color: var(--signal-green, #27ae60); font-weight: 600; margin-right: 6px; }
-              .ul-tension-label { color: var(--signal-amber, #b45309); }
-              .ul-tension-row {
-                padding: 3px 0; font-size: 13px; color: var(--text-muted);
-              }
-              .ul-tension-icon { color: var(--signal-amber, #b45309); margin-right: 6px; }
-            </style>
-          `;
-          html += card('Your Lens', _lensHtml, 'section-your-lens', false, 'rw-card--intel');
+            const _tensionHtml = _cmpTensions.length
+              ? `<div class="rw-cmp-tensions">
+                  <div class="rw-cmp-tension-hdr">Tension</div>
+                  <ul class="rw-cmp-tension-list">${_cmpTensions.map(t => `<li>${t}</li>`).join('')}</ul>
+                </div>`
+              : '';
+
+            const _lensHtml = `<div class="rw-cmp-block">
+              <p class="rw-cmp-intro">Based on your analysed roles, this is how this role compares to your pattern.</p>
+              <div class="rw-cmp-rows">${_rowsHtml}</div>
+              ${_tensionHtml}
+            </div>`;
+
+            html += card('Your pattern vs this role', _lensHtml, 'section-your-lens', false, 'rw-card--intel');
+          }
         }
       }
 
@@ -14608,7 +15347,8 @@
       }
 
       // Risks & Unknowns — grouped by category (legacy) or flat marker bullets (v8+)
-      {
+      // Skip if the narrative card already rendered this section (avoids duplication).
+      if (!_narrativeRenderedRisksQwa) {
         const rawRisks = output.risks_and_unknowns;
         let risksHtml = '';
         if (Array.isArray(rawRisks) && rawRisks.length) {
@@ -14657,48 +15397,33 @@
         } else {
           risksHtml = '<ul class="doc-list"><li style="color:var(--text-light);">Not stated</li></ul>';
         }
-        // RW-ROLEPAGE-LAYOUT-02: wrap risk items in expandable checklist
+        // Render risks as plain bullets — no truncation, no expand/collapse
         {
-          // Convert flat bullet/group HTML into expandable <details> items.
-          // Walk rawRisks array to build headline + detail pairs.
           let _risksOut = '';
           if (Array.isArray(rawRisks) && rawRisks.length) {
             const _asStr = rawRisks.map(r => typeof r === 'string' ? r : (r.text || '')).filter(Boolean);
-            _risksOut = _asStr.map((txt, i) => {
-              // Headline: first sentence or first 80 chars, whichever is shorter
-              const _firstDot = txt.indexOf('. ');
-              const _headline = (_firstDot > 0 && _firstDot < 80)
-                ? txt.slice(0, _firstDot)
-                : txt.slice(0, 80) + (txt.length > 80 ? '…' : '');
-              const _hasDetail = txt.length > _headline.length + 1;
-              const _uid = `rw-risk-${i}`;
-              if (_hasDetail) {
-                return `<details class="rw-risk-item" id="${_uid}">`
-                  + `<summary class="rw-risk-summary">${esc(_headline)}</summary>`
-                  + `<div class="rw-risk-detail">${esc(txt)}</div>`
-                  + `</details>`;
-              } else {
-                return `<div class="rw-risk-item rw-risk-item--simple">${esc(txt)}</div>`;
-              }
-            }).join('');
+            _risksOut = `<ul class="rw-doc-bullets rw-doc-bullets--muted">${_asStr.map(txt => `<li>${esc(txt)}</li>`).join('')}</ul>`;
           } else {
             _risksOut = risksHtml; // fallback: render existing HTML as-is
           }
-          html += card('Risks &amp; Unknowns', `<div class="rw-risk-list">${_risksOut}</div>`, 'section-risks', false, 'rw-card--action');
+          html += `<div class="rw-doc-section" id="section-risks">
+            <h2 class="rw-doc-h2">Risks &amp; Unknowns</h2>
+            ${_risksOut}
+          </div>`;
         }
       }
 
 
-      // ── Market Reality ──────────────────────────────────────────────────────
-      html += sectionHeader('Market Reality', false, 'market-reality');
-
-      // ── Hiring Reality ─────────────────────────────────────────────────────
-      // Aggregated signals from similar analysed roles in this account only.
-      // Shown even when empty (calm empty state) so users know the feature exists.
+      // ── Market Reality section header — kept for Hiring Signals which stays in main ──
+      // Hiring Reality moves to sidebar (RW-TWO-COL-LAYOUT)
+      // ── Hiring Reality → sidebar rail ──────────────────────────────────────
       {
         const _hiringHtml = _rcHiringRealityHtml(allRoles, selectedRoleId);
         if (_hiringHtml !== null) {
-          html += card('Hiring Reality', _hiringHtml, 'section-hiring-reality', false, 'rw-card--action');
+          sidebarHtml += `<div class="rw-rail-section" id="section-hiring-reality">
+            <h3 class="rw-rail-h3">Hiring Reality</h3>
+            <div class="rw-rail-hiring">${_hiringHtml}</div>
+          </div>`;
         }
       }
 
@@ -14973,64 +15698,97 @@
       }
 
 
-      // ── Decision Support ──────────────────────────────────────────────────────
-      // RW-ROLEPAGE-LAYOUT-02: Decision Support collapsed by default
-      html += `<details class="rw-section-collapse" id="section-ds-collapse">`;
-      html += `<summary class="rw-section-collapse__hdr">`
-        + sectionHeader('Decision Support')
-        + `</summary>`;
-      html += `<div class="rw-section-collapse__body">`;
+      // ── Decision Support heading + collapsible removed (RW-REMOVE-SECTION-HEADERS) ──
 
       // Questions Worth Asking — full-width; closes the spec Row 6 immediately after Risks
-      {
+      // Skip if the narrative card already rendered this section (avoids duplication).
+      if (!_narrativeRenderedRisksQwa) {
         const _sq = Array.isArray(output.signal_questions) && output.signal_questions.length
           ? output.signal_questions
           : (output.questions_worth_asking || []);
-        html += card('Questions Worth Asking', bullets(_sq), 'section-questions', true, 'rw-card--action');
+        html += `<div class="rw-doc-section" id="section-questions">
+          <h2 class="rw-doc-h2">Questions Worth Asking</h2>
+          ${bullets(_sq)}
+        </div>`;
       }
 
-      html += `</div></details>`; // close rw-section-collapse__body + details
+      // </div></details> removed — Decision Support no longer collapsible (RW-REMOVE-SECTION-HEADERS)
 
       // Watch Points and Missing Information moved to JD Clarity & Risks (Practical Reality section)
 
-      // ── Section 5: Role Action Cards ─────────────────────────────────────────
-      // Clickable action buttons that trigger deeper workflows from the overview.
-      // Event delegation on col-overview-cards handles clicks via data-ws-action.
-      html += `<div class="rw-action-strip rw-card--full" id="section-actions">
-        <div class="rw-action-strip__inner">
-          <button class="rw-action-btn" data-ws-action="prep">
-            <div class="rw-action-btn__icon">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="1" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            </div>
-            <div class="rw-action-btn__body">
-              <div class="rw-action-btn__label">Prepare for Interview</div>
-              <div class="rw-action-btn__desc">Build a structured prep guide for this role</div>
-            </div>
+      // ── Section 5: Role Action Cards — all moved to sidebar (RW-SIDEBAR-ACTIONS) ──
+
+      // Draft cover letter + CV Alignment + Prepare for Interview → sidebar rail
+      sidebarHtml += `<div class="rw-rail-section rw-rail-actions-section">
+        <h3 class="rw-rail-h3">Actions</h3>
+        <div class="rw-rail-action-list">
+          <button class="rw-btn rw-btn-default rw-btn--block" data-ws-action="cover-letter">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 4.5l6.5 5 6.5-5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Draft cover letter
           </button>
-          <button class="rw-action-btn" data-ws-action="cover-letter">
-            <div class="rw-action-btn__icon">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 4.5l6.5 5 6.5-5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            </div>
-            <div class="rw-action-btn__body">
-              <div class="rw-action-btn__label">Draft Cover Letter</div>
-              <div class="rw-action-btn__desc">Tailored to this role and your background</div>
-            </div>
+          <button class="rw-btn rw-btn-default rw-btn--block" data-ws-action="cv-tweaks">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10.5 2.5l3 3-7.5 7.5H3v-3L10.5 2.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8.5 4.5l3 3" stroke="currentColor" stroke-width="1.3"/></svg>
+            CV Alignment
           </button>
-          <button class="rw-action-btn" data-ws-action="cv-tweaks">
-            <div class="rw-action-btn__icon">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.5 2.5l3 3-7.5 7.5H3v-3L10.5 2.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8.5 4.5l3 3" stroke="currentColor" stroke-width="1.3"/></svg>
-            </div>
-            <div class="rw-action-btn__body">
-              <div class="rw-action-btn__label">CV Alignment</div>
-              <div class="rw-action-btn__desc">Get targeted suggestions for this application</div>
-            </div>
+          <button class="rw-btn rw-btn-default rw-btn--block" data-ws-action="prep">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="1" width="10" height="12" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M4 4h6M4 6.5h6M4 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Prepare for Interview
           </button>
         </div>
       </div>`;
 
       html += `</div>`; // close rw-card-grid
 
-      return html;
+      // ── Two-column layout assembly (RW-TWO-COL-LAYOUT) ───────────────────────
+      // Sidebar: Apply|Skip at top, then sidebarHtml sections, then recruiter
+      // placeholder, Original JD link at bottom.
+
+      // Salary removed from top of sidebar — now shown in Structural Signals table (RW-SALARY-FIX)
+
+      const _fullSidebar = `
+        <div class="rw-rail-top-row">
+          <div class="rw-rail-util-btns">
+            <button class="rw-btn rw-btn-sm" id="rw-sidebar-edit-details">Edit details</button>
+            ${window.ROLEWISE_REASONING_MAP ? `<button class="rw-btn rw-btn-sm" id="rw-sidebar-reasoning-map">Reasoning Map ↗</button>` : ''}
+          </div>
+          <div class="rw-rail-util-btns">
+            <button class="rw-btn rw-btn-sm rw-btn--primary" data-ws-quick="applied" aria-label="Mark as Applied">Apply</button>
+            <button class="rw-btn rw-btn-sm" data-ws-quick="skipped" aria-label="Skip this role">Skip</button>
+          </div>
+        </div>
+        ${sidebarHtml}
+        <div id="rw-sidebar-recruiter" class="rw-sidebar-recruiter"></div>
+        <div class="rw-rail-section rw-rail-jd-section">
+          <button class="rw-btn rw-btn-sm" id="rw-jd-modal-trigger" aria-label="View original job description">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="2" y="1" width="10" height="12" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M4 4h6M4 6.5h6M4 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Original JD
+          </button>
+        </div>
+        <div class="rw-rail-section rw-rail-admin-section">
+          <div class="rw-rail-util-btns">
+            <button class="rw-btn rw-btn-sm" id="btn-archive-role">Archive role</button>
+            <button class="rw-btn rw-btn-sm rw-btn--danger" id="btn-delete-role">Delete role</button>
+          </div>
+          <div class="rw-rail-admin-confirm" id="archive-confirm"></div>
+          <div class="rw-rail-admin-confirm" id="delete-confirm"></div>
+        </div>`;
+
+      // ── JD Modal overlay (populated from role.job_description_raw) ──────────
+      const _jdModal = `<div class="rw-jd-modal" id="rw-jd-modal" role="dialog" aria-modal="true" aria-label="Original job description" hidden>
+        <div class="rw-jd-modal__backdrop" id="rw-jd-modal-backdrop"></div>
+        <div class="rw-jd-modal__dialog">
+          <div class="rw-jd-modal__header">
+            <span class="rw-jd-modal__title">Original job description</span>
+            <button class="rw-jd-modal__close" id="rw-jd-modal-close" aria-label="Close">&#x2715;</button>
+          </div>
+          <div class="rw-jd-modal__body" id="rw-jd-modal-body"></div>
+        </div>
+      </div>`;
+
+      return `<div class="rw-two-col-layout">
+        <div class="rw-main-col">${html}</div>
+        <div class="rw-sidebar-col"><div class="rw-sidebar-inner">${_fullSidebar}</div></div>
+      </div>${_jdModal}`;
     }
 
     // Builds the deep-context sections that live inside Role Record (collapsed by default).
@@ -15076,15 +15834,24 @@
 
       const verdictChip = outcome => verdictChipHtml(outcome, false);
 
-      // Role Reality — what the job actually is in plain English
+      // § What this role actually is — role_reality + why_this_role_exists + role_summary combined
       {
-        const rr = output.role_reality;
-        if (rr && rr !== 'Not stated' && rr !== 'Unknown') {
-          html += secAlways('Role Reality', prose(rr));
+        const rr  = output.role_reality;
+        const wte = output.why_this_role_exists;
+        const rs  = output.role_summary;
+        const parts = [rr, wte, rs].filter(s => s && s !== 'Not stated' && s !== 'Unknown');
+        if (parts.length) {
+          html += secAlways('What this role actually is', parts.map(s => prose(s)).join(''));
         }
       }
 
-      // Reality Snapshot — compact key-facts panel
+      // § What they really need from you
+      html += secAlways('What they really need from you', editorialBullets(output.what_they_are_really_looking_for));
+
+      // § What you would actually do
+      html += secAlways('What you would actually do', editorialBullets(output.what_you_would_actually_do));
+
+      // § Practical details — reality snapshot key-facts
       {
         const snap = Array.isArray(output.reality_snapshot) ? output.reality_snapshot : [];
         if (snap.length) {
@@ -15094,11 +15861,11 @@
               <span class="reality-snapshot-value">${esc(s.value)}</span>
             </div>`
           ).join('');
-          html += secAlways('Reality Snapshot', `<div class="reality-snapshot">${rows}</div>`);
+          html += secAlways('Practical details', `<div class="reality-snapshot">${rows}</div>`);
         }
       }
 
-      // Friction Signals — 2–3 potential mismatches (rw-friction-signal system wrappers)
+      // § Risks & unknowns — friction signals
       {
         const fs = output.friction_signals;
         if (Array.isArray(fs) && fs.length) {
@@ -15107,34 +15874,30 @@
             const textHtml  = f.text  ? `<div class="rw-friction-signal__text">${esc(f.text)}</div>`   : '';
             return `<div class="rw-friction-signal">${labelHtml}${textHtml}</div>`;
           }).join('');
-          html += secAlways('Friction Signals', `<div class="rw-friction-signals-wrap">${signalCards}</div>`);
+          html += secAlways('Risks & unknowns', `<div class="rw-friction-signals-wrap">${signalCards}</div>`);
         }
       }
 
-      // Rolewise Verdict — calm balanced recommendation
+      // § Questions worth asking
+      {
+        const qwa = output.questions_worth_asking;
+        if (Array.isArray(qwa) && qwa.length) {
+          const capped = qwa.slice(0, 5);
+          html += secAlways('Questions worth asking', editorialBullets(capped));
+        }
+      }
+
+      // § Decision — verdict + reasoning (no chip, plain text)
       {
         const rv = output.rolewise_verdict;
         if (rv && rv.outcome) {
-          const rvChip = verdictChip(rv.outcome);
-          let rvHtml = rvChip;
+          let decHtml = '';
           if (rv.reasoning) {
-            rvHtml += `<div class="doc-prose" style="margin-top:8px;">${esc(rv.reasoning)}</div>`;
+            decHtml += prose(rv.reasoning);
           }
-          html += secAlways('Rolewise Verdict', rvHtml);
+          html += secAlways('Decision', decHtml || prose(rv.outcome));
         }
       }
-
-      // Role Summary
-      html += secAlways('Role Summary', prose(output.role_summary));
-
-      // Why This Role Exists
-      html += secAlways('Why This Role Exists', prose(output.why_this_role_exists));
-
-      // What You Would Actually Do — editorial bullets
-      html += secAlways('What You Would Actually Do', editorialBullets(output.what_you_would_actually_do));
-
-      // What They're Really Looking For — editorial bullets
-      html += secAlways("What They're Really Looking For", editorialBullets(output.what_they_are_really_looking_for));
 
       if (!html) return '';
       return `<div class="role-record-deep">${html}</div>`;
@@ -15170,31 +15933,31 @@
 
         if (seniority === 'inflated') {
           return _lens('identity', 'Identity Fit', 'negative',
-            'Seniority appears inflated — the role may be positioned higher than its actual scope.');
+            'Seniority appears inflated. The role may be positioned higher than its actual scope.');
         }
         if (seniority === 'understated') {
           return _lens('identity', 'Identity Fit', 'caution',
-            'Seniority reads as understated — the role may carry more responsibility than the title implies.');
+            'Seniority reads as understated. The role may carry more responsibility than the title implies.');
         }
         if (scopeClar === 'vague' || ownership === 'feature') {
           const _t = scopeClar === 'vague'
-            ? 'Scope is loosely defined — worth probing what ownership actually looks like day-to-day.'
+            ? 'Scope is loosely defined. Worth probing what ownership actually looks like day-to-day.'
             : 'Ownership appears feature-level rather than product or platform.';
           return _lens('identity', 'Identity Fit', 'caution', _t);
         }
         if (seniority === 'authentic' && (scopeClar === 'clear' || (ownership && ownership !== 'feature'))) {
           const _t = archetype
-            ? ('This maps to a ' + archetype + ' archetype — seniority and scope read as authentic.')
+            ? ('This maps to a ' + archetype + ' archetype. Seniority and scope read as authentic.')
             : ('Scope and seniority read as authentic' + (scopeClar === 'clear' ? ' and clearly defined.' : '.'));
           return _lens('identity', 'Identity Fit', 'positive', _t);
         }
         if (archetype || scopeClar || seniority) {
           const _t = archetype
             ? ('Role reads as a ' + archetype + ' archetype.')
-            : 'Partial alignment signals — scope and seniority not fully confirmed.';
+            : 'Partial alignment signals. Scope and seniority not fully confirmed.';
           return _lens('identity', 'Identity Fit', 'unclear', _t);
         }
-        return _lens('identity', 'Identity Fit', 'unclear', 'Identity signals not extracted — probe scope and ownership directly in conversation.');
+        return _lens('identity', 'Identity Fit', 'unclear', 'Identity signals not extracted. Probe scope and ownership directly in conversation.');
       }());
 
       // ── Lens 2: Role Shape ────────────────────────────────────────────────────
@@ -15213,11 +15976,11 @@
 
         if (_isIntense && _isGreenfield) {
           return _lens('shape', 'Role Shape', 'negative',
-            'Intense delivery pace in a greenfield context — high execution pressure with limited established structure.');
+            'Intense delivery pace in a greenfield context. High execution pressure with limited established structure.');
         }
         if (_isIntense) {
           return _lens('shape', 'Role Shape', 'negative',
-            'Intense delivery pressure detected — expect a demanding pace with limited slack.');
+            'Intense delivery pressure detected. Expect a demanding pace with limited slack.');
         }
         if (_isGreenfield || _isFast || _isHighDomain) {
           var _parts = [];
@@ -15225,7 +15988,7 @@
           if (_isFast)        _parts.push('fast delivery pace');
           if (_isHighDomain)  _parts.push('high domain complexity');
           return _lens('shape', 'Role Shape', 'caution',
-            _parts.join(' + ') + ' — likely higher ambiguity and context-switching.');
+            _parts.join(' + ') + '. Likely higher ambiguity and context-switching.');
         }
         if (_isSustain || balance === 'strategy_heavy') {
           var _sParts = [];
@@ -15233,16 +15996,16 @@
           if (squad)                         _sParts.push('squad model');
           if (balance === 'strategy_heavy')  _sParts.push('strategy-led');
           var _sText = _sParts.length
-            ? (_sParts.join(', ').charAt(0).toUpperCase() + _sParts.join(', ').slice(1) + ' — role structure looks healthy.')
+            ? (_sParts.join(', ').charAt(0).toUpperCase() + _sParts.join(', ').slice(1) + '. Role structure looks healthy.')
             : 'Role structure looks healthy based on available signals.';
           return _lens('shape', 'Role Shape', 'positive', _sText);
         }
         if (pressure || mode || balance || domain || squad) {
           var _uText;
           if (balance === 'craft_heavy') {
-            _uText = 'Craft-heavy role — execution-focused work with limited strategic scope implied.';
+            _uText = 'Craft-heavy role, execution-focused work with limited strategic scope implied.';
           } else if (balance === 'balanced') {
-            _uText = 'Balanced craft/strategy mix — no strong shape signal in either direction.';
+            _uText = 'Balanced craft/strategy mix. No strong shape signal in either direction.';
           } else if (mode) {
             _uText = (mode.charAt(0).toUpperCase() + mode.slice(1)) + ' product mode.';
           } else {
@@ -15263,7 +16026,7 @@
 
         if (!isSalaryKnown && (!salarySig || salarySig === 'not_stated')) {
           return _lens('economics', 'Economic Reality', 'negative',
-            'Compensation not disclosed — clarify the range before investing further time.');
+            'Compensation not disclosed. Clarify the range before investing further time.');
         }
         if (!isSalaryKnown) {
           return _lens('economics', 'Economic Reality', 'caution',
@@ -15271,7 +16034,7 @@
         }
         var _eText = 'Compensation stated: ' + salaryAnnual;
         if (isContract) {
-          _eText += '. Contract role — confirm IR35 status and day rate.';
+          _eText += '. Contract role, confirm IR35 status and day rate.';
         } else if (empType && empType !== 'Not stated') {
           _eText += ', ' + empType.toLowerCase() + ' role.';
         } else {
@@ -15298,7 +16061,7 @@
             ? (fs[0].label + (fsLen > 1 ? (' and ' + (fsLen - 1) + ' other friction signal' + (fsLen > 2 ? 's' : '')) : ''))
             : (fsLen + ' friction signals');
           return _lens('sustainability', 'Sustainability', 'negative',
-            'Intense delivery pressure alongside ' + _fl + ' — high sustainability risk.');
+            'Intense delivery pressure alongside ' + _fl + '. High sustainability risk.');
         }
         if (_isIntense || (fsLen >= 2) || (_isFast && (_weakProx || _weakMet))) {
           var _cParts = [];
@@ -15308,7 +16071,7 @@
           if (_weakProx)  _cParts.push('weak user proximity');
           if (_weakMet)   _cParts.push('unclear success metrics');
           return _lens('sustainability', 'Sustainability', 'caution',
-            (_cParts.join(', ').charAt(0).toUpperCase() + _cParts.join(', ').slice(1)) + ' — probe workload expectations before committing.');
+            (_cParts.join(', ').charAt(0).toUpperCase() + _cParts.join(', ').slice(1)) + '. Probe workload expectations before committing.');
         }
         if (fsLen === 1) {
           var _f1 = (fs[0] && fs[0].label) ? fs[0].label : 'One friction signal noted';
@@ -15324,7 +16087,7 @@
         if (pressure || proximity || metrics || fsLen > 0) {
           return _lens('sustainability', 'Sustainability', 'unclear', 'Some pace and workload signals present but not enough to assess sustainability.');
         }
-        return _lens('sustainability', 'Sustainability', 'unclear', 'Delivery pace not assessed — ask about sprint cadence and workload expectations.');
+        return _lens('sustainability', 'Sustainability', 'unclear', 'Delivery pace not assessed. Ask about sprint cadence and workload expectations.');
       }());
 
       // ── Lens 5: Culture Signals ───────────────────────────────────────────────
@@ -15342,29 +16105,29 @@
 
         if (_officeMismatch && _topDown) {
           return _lens('culture', 'Culture Signals', 'negative',
-            'Office culture pressure and top-down decision-making detected — both reduce autonomy and may conflict with expectations.');
+            'Office culture pressure and top-down decision-making detected. Both reduce autonomy and may conflict with expectations.');
         }
         if (_officeMismatch) {
           return _lens('culture', 'Culture Signals', 'caution',
-            'Office culture signals present despite ' + (wm === 'remote' ? 'remote' : 'hybrid') + ' arrangement — potential attendance expectations.');
+            'Office culture signals present despite ' + (wm === 'remote' ? 'remote' : 'hybrid') + ' arrangement. Potential attendance expectations.');
         }
         if (_topDown || _credsHeavy) {
           var _t = _topDown
-            ? 'Top-down decision culture — may constrain design influence and autonomy.'
-            : 'Credentials-heavy hiring philosophy — often signals a formal or hierarchical culture.';
+            ? 'Top-down decision culture. May constrain design influence and autonomy.'
+            : 'Credentials-heavy hiring philosophy, often signals a formal or hierarchical culture.';
           return _lens('culture', 'Culture Signals', 'caution', _t);
         }
         // 'strong' culture is common in enterprise/scaleup outputs — worth a gentle flag
         if (dc === 'strong') {
           return _lens('culture', 'Culture Signals', 'caution',
-            'Strong cultural identity — alignment worth probing directly before committing.');
+            'Strong cultural identity. Alignment worth probing directly before committing.');
         }
         if (_positive) {
           var _dcLabels = { flat: 'flat', data_driven: 'data-driven', collaborative: 'collaborative' };
           var _ct = (_dcLabels[dc] || dc) + ' decision culture';
           var _csLabels = { scaleup: 'scale-up', startup: 'start-up', enterprise: 'enterprise' };
           if (cs && cs !== 'unknown') _ct += ' at ' + (_csLabels[cs] || cs) + ' stage';
-          _ct = (_ct.charAt(0).toUpperCase() + _ct.slice(1)) + ' — generally positive for design autonomy.';
+          _ct = (_ct.charAt(0).toUpperCase() + _ct.slice(1)) + ', generally positive for design autonomy.';
           return _lens('culture', 'Culture Signals', 'positive', _ct);
         }
         if (dc || cs || ocSig || hp) {
@@ -15377,7 +16140,7 @@
           if (dc && !_dcSkip.includes(dc)) _pParts.push(dc.replace(/_/g, ' ') + ' culture');
           // hp is only informative if it's 'credentials_heavy' (handled above) — omit generic values
           var _pText = _pParts.length
-            ? (_pParts.join(', ') + ' — culture fit not fully assessable from this JD.')
+            ? (_pParts.join(', ') + '. Culture fit not fully assessable from this JD.')
             : 'Culture signals present but not clearly defined in this JD.';
           return _lens('culture', 'Culture Signals', 'unclear', _pText);
         }
@@ -15391,55 +16154,51 @@
       const _meaningful = lenses.filter(function (l) { return l.signal !== 'unclear'; });
       if (_meaningful.length < 2) return '';
 
-      // ── Render ─────────────────────────────────────────────────────────────────
-      const _signalMeta = {
-        positive: { label: 'Positive', color: 'var(--green,#27ae60)',    dot: '#27ae60' },
-        caution:  { label: 'Caution',  color: 'var(--amber,#d68910)',    dot: '#d68910' },
-        negative: { label: 'Concern',  color: 'var(--red,#c0392b)',      dot: '#c0392b' },
-        unclear:  { label: 'Unclear',  color: 'var(--text-light,#aaa)',  dot: '#aaa'    },
-      };
-
-      const _lensIcons = {
-        identity:     '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5.5" r="2.5" stroke="currentColor" stroke-width="1.3"/><path d="M2.5 14c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
-        shape:        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="10" width="3" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="6.5" y="6" width="3" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="11" y="2" width="3" height="12" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>',
-        economics:    '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M8 3.5v1.2M8 11.3V12.5M6.2 6.5c0-.7.8-1.3 1.8-1.3s1.8.6 1.8 1.3c0 1.8-3.6.9-3.6 2.7 0 .7.8 1.3 1.8 1.3s1.8-.6 1.8-1.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
-        sustainability:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2.5v11M4.5 6l3.5-3.5L12 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 13.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
-        culture:      '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="5" cy="5" r="2" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="5" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 14c0-2 1.6-3.5 3.5-3.5M11 10.5c1.9 0 3.5 1.5 3.5 3.5M6 14c0-1.1 0.9-2 2-2s2 0.9 2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
+      // ── Render — signal list (no cards, no badges) ───────────────────────────
+      const _signalIcon = {
+        positive: '\u2713',  // ✓
+        caution:  '\u25CF',  // ●
+        negative: '\u2715',  // ✕
+        unclear:  '\u25CB',  // ○
       };
 
       var lensesHtml = lenses.map(function (l) {
-        var _sm    = _signalMeta[l.signal] || _signalMeta.unclear;
-        var _icon  = _lensIcons[l.id] || '';
-        return '<div class="rw-dl-lens rw-dl-lens--' + l.signal + '">' +
-          '<div class="rw-dl-lens__header">' +
-            '<span class="rw-dl-lens__icon">' + _icon + '</span>' +
-            '<span class="rw-dl-lens__title">' + esc(l.label) + '</span>' +
-            '<span class="rw-dl-signal" style="color:' + _sm.color + ';">' +
-              '<svg width="7" height="7" viewBox="0 0 7 7" style="display:inline-block;vertical-align:middle;margin-right:3px;flex-shrink:0;"><circle cx="3.5" cy="3.5" r="3.5" fill="' + _sm.dot + '"/></svg>' +
-              esc(_sm.label) +
-            '</span>' +
+        var _icon = _signalIcon[l.signal] || _signalIcon.unclear;
+        return '<div class="rw-lens-item rw-lens-item--' + l.signal + '">' +
+          '<div class="rw-lens-icon">' + _icon + '</div>' +
+          '<div class="rw-lens-content">' +
+            '<div class="rw-lens-title">' + esc(l.label) + '</div>' +
+            '<div class="rw-lens-desc">' + esc(l.text) + '</div>' +
           '</div>' +
-          '<div class="rw-dl-lens__text">' + esc(l.text) + '</div>' +
         '</div>';
       }).join('');
 
       // Verdict strip — from rolewise_verdict or hard_no
       var _verdictHtml = '';
       if (hn) {
-        var _hnChip = verdictChipHtml('hard_no', false);
         var _hnReas = output.hard_no_reason || 'This role does not meet your criteria.';
-        _verdictHtml = '<div class="rw-dl-verdict">' + _hnChip + '<div class="rw-dl-verdict__reasoning">' + esc(_hnReas) + '</div></div>';
+        _verdictHtml = '<div class="rw-lens-verdict rw-lens-verdict--hard-no">' +
+          '<div class="rw-lens-icon">\u2715</div>' +
+          '<div class="rw-lens-content">' +
+            '<div class="rw-lens-title">Hard No</div>' +
+            '<div class="rw-lens-desc">' + esc(_hnReas) + '</div>' +
+          '</div>' +
+        '</div>';
       } else if (rv && rv.outcome) {
-        var _rvChip = verdictChipHtml(rv.outcome, false);
-        var _rvReas = rv.reasoning
-          ? ('<div class="rw-dl-verdict__reasoning">' + esc(rv.reasoning) + '</div>')
-          : '';
-        _verdictHtml = '<div class="rw-dl-verdict">' + _rvChip + _rvReas + '</div>';
+        var _verdictLabels = { apply: 'Worth applying', lean_apply: 'Leaning apply', lean_skip: 'Leaning skip', skip: 'Worth skipping' };
+        var _verdictLabel  = _verdictLabels[rv.outcome] || rv.outcome;
+        var _rvReas = rv.reasoning || '';
+        _verdictHtml = '<div class="rw-lens-verdict">' +
+          '<div class="rw-lens-content">' +
+            '<div class="rw-lens-title">' + esc(_verdictLabel) + '</div>' +
+            (_rvReas ? '<div class="rw-lens-desc">' + esc(_rvReas) + '</div>' : '') +
+          '</div>' +
+        '</div>';
       }
 
-      return '<div class="rw-card rw-card--full rw-decision-lens" id="section-decision-lens">' +
-        '<div class="doc-section-heading">Decision Lens</div>' +
-        '<div class="rw-dl-lenses">' + lensesHtml + '</div>' +
+      return '<div class="rw-doc-section rw-decision-lens" id="section-decision-lens">' +
+        '<h2 class="rw-doc-h2">Decision Lens</h2>' +
+        '<div class="rw-lens-list">' + lensesHtml + '</div>' +
         _verdictHtml +
       '</div>';
     }
@@ -15581,7 +16340,7 @@
       // Signal 2: text ends with ellipsis near a sentence boundary (within last 120 chars)
       const tail = raw.slice(-120).trimEnd();
       if (tail.endsWith('…') || tail.endsWith('...'))
-        return { truncated: true, reason: 'Text ends with ellipsis — may be truncated' };
+        return { truncated: true, reason: 'Text ends with ellipsis (may be truncated)' };
 
       // Signal 3: suspiciously short AND has LinkedIn-specific markers
       const _liMarkers = [
@@ -15610,13 +16369,13 @@
                           'clicked apply', 'easy apply', 'show match details'];
       const source     = _liSigs.some(s => t.includes(s)) ? 'LinkedIn'
                        : /\bindeed\.com\b/i.test(raw || '') ? 'Indeed'
-                       : rawLen > 200 ? 'Generic / Unknown' : '—';
+                       : rawLen > 200 ? 'Generic / Unknown' : '-';
       return `<div style="margin-top:32px;padding:14px 16px;background:#F5F5F0;border:1px solid var(--border-light);border-radius:6px;font-family:monospace;font-size:11.5px;line-height:1.9;color:var(--text-muted);">
         <div style="font-weight:600;margin-bottom:6px;color:var(--text);">JD Health <span style="font-weight:400;opacity:0.55;">(debug)</span></div>
         <div>Raw length: <b style="color:var(--text);">${rawLen.toLocaleString()} chars</b></div>
         <div>Cleaned length: <b style="color:var(--text);">${cleanLen.toLocaleString()} chars</b></div>
         <div>Noise removed: <b style="color:var(--text);">${noiseDiff.toLocaleString()} chars</b></div>
-        <div>Truncation detected: <b style="color:${trunc.truncated ? '#B45309' : 'var(--text)'};">${trunc.truncated ? 'Yes — ' + trunc.reason : 'No'}</b></div>
+        <div>Truncation detected: <b style="color:${trunc.truncated ? 'var(--warning-bright)' : 'var(--text)'};">${trunc.truncated ? 'Yes: ' + trunc.reason : 'No'}</b></div>
         <div>Source signals: <b style="color:var(--text);">${source}</b></div>
       </div>`;
     }
@@ -15679,7 +16438,7 @@
       else if (signals.role_type === 'contract') details.push('contract');
 
       let sentence = coreParts;
-      if (details.length) sentence += ' \u2014 ' + details.join(', ');
+      if (details.length) sentence += ', ' + details.join(', ');
       sentence += '.';
 
       // Notable characteristic (first applicable only)
@@ -15766,13 +16525,13 @@
         q.push('What does the current runway look like, and what is the next fundraising milestone?');
 
       if (sig.craft_strategy_balance === 'strategy_heavy')
-        q.push('What does the day-to-day hands-on design work look like — how much is execution versus strategy?');
+        q.push('What does the day-to-day hands-on design work look like (how much is execution versus strategy)?');
 
       if (missing.includes('Interview process'))
         q.push('Can you walk me through the interview stages and what each one is trying to assess?');
 
       if (sig.office_culture_signal === true && sig.work_model === 'hybrid')
-        q.push('What does the hybrid arrangement look like in practice — is there a fixed minimum for office days?');
+        q.push('What does the hybrid arrangement look like in practice (is there a fixed minimum for office days)?');
 
       // v2-driven questions
       if (sig.ownership_level === 'feature')
@@ -15852,7 +16611,7 @@
       if (!/(figma|sketch|prototyp|user research|user test|wireframe|design process|design sprint|ux process|usability)/i.test(jdText))
         flags.push({
           flag:   'No design process or tools mentioned',
-          detail: 'The JD does not reference design tools, research methods, or process — uncommon for a genuine product design role.',
+          detail: 'The JD does not reference design tools, research methods, or process. Uncommon for a genuine product design role.',
         });
 
       // 8. (v2) Inflated seniority — title claims senior but scope is junior
@@ -16173,19 +16932,19 @@
 
       // ── v2 role-interpretation bullets (fill remaining slots) ─────────────
       if (bullets.length < 6 && signals.delivery_pressure === 'intense')
-        bullets.push('The JD signals an intense delivery environment — pace and pressure appear to be real factors.');
+        bullets.push('The JD signals an intense delivery environment. Pace and pressure appear to be real factors.');
       else if (bullets.length < 6 && signals.delivery_pressure === 'sustainable')
         bullets.push('The company signals a sustainable pace and thoughtful working environment.');
 
       if (bullets.length < 6 && signals.user_proximity === 'strong')
         bullets.push('Direct user research and customer contact appear to be part of the day-to-day.');
       else if (bullets.length < 6 && signals.user_proximity === 'weak')
-        bullets.push('User contact seems limited — research may be handled by a separate function.');
+        bullets.push('User contact seems limited. Research may be handled by a separate function.');
 
       if (bullets.length < 6 && signals.ownership_level === 'company_level')
         bullets.push('The scope of ownership appears company-wide, suggesting a senior influence remit.');
       else if (bullets.length < 6 && signals.ownership_level === 'feature')
-        bullets.push('Ownership looks to be at the feature level — primarily an execution-focused position.');
+        bullets.push('Ownership looks to be at the feature level. Primarily an execution-focused position.');
 
       if (bullets.length < 6 && signals.seniority_authenticity === 'inflated')
         bullets.push('The seniority claimed in the title may not fully match the described responsibilities.');
@@ -16687,7 +17446,7 @@
         const sym = currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : currency === 'USD' ? '$' : '';
         const fmt = n => n >= 1000 ? `${sym}${Math.round(n / 1000)}k` : `${sym}${n.toLocaleString('en-GB')}`;
         const suffix = period === 'daily' ? '/day' : period === 'hourly' ? '/hour' : '';
-        if (min && max) return `${fmt(min)}–${fmt(max)}${suffix}`;
+        if (min && max) return `${fmt(min)}-${fmt(max)}${suffix}`;
         if (min && !max) return `${fmt(min)}+${suffix}`;
         if (!min && max) return `Up to ${fmt(max)}${suffix}`;
         return rawStr || 'Not stated';
@@ -16837,7 +17596,7 @@
       }
 
       // Cue exists but no parseable figure
-      return { raw: null, normalized: 'Salary mentioned — see JD', confidence: 'low',
+      return { raw: null, normalized: 'Salary mentioned, see JD', confidence: 'low',
                salary_min: null, salary_max: null, daily_rate: null,
                currency: null, period: null };
     }
@@ -17107,7 +17866,7 @@
         pd.salary_monthly = null;
         return pd;
       }
-      // Skip non-numeric labels like "Competitive", "Salary mentioned — see JD"
+      // Skip non-numeric labels like "Competitive", "Salary mentioned (see JD for details)"
       if (!/[£€$\d]/.test(salaryAnnual)) {
         pd.salary_monthly = null;
         return pd;
@@ -17130,7 +17889,7 @@
           // Day rate range: £600–£700/day
           const mMin = Math.round(sMin * CONTRACT_DAYS_PER_MONTH);
           const mMax = Math.round(sMax * CONTRACT_DAYS_PER_MONTH);
-          pd.salary_monthly = `${_fmtMonth(mMin)}–${_fmtMonth(mMax)}/month (${CONTRACT_DAYS_PER_MONTH} days)`;
+          pd.salary_monthly = `${_fmtMonth(mMin)}-${_fmtMonth(mMax)}/month (${CONTRACT_DAYS_PER_MONTH} days)`;
           return pd;
         }
         const rate = dRate || sMin || sMax;
@@ -17139,7 +17898,7 @@
           if (sMin != null && sMax != null) {
             const mMin = Math.round(sMin * CONTRACT_DAYS_PER_MONTH);
             const mMax = Math.round(sMax * CONTRACT_DAYS_PER_MONTH);
-            pd.salary_monthly = `${_fmtMonth(mMin)}–${_fmtMonth(mMax)}/month (${CONTRACT_DAYS_PER_MONTH} days)`;
+            pd.salary_monthly = `${_fmtMonth(mMin)}-${_fmtMonth(mMax)}/month (${CONTRACT_DAYS_PER_MONTH} days)`;
           } else {
             const monthly = Math.round(rate * CONTRACT_DAYS_PER_MONTH);
             pd.salary_monthly = `${_fmtMonth(monthly)}/month (${CONTRACT_DAYS_PER_MONTH} days)`;
@@ -17153,7 +17912,7 @@
         // Range: £80k–£100k → £6,667–£8,333/month
         const mMin = sMin / 12;
         const mMax = sMax / 12;
-        pd.salary_monthly = `${_fmtMonth(mMin)}–${_fmtMonth(mMax)}/month`;
+        pd.salary_monthly = `${_fmtMonth(mMin)}-${_fmtMonth(mMax)}/month`;
         return pd;
       }
       if (sMax != null && sMin == null) {
@@ -17187,7 +17946,7 @@
         if (lo && lo < 1000 && /k/i.test(salaryAnnual)) lo *= 1000;
         if (hi && hi < 1000 && /k/i.test(salaryAnnual)) hi *= 1000;
         if (lo && hi && lo >= 10000) {
-          pd.salary_monthly = `${_fmtMonth(lo / 12)}–${_fmtMonth(hi / 12)}/month`;
+          pd.salary_monthly = `${_fmtMonth(lo / 12)}-${_fmtMonth(hi / 12)}/month`;
           return pd;
         }
       }
@@ -17258,20 +18017,20 @@
         // Try to extract the day count for richer context
         const dayMatch = wmLower.match(/(\d)\s*(?:days?|x)\s*(?:per\s+week|\/\s*week|in[- ]?office|on[- ]?site)/);
         const dayPhrase = dayMatch ? `${dayMatch[1]} day${dayMatch[1] === '1' ? '' : 's'}/week` : 'regular';
-        pd.commute_reality = `Hybrid ${city} — ${dayPhrase} office presence. Factor in travel if not based nearby.`;
+        pd.commute_reality = `Hybrid ${city}, ${dayPhrase} office presence. Factor in travel if not based nearby.`;
         return pd;
       }
 
       // 3. On-site with known city
       if (isOnsite && city) {
-        pd.commute_reality = `On-site ${city} — daily commute required. Travel burden likely to be material.`;
+        pd.commute_reality = `On-site ${city}, daily commute required. Travel burden likely to be material.`;
         return pd;
       }
 
       // 4. Mostly on-site (4+ days) with known city — treated as near-onsite
       const heavyDayMatch = wmLower.match(/(\d)\s*days?\s*(?:on[- ]?site|in[- ]?office)/);
       if (heavyDayMatch && parseInt(heavyDayMatch[1], 10) >= 4 && city) {
-        pd.commute_reality = `${city} — ${heavyDayMatch[1]} days/week in office. Effectively on-site; commute burden is material.`;
+        pd.commute_reality = `${city}, ${heavyDayMatch[1]} days/week in office. Effectively on-site; commute burden is material.`;
         return pd;
       }
 
@@ -17283,7 +18042,7 @@
 
       // 6. Location known but work model unclear
       if (hasLocation && !isRemote && !isHybrid && !isOnsite && city) {
-        pd.commute_reality = `Location: ${city}. Work model not stated — confirm whether remote, hybrid, or on-site.`;
+        pd.commute_reality = `Location: ${city}. Work model not stated. Confirm whether remote, hybrid, or on-site.`;
         return pd;
       }
 
@@ -17352,7 +18111,7 @@
           result.hard_constraints.push({
             id:      'production_coding_required',
             label:   'Production-level coding required',
-            reason:  'This JD appears to require production-level coding — not just prototyping or technical awareness.',
+            reason:  'This JD appears to require production-level coding, not just prototyping or technical awareness.',
             evidence: match[0],
           });
           break; // One match is sufficient
@@ -17654,7 +18413,7 @@
           if (roleWm && pat.values.includes(roleWm)) {
             matches.push({ dimension: dim, label: roleWm + ' work model' });
           } else if (roleWm && !pat.values.includes(roleWm)) {
-            tensions.push({ dimension: dim, label: roleWm + ' — you tend toward ' + pat.values.join('/') });
+            tensions.push({ dimension: dim, label: roleWm + ', you tend toward ' + pat.values.join('/') });
           }
         }
 
@@ -17665,7 +18424,7 @@
           if (roleDomain && pat.values.includes(roleDomain)) {
             matches.push({ dimension: dim, label: roleDomain + ' product' });
           } else if (roleDomain && !pat.values.includes(roleDomain)) {
-            tensions.push({ dimension: dim, label: roleDomain + ' — you tend toward ' + pat.values.join('/') });
+            tensions.push({ dimension: dim, label: roleDomain + ', you tend toward ' + pat.values.join('/') });
           }
         }
 
@@ -17682,7 +18441,7 @@
           if (roleOwn && pat.values.includes(roleOwn)) {
             matches.push({ dimension: dim, label: roleOwn });
           } else if (roleOwn && !pat.values.includes(roleOwn)) {
-            tensions.push({ dimension: dim, label: roleOwn + ' — you tend toward ' + pat.values.join('/') });
+            tensions.push({ dimension: dim, label: roleOwn + ', you tend toward ' + pat.values.join('/') });
           }
         }
 
@@ -17691,7 +18450,7 @@
           if (ct && ct !== 'not stated' && pat.values.includes(ct)) {
             matches.push({ dimension: dim, label: ct + ' stage company' });
           } else if (ct && ct !== 'not stated' && !pat.values.includes(ct)) {
-            tensions.push({ dimension: dim, label: ct + ' — you tend toward ' + pat.values.join('/') });
+            tensions.push({ dimension: dim, label: ct + ', you tend toward ' + pat.values.join('/') });
           }
         }
 
@@ -17782,7 +18541,7 @@
         },
         {
           label: 'Fully remote enterprise role',
-          input: 'Staff Engineer — Remote\nGlobalCorp plc, FTSE 250 listed company, 15,000 employees worldwide.\nFully remote. No visa sponsorship available.',
+          input: 'Staff Engineer - Remote\nGlobalCorp plc, FTSE 250 listed company, 15,000 employees worldwide.\nFully remote. No visa sponsorship available.',
           expect: { work_model: 'Remote', company_type: 'Enterprise', role_seniority: 'Staff', visa: 'No sponsorship' },
         },
         {
@@ -17797,7 +18556,7 @@
         },
         {
           label: 'Director at Series A with salary',
-          input: 'Director of Product\nSeries A funded startup, recently raised £8m. Reports into the CEO.\nSalary: £120,000 – £150,000 per annum.',
+          input: 'Director of Product\nSeries A funded startup, recently raised £8m. Reports into the CEO.\nSalary: £120,000-£150,000 per annum.',
           expect: { company_type: 'Early Stage', role_seniority: 'Director' },
         },
         {
@@ -17812,7 +18571,7 @@
         },
         {
           label: 'Hybrid implied by office days only',
-          input: 'Product Designer — London\n2 days a week in the office required.',
+          input: 'Product Designer - London\n2 days a week in the office required.',
           expect: { work_model: 'Hybrid' },
         },
         {
@@ -18259,7 +19018,7 @@
         analysis.suggested_actions.next_step = 'Skip';
         if (!analysis.fit_reality_summary.some(s => /production.cod/i.test(s))) {
           analysis.fit_reality_summary.unshift(
-            'Production coding requirement detected — this role is a Hard No per your personal rules.'
+            'Production coding requirement detected. This role is a Hard No per your personal rules.'
           );
         }
       }
@@ -18978,7 +19737,7 @@
             }
           }
         } else {
-          salary_annual = 'Salary mentioned — see JD for details';
+          salary_annual = 'Salary mentioned (see JD for details)';
         }
       }
 
@@ -19074,7 +19833,7 @@
 
       // 3. Final fallback
       if (!why_this_role_exists) {
-        why_this_role_exists = 'Not explicitly stated — review the company background in the JD for context.';
+        why_this_role_exists = 'Not explicitly stated. Review the company background in the JD for context.';
       }
 
       // ── Personal rule: production-coding Hard No ──────────────────────────
@@ -19094,7 +19853,7 @@
       // ── Fit Reality Summary ───────────────────────────────────────────────
       const fitPoints = [];
       if (isHardNo) {
-        fitPoints.push('Production coding requirement detected — this role is a Hard No per your personal rules.');
+        fitPoints.push('Production coding requirement detected. This role is a Hard No per your personal rules.');
       }
       if (isBlend) {
         fitPoints.push('Role blends design and engineering. Clarify what proportion is production code before applying.');
@@ -19103,29 +19862,29 @@
         if (responsibilities.length > 0) {
           fitPoints.push('No production coding requirement detected in this read. Confirm by reviewing responsibilities below.');
         } else {
-          fitPoints.push('Responsibilities section not clearly structured — review the full JD to assess coding expectations.');
+          fitPoints.push('Responsibilities section not clearly structured. Review the full JD to assess coding expectations.');
         }
       }
-      if (remote_model === 'Remote')   fitPoints.push('Role is fully remote — positive signal.');
-      if (remote_model === 'On-site')  fitPoints.push('Role is on-site — confirm the location works for you.');
-      if (remote_model === 'Hybrid')   fitPoints.push('Hybrid arrangement — ask how many days in office before committing.');
-      if (salary_annual === 'Not stated') fitPoints.push('No salary listed. Raise this early — do not invest significant time before knowing the range.');
+      if (remote_model === 'Remote')   fitPoints.push('Role is fully remote. Positive signal.');
+      if (remote_model === 'On-site')  fitPoints.push('Role is on-site. Confirm the location works for you.');
+      if (remote_model === 'Hybrid')   fitPoints.push('Hybrid arrangement. Ask how many days in office before committing.');
+      if (salary_annual === 'Not stated') fitPoints.push('No salary listed. Raise this early. Do not invest significant time before knowing the range.');
       if (fitPoints.length === 0) fitPoints.push('No strong positive or negative signals detected. Review the full JD to form a view.');
 
       // ── Risks & Unknowns ──────────────────────────────────────────────────
       const risks = [];
       if (salary_annual === 'Not stated')
-        risks.push({ text: 'Salary not advertised — negotiate range before first interview', tag: 'Inferred' });
+        risks.push({ text: 'Salary not advertised. Negotiate range before first interview', tag: 'Inferred' });
       if (remote_model === 'Not stated')
         risks.push({ text: 'Working location / remote model not specified in JD', tag: 'Inferred' });
       if (isBlend)
-        risks.push({ text: 'Design/engineering blend — scope could drift into production coding over time', tag: 'Stated' });
+        risks.push({ text: 'Design/engineering blend. Scope could drift into production coding over time', tag: 'Stated' });
       if (visa === 'Not stated')
-        risks.push({ text: 'Right to work requirements not mentioned — confirm sponsorship position if needed', tag: 'Inferred' });
+        risks.push({ text: 'Right to work requirements not mentioned. Confirm sponsorship position if needed', tag: 'Inferred' });
       if (!responsibilities.length)
-        risks.push({ text: 'Responsibilities not structured as a list — role scope harder to assess', tag: 'Inferred' });
+        risks.push({ text: 'Responsibilities not structured as a list. Role scope harder to assess', tag: 'Inferred' });
       if (!requirements.length)
-        risks.push({ text: 'Requirements section not found — hard to know exactly what they are screening for', tag: 'Inferred' });
+        risks.push({ text: 'Requirements section not found. Hard to know exactly what they are screening for', tag: 'Inferred' });
       if (risks.length === 0)
         risks.push({ text: 'No obvious red flags at first read', tag: 'Inferred' });
 
@@ -19147,7 +19906,7 @@
       else if (remote_model !== 'On-site')  next_step = 'Apply';
 
       const cv_reasoning = isHardNo
-        ? 'Not applicable — Hard No triggered by production coding requirement.'
+        ? 'Not applicable. Hard No triggered by production coding requirement.'
         : 'Senior Product Designer is the strongest default. Adjust if the role is more senior or more specialised.';
 
       // ── Role Summary ─────────────────────────────────────────────────────
@@ -19158,8 +19917,8 @@
         fit_reality_summary:              fitPoints,
         role_summary,
         why_this_role_exists,
-        what_you_would_actually_do:       responsibilities.length ? responsibilities.map(rewriteResponsibility) : ['Not stated — see full JD for detail'],
-        what_they_are_really_looking_for: requirements.length    ? requirements    : ['Not stated — see full JD for detail'],
+        what_you_would_actually_do:       responsibilities.length ? responsibilities.map(rewriteResponsibility) : ['Not stated, see full JD for detail'],
+        what_they_are_really_looking_for: requirements.length    ? requirements    : ['Not stated, see full JD for detail'],
         practical_details: (() => {
           // Run extraction engine v2 to enrich local-analysis path with new fields.
           // GUARD: extraction runs in a try/catch so any extractor failure degrades
@@ -19454,9 +20213,14 @@
       // ─────────────────────────────────────────────────────────────────────────
 
       try {
-        // Edge function reads body.jd_text — keep this key exactly
+        // Edge function reads body.jd_text + body.candidate_context
+        // candidate_context is the full structured profile from rolewise-prompts.js
+        const _candidateCtx = _getCandidateContext();
         const { data, error } = await db.functions.invoke('analyse-jd', {
-          body: { jd_text: jdText },
+          body: {
+            jd_text: jdText,
+            candidate_context: _candidateCtx,
+          },
         });
         if (error) {
           console.error('[AI invoke error]', error);
@@ -19529,6 +20293,21 @@
         _logUsageEvent(_logPayload);
 
         console.log('[AI invoke success]', aiResult);
+
+        // ── Pass 2: Narrative generation ──────────────────────────────────
+        // Takes the structured extraction and generates the 8-section
+        // decision narrative. Non-blocking: if it fails, the renderer
+        // falls back to template rendering from the structured JSON.
+        try {
+          const narrative = await callNarrativeAPI(aiResult);
+          if (narrative) {
+            aiResult._narrative = narrative;
+            console.log('[Pass 2] narrative attached', Object.keys(narrative));
+          }
+        } catch (_p2Err) {
+          console.warn('[Pass 2] narrative generation failed, using template rendering', _p2Err);
+        }
+
         return aiResult;
       } catch (err) {
         console.warn('[AI fallback] using local analysis', err);
@@ -19542,6 +20321,169 @@
           });
         }
         return localResult; // already has _source: 'local'
+      }
+    }
+
+    // ─── Pass 2: Narrative validation ────────────────────────────────────────────
+    // Strict shape check for the candidate-aware narrative object returned by
+    // the generate-narrative edge function. Returns { ok, reasons }.
+    // If ok is false, the caller must fall back to template rendering.
+    //
+    // Personalisation is woven into existing sections (fit_reality, risks,
+    // decision), not in a separate block. recommended_cv and why_that_cv
+    // are top-level fields.
+    function _validateNarrative(n) {
+      const reasons = [];
+      if (!n || typeof n !== 'object') { return { ok: false, reasons: ['not an object'] }; }
+
+      const _nonEmptyArr = (v, min) => Array.isArray(v) && v.length >= min && v.every(s => typeof s === 'string' && s.trim());
+      const _nonEmptyStr = v => typeof v === 'string' && v.trim().length > 0;
+
+      // fit_reality: { paragraphs: string[] }  (min 1)
+      if (!n.fit_reality?.paragraphs || !_nonEmptyArr(n.fit_reality.paragraphs, 1))
+        reasons.push('fit_reality.paragraphs missing or empty');
+
+      // what_this_role_actually_is: { paragraphs: string[] }  (min 1)
+      if (!n.what_this_role_actually_is?.paragraphs || !_nonEmptyArr(n.what_this_role_actually_is.paragraphs, 1))
+        reasons.push('what_this_role_actually_is.paragraphs missing or empty');
+
+      // what_they_really_need_from_you: { paragraphs?: string[], bullets: string[] }
+      {
+        const sec = n.what_they_really_need_from_you;
+        if (!sec || typeof sec !== 'object') {
+          reasons.push('what_they_really_need_from_you missing');
+        } else {
+          const hasParagraphs = Array.isArray(sec.paragraphs) && sec.paragraphs.length > 0;
+          const hasBullets    = _nonEmptyArr(sec.bullets, 1);
+          if (!hasParagraphs && !hasBullets) reasons.push('what_they_really_need_from_you has no paragraphs or bullets');
+        }
+      }
+
+      // what_you_would_actually_do: { framing: string, bullets: string[] }
+      {
+        const sec = n.what_you_would_actually_do;
+        if (!sec || typeof sec !== 'object') {
+          reasons.push('what_you_would_actually_do missing');
+        } else {
+          if (!_nonEmptyStr(sec.framing)) reasons.push('what_you_would_actually_do.framing missing');
+          if (!_nonEmptyArr(sec.bullets, 1)) reasons.push('what_you_would_actually_do.bullets missing or empty');
+        }
+      }
+
+      // practical_details: { items: [{ label, value }] }
+      {
+        const sec = n.practical_details;
+        if (!sec || !Array.isArray(sec.items) || sec.items.length < 1) {
+          reasons.push('practical_details.items missing or empty');
+        } else if (!sec.items.every(i => _nonEmptyStr(i?.label))) {
+          reasons.push('practical_details.items has entries without labels');
+        }
+      }
+
+      // risks_and_unknowns: { stated_intro: string, stated: string[], inferred: string[] }
+      {
+        const sec = n.risks_and_unknowns;
+        if (!sec || typeof sec !== 'object') {
+          reasons.push('risks_and_unknowns missing');
+        } else {
+          if (!_nonEmptyStr(sec.stated_intro)) reasons.push('risks_and_unknowns.stated_intro missing');
+          if (!Array.isArray(sec.stated))      reasons.push('risks_and_unknowns.stated not an array');
+          if (!Array.isArray(sec.inferred))    reasons.push('risks_and_unknowns.inferred not an array');
+        }
+      }
+
+      // questions_worth_asking: string[]  (min 1)
+      if (!_nonEmptyArr(n.questions_worth_asking, 1))
+        reasons.push('questions_worth_asking missing or empty');
+
+      // decision: { paragraphs: string[] }  (min 1)
+      if (!n.decision?.paragraphs || !_nonEmptyArr(n.decision.paragraphs, 1))
+        reasons.push('decision.paragraphs missing or empty');
+
+      // recommended_cv: string (top-level, CV variant ID)
+      if (!_nonEmptyStr(n.recommended_cv))
+        reasons.push('recommended_cv missing');
+
+      // why_that_cv: string (top-level)
+      if (!_nonEmptyStr(n.why_that_cv))
+        reasons.push('why_that_cv missing');
+
+      // final_note: must be present
+      if (!_nonEmptyStr(n.final_note))
+        reasons.push('final_note missing');
+
+      return { ok: reasons.length === 0, reasons };
+    }
+
+    // ─── Pass 2: Narrative API call ─────────────────────────────────────────────
+    // Invokes the generate-narrative edge function to produce the 8-section
+    // decision narrative from Pass 1 structured JSON.
+    // Returns the narrative object on success, or null on failure.
+    // This is the FINAL output step. No refinement pass follows.
+    async function callNarrativeAPI(extractionJson) {
+      const _t0 = performance.now();
+      try {
+        const _candidateCtx = _getCandidateContext();
+        const { data, error } = await db.functions.invoke('generate-narrative', {
+          body: {
+            extraction_json: extractionJson,
+            candidate_context: _candidateCtx,
+          },
+        });
+        if (error) {
+          console.error('[generate-narrative invoke error]', error);
+          return null;
+        }
+        if (!data?.narrative) {
+          console.warn('[generate-narrative] no narrative in response', data);
+          return null;
+        }
+
+        const narrative = data.narrative;
+
+        // ── Strict validation ─────────────────────────────────────────────
+        // Every key must exist with the correct shape. If any check fails
+        // the entire payload is rejected and the renderer falls back to
+        // template rendering from Pass 1 structured JSON.
+        const _valid = _validateNarrative(narrative);
+        if (!_valid.ok) {
+          console.warn('[generate-narrative] validation failed:', _valid.reasons);
+          return null;
+        }
+
+        // ── Usage tracking ───────────────────────────────────────────────
+        const _usage = data.usage || {};
+        _logUsageEvent({
+          event_type:     'ai_analysis',
+          feature_key:    'narrative_generation',
+          provider:       'anthropic',
+          route:          'generate-narrative',
+          request_type:   'edge_function',
+          status:         'success',
+          latency_ms:     Math.round(performance.now() - _t0),
+          model:          _usage.model || null,
+          input_tokens:   _usage.input_tokens || null,
+          output_tokens:  _usage.output_tokens || null,
+        });
+
+        console.log('[generate-narrative] success', {
+          sections: Object.keys(narrative).length,
+          latency:  Math.round(performance.now() - _t0) + 'ms',
+        });
+        return narrative;
+      } catch (err) {
+        console.warn('[generate-narrative] failed', err);
+        _logUsageEvent({
+          event_type:     'ai_analysis',
+          feature_key:    'narrative_generation',
+          provider:       'anthropic',
+          route:          'generate-narrative',
+          request_type:   'edge_function',
+          status:         'error',
+          latency_ms:     Math.round(performance.now() - _t0),
+          metadata:       { error_message: err.message || String(err) },
+        });
+        return null;
       }
     }
 
@@ -19631,12 +20573,12 @@
         fit_reality_summary:              ['Analysis is limited right now. Review the full JD manually.'],
         role_summary:                     'Could not run analysis. Please review the job description directly.',
         why_this_role_exists:             'Unknown',
-        what_you_would_actually_do:       ['Not stated — see full JD'],
-        what_they_are_really_looking_for: ['Not stated — see full JD'],
+        what_you_would_actually_do:       ['Not stated, see full JD'],
+        what_they_are_really_looking_for: ['Not stated, see full JD'],
         practical_details: {
           location: 'Not stated', remote_model: remote,
           employment_type: isContract ? 'Contract (inferred)' : 'Not stated',
-          salary_annual: hasSalary ? 'Salary mentioned — see JD' : 'Not stated',
+          salary_annual: hasSalary ? 'Salary mentioned, see JD' : 'Not stated',
           salary_monthly: null, reporting_line: 'Not stated', visa: 'Not stated',
         },
         risks_and_unknowns:    [{ text: 'Analysis could not be completed', tag: 'Inferred' }],
@@ -20219,7 +21161,7 @@
         const recName = detected.name || detected.email || detected.linkedin || 'recruiter';
         insertEvent(role.id, {
           event_type: 'recruiter_linked',
-          title:      `Recruiter linked automatically — ${recName}`,
+          title:      `Recruiter linked automatically, ${recName}`,
         });
       }
     }
@@ -20374,7 +21316,7 @@
 
       insertEvent(role.id, {
         event_type: 'recruiter_linked',
-        title:      `Recruiter linked manually — ${data.name || data.email || 'recruiter'}`,
+        title:      `Recruiter linked manually, ${data.name || data.email || 'recruiter'}`,
       });
     }
 
@@ -20660,7 +21602,7 @@
               <div class="rc-item-name">${esc(rec.name)}</div>
               ${_subline ? `<div class="rc-item-company">${esc(_subline)}</div>` : ''}
               <div class="rc-item-meta">${esc(_metaStr)}</div>
-              ${followUp ? `<div style="font-size:11.5px;color:#b5811a;margin-top:3px;">Follow up suggested</div>` : ''}
+              ${followUp ? `<div style="font-size:11.5px;color:var(--warning-bright);margin-top:3px;">Follow up suggested</div>` : ''}
             </div>
           </div>
         </div>`;
@@ -20679,7 +21621,9 @@
     }
 
     function renderRecruiterDetail(rec) {
-      const el = document.getElementById('col-overview-cards');
+      // RW-TWO-COL-LAYOUT: target sidebar slot when present, fall back to legacy container
+      const _sidebarSlot = document.getElementById('rw-sidebar-recruiter');
+      const el = _sidebarSlot || document.getElementById('col-overview-cards');
       if (!el) return;
 
       const totalRoles  = (rec.roles || []).length;
@@ -20710,7 +21654,7 @@
           </div>
         </div>
         <div class="rc-detail-summary">${summaryParts.map(esc).join(' · ')}</div>
-        ${followUp ? `<div style="font-size:12.5px;color:#b5811a;margin-bottom:20px;">Follow up suggested &mdash; ${esc(followUp.reason)}</div>` : ''}`;
+        ${followUp ? `<div style="font-size:12.5px;color:var(--warning-bright);margin-bottom:20px;">Follow up suggested &mdash; ${esc(followUp.reason)}</div>` : ''}`;
 
       // ── 2. Roles discussed ─────────────────────────────────────────────────
       html += `<div class="rc-section">
@@ -20813,20 +21757,20 @@
         timelineEvents.push({
           date:  l.created_at,
           label: 'Contact linked to role',
-          meta:  r ? `${r.role_title || 'Role'}${r.company_name ? ' — ' + r.company_name : ''}` : '',
+          meta:  r ? `${r.role_title || 'Role'}${r.company_name ? ': ' + r.company_name : ''}` : '',
         });
       });
       // Stage-change events from each linked role
       const _stageEventMap = {
         'Applied':          'Application submitted',
-        'Recruiter Screen': 'Recruiter screen reached',
+        'Recruiter Screen': 'Recruiter screen',
         'Hiring Manager':   'Hiring manager interview',
         'Panel':            'Panel interview',
         'Final':            'Final round interview',
-        'Offer':            'Offer stage reached',
+        'Offer':            'Offer received',
       };
       (rec.roles || []).forEach(role => {
-        const nameStr = `${role.role_title || 'Role'}${role.company_name ? ' — ' + role.company_name : ''}`;
+        const nameStr = `${role.role_title || 'Role'}${role.company_name ? ': ' + role.company_name : ''}`;
         (role.role_updates || []).forEach(u => {
           const label = _stageEventMap[u.stage_reached || ''];
           if (label) timelineEvents.push({ date: u.created_at, label, meta: nameStr });
@@ -20899,7 +21843,10 @@
 
       html += `</div>`; // end .rc-detail
 
-      el.innerHTML = html;
+      // RW-TWO-COL-LAYOUT: wrap with rail section header when injecting into sidebar slot
+      el.innerHTML = _sidebarSlot
+        ? `<div class="rw-rail-section"><h3 class="rw-rail-h3">Recruiter details</h3>${html}</div>`
+        : html;
 
       // ── Wire role clicks → open in Applications ──────────────────────────
       el.querySelectorAll('.rc-role-item[data-role-id]').forEach(row => {
@@ -20958,7 +21905,7 @@
       el.innerHTML = `<div class="rc-detail rc-form">
         <div class="rc-form-title">Edit contact</div>
         <div class="rc-form-row">
-          <label class="rc-form-label" for="rc-edit-name">Name <span style="color:#c0392b">*</span></label>
+          <label class="rc-form-label" for="rc-edit-name">Name <span style="color:var(--error)">*</span></label>
           <input class="rc-form-input" id="rc-edit-name" type="text" autocomplete="off" value="${esc(rec.name || '')}">
         </div>
         <div class="rc-form-row">
@@ -21096,7 +22043,7 @@
       el.innerHTML = `<div class="rc-detail rc-form">
         <div class="rc-form-title">Add contact</div>
         <div class="rc-form-row">
-          <label class="rc-form-label" for="rc-new-name">Name <span style="color:#c0392b">*</span></label>
+          <label class="rc-form-label" for="rc-new-name">Name <span style="color:var(--error)">*</span></label>
           <input class="rc-form-input" id="rc-new-name" type="text" placeholder="Sarah Mitchell" autocomplete="off">
         </div>
         <div class="rc-form-row">
@@ -21550,7 +22497,7 @@
         <div class="dl-skip-prompt">
           <div class="dl-skip-prompt-header">
             <span class="dl-skip-prompt-label">Why are you skipping this role?</span>
-            <span class="dl-skip-prompt-hint">Optional — helps you track patterns over time.</span>
+            <span class="dl-skip-prompt-hint">Optional, helps you track patterns over time.</span>
           </div>
           <div class="dl-skip-reasons">${reasonsHtml}</div>
           <textarea class="dl-skip-notes" id="dl-skip-notes"
@@ -22147,12 +23094,12 @@
         return _esc(String(v));
       }
       function _fmtDate(iso) {
-        if (!iso) return '—';
+        if (!iso) return '-';
         try { return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
         catch { return iso; }
       }
       function _fmtTs(iso) {
-        if (!iso) return '—';
+        if (!iso) return '-';
         try { return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
         catch { return iso; }
       }
@@ -22171,6 +23118,7 @@
         { id: 'stats',    label: 'Stats',    desc: 'Usage statistics, AI cost rollups, and efficiency metrics.' },
         { id: 'audit',         label: 'Audit',         desc: 'Read-only view of recent role activity from role_updates.' },
         { id: 'intelligence',  label: 'Intelligence',  desc: 'Outcome patterns and signals from your closed application history.' },
+        { id: 'preferences',   label: 'Preferences',   desc: 'Edit your role preferences, blockers, and CV setup.' },
       ];
 
       let _activeSection = 'overview';
@@ -22255,10 +23203,10 @@
               <td title="${_esc(r.company_name || '')}">${_esc(r.company_name)}</td>
               <td title="${_esc(r.role_title || '')}">${_esc(r.role_title)}</td>
               <td>${_fmtDate(r.created_at)}</td>
-              <td><span class="sg-badge ${_stageClass(r.status)}">${_esc(r.status) || '—'}</span></td>
-              <td>${r.outcome_state ? `<span class="sg-badge">${_esc(r.outcome_state)}</span>` : '<span class="ar-null">—</span>'}</td>
-              <td>${_esc(r.user_decision) || '<span class="ar-null">—</span>'}</td>
-              <td>${r.job_url ? `<a class="ar-link" href="${_esc(r.job_url)}" target="_blank" rel="noopener">link</a>` : '<span class="ar-null">—</span>'}</td>
+              <td><span class="sg-badge ${_stageClass(r.status)}">${_esc(r.status) || '-'}</span></td>
+              <td>${r.outcome_state ? `<span class="sg-badge">${_esc(r.outcome_state)}</span>` : '<span class="ar-null">-</span>'}</td>
+              <td>${_esc(r.user_decision) || '<span class="ar-null">-</span>'}</td>
+              <td>${r.job_url ? `<a class="ar-link" href="${_esc(r.job_url)}" target="_blank" rel="noopener">link</a>` : '<span class="ar-null">-</span>'}</td>
               <td>${r.archived ? '<span class="sg-badge blocked">Yes</span>' : 'No'}</td>
             </tr>
           `).join('');
@@ -22339,7 +23287,7 @@
 
             const panel = contentEl.querySelector('.ar-detail');
             panel.innerHTML = `
-              <div class="ar-detail-title">${_esc(role.company_name)} — ${_esc(role.role_title)}</div>
+              <div class="ar-detail-title">${_esc(role.company_name)}: ${_esc(role.role_title)}</div>
               <div class="ar-actions">
                 ${actionBtn}
                 <span class="ar-status-msg" id="ar-status-msg"></span>
@@ -22556,7 +23504,7 @@
               'Latency and token counts are captured per ai_analysis event and rolled up daily. Coverage gaps exist for events logged before the rollup trigger was deployed.',
               'Recruiter data is user-entered or inferred from context. No recruiter identity verification is performed.',
               'Work model and salary fields are extracted from raw job description text and may contain extraction errors or missing values.',
-              'Role deduplication is basic — roles are matched by company + title for orphan recovery, but no merge UI exists. Duplicate saves create separate records.',
+              'Role deduplication is basic. Roles are matched by company + title for orphan recovery, but no merge UI exists. Duplicate saves create separate records.',
             ],
           },
         ];
@@ -22756,12 +23704,12 @@ If a field cannot be determined from the message, return null for that field.`,
           return s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
         function _fmtDate(iso) {
-          if (!iso) return '—';
+          if (!iso) return '-';
           try { return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
           catch { return iso; }
         }
         function _fmtTs(iso) {
-          if (!iso) return '—';
+          if (!iso) return '-';
           try { return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
           catch { return iso; }
         }
@@ -22805,10 +23753,10 @@ If a field cannot be determined from the message, return null for that field.`,
                   </tr></thead>
                   <tbody>${recentAdded.length ? recentAdded.map(r => `
                     <tr>
-                      <td>${_esc(r.company_name) || '<span class="ar-null">—</span>'}</td>
-                      <td>${_esc(r.role_title)   || '<span class="ar-null">—</span>'}</td>
+                      <td>${_esc(r.company_name) || '<span class="ar-null">-</span>'}</td>
+                      <td>${_esc(r.role_title)   || '<span class="ar-null">-</span>'}</td>
                       <td style="white-space:nowrap">${_fmtDate(r.created_at)}</td>
-                      <td>${_esc(r.source)        || '<span class="ar-null">—</span>'}</td>
+                      <td>${_esc(r.source)        || '<span class="ar-null">-</span>'}</td>
                     </tr>`).join('') : `<tr><td colspan="4" class="ar-empty-cell">No roles have been added yet.</td></tr>`}
                   </tbody>
                 </table>
@@ -22840,9 +23788,9 @@ If a field cannot be determined from the message, return null for that field.`,
                       <th>Company</th><th>Role title</th><th>Last updated</th><th>Stage / note</th>
                     </tr></thead>
                     <tbody>${deduped.length ? deduped.map(u => {
-                      const company = u.roles?.company_name || '—';
-                      const title   = u.roles?.role_title   || '—';
-                      const detail  = u.stage_reached || (u.note ? u.note.slice(0, 40) + (u.note.length > 40 ? '…' : '') : '') || '—';
+                      const company = u.roles?.company_name || '-';
+                      const title   = u.roles?.role_title   || '-';
+                      const detail  = u.stage_reached || (u.note ? u.note.slice(0, 40) + (u.note.length > 40 ? '…' : '') : '') || '-';
                       return `<tr>
                         <td>${_esc(company)}</td>
                         <td>${_esc(title)}</td>
@@ -22898,7 +23846,7 @@ If a field cannot be determined from the message, return null for that field.`,
           const archivedRecent = archivedRoles.slice(0, 5);
           const archivedHtml = `
             <div class="ar-radar-section">
-              <div class="ar-radar-heading">Archived roles snapshot — ${archivedCount} total</div>
+              <div class="ar-radar-heading">Archived roles snapshot (${archivedCount} total)</div>
               ${archivedCount === 0
                 ? `<div class="ar-radar-na">No roles have been archived yet.</div>`
                 : `<div class="ar-table-wrap" style="border-radius:0 0 var(--radius) var(--radius)">
@@ -22908,10 +23856,10 @@ If a field cannot be determined from the message, return null for that field.`,
                       </tr></thead>
                       <tbody>${archivedRecent.map(r => `
                         <tr>
-                          <td>${_esc(r.company_name) || '<span class="ar-null">—</span>'}</td>
-                          <td>${_esc(r.role_title)   || '<span class="ar-null">—</span>'}</td>
+                          <td>${_esc(r.company_name) || '<span class="ar-null">-</span>'}</td>
+                          <td>${_esc(r.role_title)   || '<span class="ar-null">-</span>'}</td>
                           <td style="white-space:nowrap">${_fmtDate(r.created_at)}</td>
-                          <td>${_esc(r.current_stage) || '<span class="ar-null">—</span>'}</td>
+                          <td>${_esc(r.current_stage) || '<span class="ar-null">-</span>'}</td>
                         </tr>`).join('')}
                       </tbody>
                     </table>
@@ -23138,7 +24086,7 @@ If a field cannot be determined from the message, return null for that field.`,
                 <td>${_val(u.roles?.company_name)}</td>
                 <td>${_val(u.roles?.role_title)}</td>
                 <td>
-                  ${u.event_type ? `<strong>${_esc(u.event_type)}</strong>` : '<span class="ar-null">—</span>'}
+                  ${u.event_type ? `<strong>${_esc(u.event_type)}</strong>` : '<span class="ar-null">-</span>'}
                   ${u.note ? `<br><span style="font-size:11px;color:var(--text-muted)">${_esc(u.note)}</span>` : ''}
                 </td>
                 <td>${_val(u.stage_reached)}</td>
@@ -23239,8 +24187,8 @@ If a field cannot be determined from the message, return null for that field.`,
               </div>`;
           }
 
-          const sourcePatternsHtml   = _grpHtml('By source — interview rate', oi.sourceOutcomes);
-          const workModelPatternsHtml = _grpHtml('By work model — interview rate', oi.workModelOutcomes);
+          const sourcePatternsHtml   = _grpHtml('By source: interview rate', oi.sourceOutcomes);
+          const workModelPatternsHtml = _grpHtml('By work model: interview rate', oi.workModelOutcomes);
 
           // ── Suppressed / low-confidence ────────────────────────────────
           const allSuppressed = [
@@ -23249,13 +24197,13 @@ If a field cannot be determined from the message, return null for that field.`,
           ];
           const suppressedHtml = `
             <div class="ar-stats-section">
-              <div class="ar-stats-heading">Too few data points — under ${oi.OI_MIN_BUCKET} closed roles each</div>
+              <div class="ar-stats-heading">Too few data points (under ${oi.OI_MIN_BUCKET} closed roles each)</div>
               ${allSuppressed.length
                 ? allSuppressed.map(s => `
                     <div class="ar-stats-row">
                       <span class="ar-stats-label" style="color:var(--text-light)">${s}</span>
                     </div>`).join('')
-                : `<div class="ar-stats-row"><span class="ar-stats-label ar-stats-na">None — all tracked groups have sufficient data</span></div>`
+                : `<div class="ar-stats-row"><span class="ar-stats-label ar-stats-na">None, all tracked groups have sufficient data</span></div>`
               }
             </div>`;
 
@@ -23281,6 +24229,32 @@ If a field cannot be determined from the message, return null for that field.`,
         }
       }
 
+      // ── Admin > Preferences ───────────────────────────────────────────────
+      function _renderAdminPreferences(contentEl) {
+        const profile = _candidateProfile;
+        const _fmt = (arr) => Array.isArray(arr) && arr.length ? arr.join(', ') : 'Not set';
+        const _cvLabel = () => {
+          if (!profile?.default_cv) return 'Not set';
+          const match = _SETUP_CV_VARIANTS.find(v => v.id === profile.default_cv);
+          return match ? match.label : profile.default_cv;
+        };
+        contentEl.innerHTML = `
+          <div class="admin-section-title">Preferences</div>
+          <div class="admin-section-desc">Your role preferences, blockers, and CV setup. These power personalisation in Applicant Mode.</div>
+          <div style="margin:16px 0 12px;">
+            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:6px;">Role types: <span style="color:var(--text);">${_esc(_fmt(profile?.core_strengths))}</span></div>
+            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:6px;">Environments: <span style="color:var(--text);">${_esc(_fmt(profile?.preferred_environments))}</span></div>
+            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:6px;">Hard no's: <span style="color:var(--text);">${_esc(_fmt(profile?.hard_blockers))}</span></div>
+            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:6px;">Frictions: <span style="color:var(--text);">${_esc(_fmt(profile?.known_frictions))}</span></div>
+            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:6px;">Default CV: <span style="color:var(--text);">${_esc(_cvLabel())}</span></div>
+          </div>
+          <button class="cs-save-btn" id="admin-edit-prefs-btn" style="margin-top:8px;">Edit preferences</button>
+        `;
+        contentEl.querySelector('#admin-edit-prefs-btn')?.addEventListener('click', () => {
+          showCandidateSetupCard(_candidateProfile);
+        });
+      }
+
       // ── Section dispatcher ──────────────────────────────────────────────────
       function _renderSection(sectionId) {
         _activeSection = sectionId;
@@ -23299,6 +24273,7 @@ If a field cannot be determined from the message, return null for that field.`,
         if (sectionId === 'stats')    { _renderAdminStats(contentEl);    return; }
         if (sectionId === 'audit')         { _renderAdminAudit(contentEl);         return; }
         if (sectionId === 'intelligence')  { _renderAdminIntelligence(contentEl);  return; }
+        if (sectionId === 'preferences')   { _renderAdminPreferences(contentEl);   return; }
 
         contentEl.innerHTML = `
           <div class="admin-section-title">${sec.label}</div>
@@ -23355,13 +24330,13 @@ If a field cannot be determined from the message, return null for that field.`,
 
       // ── Helpers ───────────────────────────────────────────────────────────
       const _today      = new Date().toISOString().split('T')[0];
-      const _fmtTime    = ts => ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
-      const _fmtDate    = ts => ts ? new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—';
-      const _fmtCost    = v  => v != null ? `$${Number(v).toFixed(4)}` : '—';
-      const _fmtNum     = v  => v != null ? Number(v).toLocaleString() : '—';
+      const _fmtTime    = ts => ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-';
+      const _fmtDate    = ts => ts ? new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '-';
+      const _fmtCost    = v  => v != null ? `$${Number(v).toFixed(4)}` : '-';
+      const _fmtNum     = v  => v != null ? Number(v).toLocaleString() : '-';
       const _esc        = s  => (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      const _badge      = (val, cls) => `<span class="sg-badge ${_esc(cls || val)}">${_esc(val || '—')}</span>`;
-      const _short      = (s, n=24) => s && s.length > n ? s.slice(0, n) + '…' : (s || '—');
+      const _badge      = (val, cls) => `<span class="sg-badge ${_esc(cls || val)}">${_esc(val || '-')}</span>`;
+      const _short      = (s, n=24) => s && s.length > n ? s.slice(0, n) + '…' : (s || '-');
 
       // ── Fetch all data in parallel ────────────────────────────────────────
       // Date boundaries for efficiency queries (computed once, reused in Tab 4)
@@ -23415,7 +24390,7 @@ If a field cannot be determined from the message, return null for that field.`,
         const totalReq    = R.request_count  ?? 0;
         const totalCost   = R.estimated_cost != null ? Number(R.estimated_cost) : null;
         const blockedToday= R.blocked_count  ?? 0;
-        const avgLatency  = R.avg_latency_ms != null ? `${R.avg_latency_ms} ms` : '—';
+        const avgLatency  = R.avg_latency_ms != null ? `${R.avg_latency_ms} ms` : '-';
 
         // Top users by request count today (from rollups)
         const topByReq  = (todayRollups || [])
@@ -23429,7 +24404,7 @@ If a field cannot be determined from the message, return null for that field.`,
             <div class="sg-card-label">Requests today</div>
           </div>
           <div class="sg-card">
-            <div class="sg-card-num">${totalCost != null ? _fmtCost(totalCost) : '—'}</div>
+            <div class="sg-card-num">${totalCost != null ? _fmtCost(totalCost) : '-'}</div>
             <div class="sg-card-label">Estimated cost today</div>
           </div>
           <div class="sg-card">
@@ -23452,14 +24427,14 @@ If a field cannot be determined from the message, return null for that field.`,
         const topTablesHtml = `
           <div style="display:flex;gap:24px;margin-bottom:0;">
             <div style="flex:1;min-width:0;">
-              <div class="sg-section-label">Top users — requests today</div>
+              <div class="sg-section-label">Top users, requests today</div>
               <table class="sg-table">
                 <thead><tr><th>User / Session</th><th>Requests</th></tr></thead>
                 <tbody>${topUserRows(topByReq, r => _fmtNum(r.request_count))}</tbody>
               </table>
             </div>
             <div style="flex:1;min-width:0;">
-              <div class="sg-section-label">Top users — cost today</div>
+              <div class="sg-section-label">Top users, cost today</div>
               <table class="sg-table">
                 <thead><tr><th>User / Session</th><th>Est. Cost</th></tr></thead>
                 <tbody>${topUserRows(topByCost, r => _fmtCost(r.estimated_cost))}</tbody>
@@ -23472,14 +24447,14 @@ If a field cannot be determined from the message, return null for that field.`,
           : events.map(e => `<tr>
               <td>${_fmtTime(e.created_at)}</td>
               <td title="${_esc(e.user_id || e.session_id)}">${_esc(_short(e.user_id || e.session_id, 16))}</td>
-              <td>${_esc(e.feature_key || '—')}</td>
-              <td>${_esc(e.provider || '—')}${e.model ? ` / <span title="${_esc(e.model)}">${_esc(_short(e.model, 18))}</span>` : ''}</td>
+              <td>${_esc(e.feature_key || '-')}</td>
+              <td>${_esc(e.provider || '-')}${e.model ? ` / <span title="${_esc(e.model)}">${_esc(_short(e.model, 18))}</span>` : ''}</td>
               <td>${_esc(_short(e.route, 20))}</td>
               <td>${_badge(e.status)}</td>
               <td>${_fmtNum(e.input_tokens)}</td>
               <td>${_fmtNum(e.output_tokens)}</td>
               <td>${_fmtCost(e.estimated_cost)}</td>
-              <td>${e.latency_ms != null ? `${e.latency_ms} ms` : '—'}</td>
+              <td>${e.latency_ms != null ? `${e.latency_ms} ms` : '-'}</td>
             </tr>`).join('');
 
         const eventsTableHtml = `
@@ -23554,7 +24529,7 @@ If a field cannot be determined from the message, return null for that field.`,
           <td>${_fmtTime(s.created_at)}</td>
           <td title="${_esc(s.user_id)}">${_esc(_short(s.user_id, 16))}</td>
           <td title="${_esc(s.ip_hash)}">${_esc(_short(s.ip_hash, 14))}</td>
-          <td>${_esc(s.signal_type || '—')}</td>
+          <td>${_esc(s.signal_type || '-')}</td>
           <td>${_badge(s.severity)}</td>
           <td>${_esc(_short(s.route, 18))}</td>
           <td>${s.resolved ? _badge('resolved', 'normal') : _badge('open', 'blocked')}</td>
@@ -23583,7 +24558,7 @@ If a field cannot be determined from the message, return null for that field.`,
           : blocked.map(e => `<tr>
               <td>${_fmtTime(e.created_at)}</td>
               <td title="${_esc(e.user_id || e.session_id)}">${_esc(_short(e.user_id || e.session_id, 16))}</td>
-              <td>${_esc(e.route || '—')}</td>
+              <td>${_esc(e.route || '-')}</td>
               <td>${_badge(e.status)}</td>
               <td title="${_esc(JSON.stringify(e.metadata))}">${_esc(_short(JSON.stringify(e.metadata), 40))}</td>
             </tr>`).join('');
@@ -23608,7 +24583,7 @@ If a field cannot be determined from the message, return null for that field.`,
       (() => {
         document.getElementById('sg-panel-trust').innerHTML = `
           <div class="sg-inactive-notice">
-            <div class="sg-inactive-notice-title">User Trust — not yet active</div>
+            <div class="sg-inactive-notice-title">User Trust: not yet active</div>
             <div class="sg-inactive-notice-body">
               The <code>user_trust_state</code> table is part of the schema but no trust-scoring
               pipeline is wired yet. No trust signals are being captured, and no rows will appear
@@ -23674,9 +24649,9 @@ If a field cannot be determined from the message, return null for that field.`,
 
         // ── Derived ratios ─────────────────────────────────────────────────
         const _div   = (a, b) => b > 0 ? a / b : null;
-        const _fmtR  = v => v != null ? `$${v.toFixed(4)}` : '—';
-        const _fmtC  = v => v != null ? `$${Number(v).toFixed(4)}` : '—';
-        const _fmtN  = v => v != null ? Number(v).toLocaleString() : '—';
+        const _fmtR  = v => v != null ? `$${v.toFixed(4)}` : '-';
+        const _fmtC  = v => v != null ? `$${Number(v).toFixed(4)}` : '-';
+        const _fmtN  = v => v != null ? Number(v).toLocaleString() : '-';
 
         const cPerDec7d   = _div(aiCost7d,  genuine7d.length);
         const cPerDec30d  = _div(aiCost30d, genuine30d.length);
@@ -23890,7 +24865,7 @@ If a field cannot be determined from the message, return null for that field.`,
         }
         const [[_topStage, _topCount]] = Object.entries(_stageCounts).sort((a, b) => b[1] - a[1]);
         if (_topCount >= 3) {
-          const _note = _topStage === 'Applied' ? ' — no reply came back' : '';
+          const _note = _topStage === 'Applied' ? ', no reply came back' : '';
           _insights.push(`Closed roles have tended to end at ${_topStage}${_note}.`);
         }
       }
@@ -24004,7 +24979,7 @@ If a field cannot be determined from the message, return null for that field.`,
       // ── Pipeline chips (navigation shortcuts) ───────────────────────────────
       const _chips = [
         { n: _active.length,   label: 'Active',         filter: 'active'          },
-        { n: _nudgeCount,      label: 'Need attention', filter: 'needs_attention' },
+        { n: _nudgeCount,      label: 'Needs attention', filter: 'needs_attention' },
         { n: _inProg.length,   label: 'In progress',    filter: 'in_progress'     },
       ];
       const _pipelineHtml = `
@@ -24021,7 +24996,7 @@ If a field cannot be determined from the message, return null for that field.`,
       // Driven by the nudge count — same source as the section above.
       let _nextText = null;
       if (_active.length === 0) {
-        _nextText = 'No active roles yet — add one to get started.';
+        _nextText = 'No active roles yet. Add one to get started.';
       } else if (_nudgeCount === 1) {
         _nextText = '1 role needs your attention.';
       } else if (_nudgeCount > 1) {
@@ -24256,7 +25231,7 @@ If a field cannot be determined from the message, return null for that field.`,
           if (topPct > botPct + 15)
             _oiInsights.push(`<strong>${esc(top.src)}</strong> applications reach interview more often (${topPct}% vs ${botPct}% for ${esc(bot.src)}).`);
           else if (topPct >= 25)
-            _oiInsights.push(`Your strongest source is <strong>${esc(top.src)}</strong> — ${topPct}% interview rate across ${top.total} closed roles.`);
+            _oiInsights.push(`Your strongest source is <strong>${esc(top.src)}</strong>: ${topPct}% interview rate across ${top.total} closed roles.`);
         } else if (_srcArr.length === 1) {
           const s = _srcArr[0], pct = Math.round(s.iRate * 100);
           if (pct >= 25)
@@ -24279,7 +25254,7 @@ If a field cannot be determined from the message, return null for that field.`,
         const _offerN = oiData.outcomeCounts['offer_accepted'] || 0;
         if (_offerN > 0) {
           const _offerPct = Math.round(_offerN / oiData.datasetSize * 100);
-          _oiInsights.push(`${_offerN} offer${_offerN !== 1 ? 's' : ''} from ${oiData.datasetSize} closed applications — ${_offerPct}% conversion.`);
+          _oiInsights.push(`${_offerN} offer${_offerN !== 1 ? 's' : ''} from ${oiData.datasetSize} closed applications. ${_offerPct}% conversion.`);
         }
 
         if (!_oiInsights.length)
@@ -24459,7 +25434,7 @@ If a field cannot be determined from the message, return null for that field.`,
           : (SNAP_EVENT_LABELS[snap.snapshot_type] || snap.snapshot_title || 'Event');
         const roleName  = role?.role_title  || sd.role_title  || 'Role';
         const company   = role?.company_name || sd.company_name || '';
-        const roleLabel = company ? `${roleName} \u2014 ${company}` : roleName;
+        const roleLabel = company ? `${roleName} : ${company}` : roleName;
         return `<div class="review-timeline-item">
           <div class="review-timeline-event">${esc(eventTitle)}</div>
           <div class="review-timeline-meta">${esc(roleLabel)}</div>
@@ -24527,7 +25502,7 @@ If a field cannot be determined from the message, return null for that field.`,
                 const sd       = s.snapshot_data || {};
                 const roleName = role?.role_title  || sd.role_title  || 'Role';
                 const company  = role?.company_name || sd.company_name || '';
-                const roleLabel = company ? `${roleName} \u2014 ${company}` : roleName;
+                const roleLabel = company ? `${roleName} : ${company}` : roleName;
                 return `<div class="review-timeline-item">
                   <div class="review-timeline-event">${esc(label)}</div>
                   <div class="review-timeline-meta">${esc(roleLabel)}</div>
@@ -24540,7 +25515,7 @@ If a field cannot be determined from the message, return null for that field.`,
                 const sd       = ds.snapshot_data || {};
                 const roleName = role?.role_title  || sd.role_title  || 'Role';
                 const company  = role?.company_name || sd.company_name || '';
-                const roleLabel = company ? `${roleName} \u2014 ${company}` : roleName;
+                const roleLabel = company ? `${roleName} : ${company}` : roleName;
                 return `<div class="review-timeline-group-role">${esc(roleLabel)}</div>`;
               }).join('');
 
@@ -24991,8 +25966,8 @@ If a field cannot be determined from the message, return null for that field.`,
             if (_detectedContractLen) _detected.push(`length (${_detectedContractLen})`);
             if (_detectedStart)       _detected.push(`start (${_detectedStart})`);
             _addAutofillHint.textContent = _detected.length
-              ? `Detected from JD: ${_detected.join(', ')} — you can edit the fields above.`
-              : 'Auto-filled from JD — you can edit.';
+              ? `Detected from JD: ${_detected.join(', ')}. You can edit the fields above.`
+              : 'Auto-filled from JD. You can edit.';
             _addAutofillHint.style.display = 'block';
           } else {
             _addAutofillHint.style.display = 'none';
@@ -25201,6 +26176,28 @@ If a field cannot be determined from the message, return null for that field.`,
         // appear. Without the re-render the first inbox load always shows no
         // indicators (cache is still null when renderInbox first runs above).
         _warmBoundaryCache().then(() => { renderInbox(allRoles); }).catch(() => {});
+
+        // ── Load candidate profile + learning (non-blocking) ──
+        // Populates the live candidate context for the AI pipeline.
+        // Must run after _profileId is set by loadOrCreateProfile above.
+        if (_profileId) {
+          Promise.all([
+            _loadOrCreateCandidateProfile(),
+            _loadOrCreateCandidateLearning(),
+          ]).then(([profile, learning]) => {
+            _candidateProfile = profile;
+            _candidateLearning = learning;
+            _buildAndSetLiveCandidateContext();
+            console.log('[refresh] candidate context loaded from DB', { profile: !!profile, learning: !!learning });
+
+            // Show onboarding setup card if preferences not yet confirmed
+            if (!profile || !profile.preferences_confirmed) {
+              showCandidateSetupCard(profile || null);
+            }
+          }).catch(e => {
+            console.warn('[refresh] candidate context load failed, using seed', e);
+          });
+        }
         // Populate the center panel based on current nav
         if (currentNav === 'overview') {
           renderOverviewView();
@@ -25212,7 +26209,7 @@ If a field cannot be determined from the message, return null for that field.`,
         }
       } catch (e) {
         document.getElementById('role-inbox').innerHTML =
-          `<div class="state-msg" style="color:#B91C1C;">${esc(e.message)}</div>`;
+          `<div class="state-msg" style="color:var(--error);">${esc(e.message)}</div>`;
       }
     }
 
@@ -25333,10 +26330,10 @@ If a field cannot be determined from the message, return null for that field.`,
         ? metaParts.map(p => `<span>${_esc(p)}</span>`).join('<span class="public-page-meta-sep">&middot;</span>')
         : '';
 
-      // ── Section: Role Reality ─────────────────────────────────────────────
+      // ── Section: What this role actually is ──────────────────────────────
       const _roleSummary = (ao.role_summary || '').trim();
       const roleRealityHtml = _roleSummary
-        ? _secAlways('Role Reality', `<div class="doc-prose">${_esc(_roleSummary)}</div>`)
+        ? _secAlways('What this role actually is', `<div class="doc-prose">${_esc(_roleSummary)}</div>`)
         : '';
 
       // ── Section: Fit Signals ──────────────────────────────────────────────
@@ -25359,9 +26356,9 @@ If a field cannot be determined from the message, return null for that field.`,
           return `<li>${_esc(text)}</li>`;
         }).join('')}</ul>`;
       };
-      const fitHtml = _secAlways('Fit Signals', _markerBulletsPublic(fitItems.slice(0, 3)));
+      const fitHtml = _secAlways('Fit reality', _markerBulletsPublic(fitItems.slice(0, 3)));
 
-      // ── Section: Risks & Unknowns ─────────────────────────────────────────
+      // ── Section: Risks & unknowns ─────────────────────────────────────────
       const rawRisks = ao.risks_and_unknowns;
       const risksContent = (() => {
         if (Array.isArray(rawRisks) && rawRisks.length) {
@@ -25369,12 +26366,12 @@ If a field cannot be determined from the message, return null for that field.`,
         }
         return '<ul class="doc-list"><li style="color:var(--text-light);">Not stated</li></ul>';
       })();
-      const risksHtml = _secAlways('Risks &amp; Unknowns', risksContent);
+      const risksHtml = _secAlways('Risks &amp; unknowns', risksContent);
 
-      // ── Section: Questions Worth Asking ───────────────────────────────────
-      const questionsHtml = _secAlways('Questions Worth Asking', _bullets(ao.questions_worth_asking));
+      // ── Section: Questions worth asking ───────────────────────────────────
+      const questionsHtml = _secAlways('Questions worth asking', _bullets(ao.questions_worth_asking));
 
-      // ── Section: Practical Details ────────────────────────────────────────
+      // ── Section: Practical details ────────────────────────────────────────
       const pd = ao.practical_details || {};
       const salaryAnnual  = pd.salary_annual  || 'Not stated';
       const salaryMonthly = pd.salary_monthly || null;
@@ -25394,7 +26391,7 @@ If a field cannot be determined from the message, return null for that field.`,
           <td style="padding:6px 0;font-size:12.5px;color:var(--text-muted);width:38%;vertical-align:top;">${_esc(k)}</td>
           <td style="padding:6px 0;font-size:13px;color:${v === 'Not stated' ? 'var(--text-light)' : 'var(--text)'};">${_esc(v)}</td>
         </tr>`).join('')}</table>`;
-      const pdHtml = _secAlways('Practical Details', pdTable);
+      const pdHtml = _secAlways('Practical details', pdTable);
 
       // ── Job URL link (conditional) ────────────────────────────────────────
       const jobUrlHtml = c.job_url

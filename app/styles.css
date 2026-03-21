@@ -26,7 +26,7 @@
     /* ─── Five-panel app shell: nav | filter | list | overview | chat ── */
     .app {
       display: grid;
-      grid-template-columns: 254px 0px 310px 1fr 360px; /* RW-LAYOUT-WIDTH-01: nav +50, list +50 */
+      grid-template-columns: 254px 0px 310px 1fr; /* RW-LAYOUT-WIDTH-01: chat col removed — content fills full remaining width */
       height: 100vh;
       overflow: hidden;
       transition: grid-template-columns 0.18s ease;
@@ -163,7 +163,7 @@
     /* text-align, cursor, transition. CSS handles: font, size, weight, color, hover, active. */
     .nav-item {
       font-family: var(--font);
-      font-size: 15px;
+      font-size: 14px;  /* normalized — consistent 14px across left nav (RW-LAYOUT-POLISH) */
       font-weight: 500;
       color: var(--text-muted);
       line-height: var(--leading-snug);
@@ -284,8 +284,8 @@
       margin-right: 6px;
       vertical-align: middle;
     }
-    .radar-signal-tag.skip  { border-color: #FCA5A5; color: #B91C1C; background: #FEF2F2; }
-    .radar-signal-tag.plus  { border-color: var(--success-border); color: var(--success); background: #ECFDF5; }
+    .radar-signal-tag.skip  { border-color: var(--error-border); color: var(--error); background: var(--error-bg); }
+    .radar-signal-tag.plus  { border-color: var(--success-border); color: var(--success); background: var(--success-bg); }
     .radar-signal-tag.info  { border-color: #BAE6FD; color: #0369A1; background: #F0F9FF; }
     .radar-empty {
       padding: 60px 28px;
@@ -736,7 +736,7 @@
       padding: 3px 0;
     }
     .review-pattern-list li::before {
-      content: '—';
+      content: '-';
       color: var(--text-light);
       margin-right: 8px;
     }
@@ -796,7 +796,7 @@
       line-height: 1;
     }
     .sg-card-num.warn  { color: #C05621; }
-    .sg-card-num.alert { color: #C0392B; }
+    .sg-card-num.alert { color: var(--error); }
     .sg-card-label {
       font-size: 11px;
       color: var(--text-muted);
@@ -851,17 +851,17 @@
       color: var(--text-muted);
     }
     .sg-badge.success  { background: var(--success-bg); color: var(--success); }
-    .sg-badge.error    { background: #FEE2E2; color: var(--error); }
-    .sg-badge.blocked  { background: #FEF3C7; color: #92400E; }
-    .sg-badge.timeout  { background: #EDE9FE; color: #4C1D95; }
+    .sg-badge.error    { background: var(--error-bg); color: var(--error); }
+    .sg-badge.blocked  { background: var(--warning-bg-alt); color: var(--warning); }
+    .sg-badge.timeout  { background: var(--brand-50); color: #4C1D95; }
     .sg-badge.low      { background: var(--border-light); color: var(--text-muted); }
-    .sg-badge.medium   { background: #FEF3C7; color: #92400E; }
-    .sg-badge.high     { background: #FEE2E2; color: var(--error); }
-    .sg-badge.critical { background: #C0392B; color: #fff; }
+    .sg-badge.medium   { background: var(--warning-bg-alt); color: var(--warning); }
+    .sg-badge.high     { background: var(--error-bg); color: var(--error); }
+    .sg-badge.critical { background: var(--error-hover); color: #fff; }
     .sg-badge.new        { background: var(--border-light); color: var(--text-muted); }
     .sg-badge.normal     { background: var(--success-bg); color: var(--success); }
     .sg-badge.trusted    { background: #DBEAFE; color: #1E40AF; }
-    .sg-badge.restricted { background: #FEE2E2; color: var(--error); }
+    .sg-badge.restricted { background: var(--error-bg); color: var(--error); }
     .sg-empty {
       font-size: 12px;
       color: var(--text-light);
@@ -1146,7 +1146,7 @@
     }
     .ar-action-btn:hover:not(:disabled) { background: var(--border-light); color: var(--text); }
     .ar-action-btn:disabled { opacity: 1; background: var(--surface); color: var(--text-light); border-color: var(--border-light); cursor: not-allowed; }
-    .ar-btn-archive:hover:not(:disabled) { background: #FEF3C7; color: #92400E; border-color: #D97706; }
+    .ar-btn-archive:hover:not(:disabled) { background: var(--warning-bg-alt); color: var(--warning); border-color: var(--warning-bright); }
     .ar-btn-restore:hover:not(:disabled) { background: var(--success-bg); color: var(--success); border-color: #10B981; }
     .ar-status-msg {
       font-size: var(--text-sm);
@@ -1232,12 +1232,12 @@
       font-weight: 600;
       padding: 5px 10px;
       border-radius: var(--radius);
-      border: 1px solid #DC2626;
-      background: #DC2626;
+      border: 1px solid var(--error-hover);
+      background: var(--error-hover);
       color: #fff;
       cursor: pointer;
     }
-    .ar-btn-confirm-delete:hover:not(:disabled) { background: #B91C1C; }
+    .ar-btn-confirm-delete:hover:not(:disabled) { background: var(--error); }
     .ar-btn-cancel-delete {
       font-size: var(--text-sm);
       padding: 5px 10px;
@@ -1701,16 +1701,16 @@
       transition: background 0.12s, border-color 0.12s;
     }
     .dl-blocker-item--hard {
-      background: #FEF2F2;
-      border-color: #FECACA;
+      background: var(--error-bg);
+      border-color: var(--error-border);
     }
     .dl-blocker-item--soft {
-      background: #FFFBEB;
-      border-color: #FDE68A;
+      background: var(--warning-bg);
+      border-color: var(--warning-border);
     }
     .dl-blocker-item--clear {
-      background: #F0FDF4;
-      border-color: #BBF7D0;
+      background: var(--success-bg);
+      border-color: var(--success-border);
       opacity: 0.75;
     }
     .dl-blocker-top {
@@ -1760,8 +1760,8 @@
       color: #fff;
     }
     .dl-blocker-item--hard .dl-blocker-btn[data-state="hard"].dl-blocker-btn--active {
-      background: #DC2626;
-      border-color: #DC2626;
+      background: var(--error-hover);
+      border-color: var(--error-hover);
     }
     .dl-blocker-item--soft .dl-blocker-btn[data-state="soft"].dl-blocker-btn--active {
       background: #D97706;
@@ -1837,21 +1837,21 @@
     }
     /* Suggested reasons (match detected blockers) get a subtle emphasis */
     .dl-skip-reason-btn--suggested {
-      border-color: #FCA5A5;
-      background: #FEF2F2;
-      color: #B91C1C;
+      border-color: var(--error-border);
+      background: var(--error-bg);
+      color: var(--error);
     }
     .dl-skip-reason-btn--suggested:hover {
-      background: #FEE2E2;
+      background: color-mix(in srgb, var(--error-bg) 80%, var(--error-border));
     }
     .dl-skip-reason-btn--selected {
-      background: #374151;
+      background: var(--gray-700);
       color: #fff;
-      border-color: #374151;
+      border-color: var(--gray-700);
     }
     .dl-skip-reason-btn--suggested.dl-skip-reason-btn--selected {
-      background: #DC2626;
-      border-color: #DC2626;
+      background: var(--error-hover);
+      border-color: var(--error-hover);
       color: #fff;
     }
     .dl-skip-notes {
@@ -1939,9 +1939,9 @@
       letter-spacing: 0.04em;
     }
 
-    .dl-dh-badge--skip  { background: #FEF2F2; color: #B91C1C; }
+    .dl-dh-badge--skip  { background: var(--error-bg); color: var(--error); }
     .dl-dh-badge--save  { background: #EFF6FF; color: #1D4ED8; }
-    .dl-dh-badge--apply { background: #F0FDF4; color: #15803D; }
+    .dl-dh-badge--apply { background: var(--success-bg); color: var(--success); }
 
     .dl-dh-entry-date {
       font-size: 11px;
@@ -1960,8 +1960,8 @@
       border-radius: 10px;
     }
 
-    .dl-dh-blocker-tag--hard { background: #FEF2F2; color: #B91C1C; }
-    .dl-dh-blocker-tag--soft { background: #FFFBEB; color: #92400E; }
+    .dl-dh-blocker-tag--hard { background: var(--error-bg); color: var(--error); }
+    .dl-dh-blocker-tag--soft { background: var(--warning-bg); color: var(--warning); }
 
     .dl-dh-entry-reason {
       font-size: 12px;
@@ -1977,7 +1977,7 @@
     /* ── Decision Layer V1: Inbox boundary match indicator ────────────────── */
     .inbox-boundary-match {
       font-size: 11px;
-      color: #B45309;
+      color: var(--warning-bright);
       margin-top: 3px;
     }
 
@@ -2258,8 +2258,8 @@
       margin-left: 12px;
     }
     .rc-roles-empty {
-      font-size: 13px;
-      color: var(--text-light);
+      font-size: 12px;
+      color: var(--text-muted);
     }
 
     /* Contact rows */
@@ -2268,10 +2268,8 @@
       justify-content: space-between;
       align-items: baseline;
       padding: 7px 0;
-      border-bottom: 1px solid var(--border-light);
       font-size: 13px;
     }
-    .rc-contact-row:last-child { border-bottom: none; }
     .rc-contact-label { color: var(--text-muted); }
     .rc-contact-val { color: var(--text); word-break: break-all; }
     .rc-contact-val a { color: var(--accent); text-decoration: none; }
@@ -2439,7 +2437,7 @@
     .rc-form-cancel:hover { border-color: var(--text-muted); color: var(--text); }
     .rc-form-error {
       font-size: 12px;
-      color: #c0392b;
+      color: var(--error);
       margin-top: 10px;
     }
 
@@ -2461,7 +2459,7 @@
     /* Colour palette — cycled by name hash */
     .rc-av-0 { background: #E0E7FF; color: #3730A3; }
     .rc-av-1 { background: var(--success-bg); color: var(--success); }
-    .rc-av-2 { background: #FEF3C7; color: #92400E; }
+    .rc-av-2 { background: var(--warning-bg-alt); color: var(--warning); }
     .rc-av-3 { background: #FCE7F3; color: #9D174D; }
     .rc-av-4 { background: #E0F2FE; color: #0369A1; }
     .rc-av-5 { background: #F3E8FF; color: #6B21A8; }
@@ -3059,19 +3057,25 @@
       margin-bottom: 6px;
     }
     .rw-fa-bullets {
+      list-style: disc;
+      padding-left: 16px;
       margin: 0;
-      padding-left: 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
     }
     .rw-fa-bullets li {
       font-size: 13px;
       color: var(--text);
       line-height: 1.5;
+      margin-bottom: 8px;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: unset;
+      display: list-item;
+    }
+    .rw-fa-bullets li:last-child {
+      margin-bottom: 0;
     }
     .rw-fa-bullets--warn li {
-      color: var(--text-muted);
+      color: var(--text-secondary);
     }
     .rw-fa-cv {
       margin-top: 12px;
@@ -3160,6 +3164,160 @@
       border-radius: 0;
       margin: 0;
       padding: 12px 18px;
+    }
+
+    /* ─── Document View Layout (RW-DOCVIEW-REFACTOR) ────────────────
+       Replaces card-based Decision Summary with a calm, text-first
+       document layout. No borders, no backgrounds, no dividers.
+       Vertical rhythm only. Max width ~720px, left-aligned.         */
+
+    .rw-doc-view {
+      max-width: 720px;
+      margin-bottom: 32px;
+    }
+
+    /* Sections: 48px gap between major sections */
+    .rw-doc-section {
+      margin-bottom: 48px;
+    }
+
+    .rw-doc-section:last-child {
+      margin-bottom: 0;
+    }
+
+    /* H2 headings: slightly larger than existing, strong contrast */
+    .rw-doc-h2 {
+      font-family: var(--font-head, 'Inter Tight', 'Inter', sans-serif);
+      font-size: 15px;   /* +2px over base */
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin: 0 0 12px 0; /* RW-SPACING: normal heading gap */
+      line-height: var(--leading-tight, 1.3);
+    }
+
+    /* Body prose */
+    .rw-doc-prose {
+      font-size: 14px;
+      color: var(--text);
+      line-height: var(--leading-relaxed, 1.6);
+      margin: 0;
+    }
+
+    .rw-doc-prose--muted {
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
+    /* Bullet lists */
+    .rw-doc-bullets {
+      list-style: disc;
+      padding-left: 16px;
+      margin: 0;
+    }
+
+    .rw-doc-bullets li {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.5;
+      margin-bottom: 8px;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: unset;
+      display: list-item;
+    }
+
+    .rw-doc-bullets li:last-child {
+      margin-bottom: 0;
+    }
+
+    .rw-doc-bullets--muted li {
+      color: var(--text-secondary);
+    }
+
+    /* ── Bullet wrap safety — prevent any parent from truncating list text ── */
+    .rw-doc-bullets,
+    .rw-doc-bullets * {
+      white-space: normal !important;
+      overflow: visible !important;
+      text-overflow: unset !important;
+    }
+
+    /* Practical details: definition list */
+    .rw-doc-dl {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 6px 16px;
+      margin: 0;
+    }
+
+    .rw-doc-dl dt {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding-top: 2px;
+    }
+
+    .rw-doc-dl dd {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* Recommended CV value */
+    .rw-doc-cv-value {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    /* Hide the injected CV label — heading provided by static H2 */
+    .rw-doc-view .rw-fa-cv-label {
+      display: none;
+    }
+
+    .rw-doc-view .rw-fa-cv-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .rw-doc-view .rw-fa-cv-empty {
+      font-size: 14px;
+      color: var(--text-light);
+      font-style: italic;
+    }
+
+    /* Your decision — action buttons */
+    .rw-doc-action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* .rw-doc-action-btn removed — use .rw-btn .rw-btn-default instead */
+
+    /* Blockers — plain list inside document view, no card wrapper */
+    .rw-doc-blockers-list {
+      /* No additional styles — inherits rw-doc-view prose rhythm */
+    }
+
+    .dl-blocker-evidence-inline {
+      font-size: 13px;
+      color: var(--text-light);
+    }
+
+    .dl-boundary-indicator {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-light);
+      margin-left: 8px;
     }
 
     /* ─── Role Intelligence Summary ─────────────────────────────── */
@@ -3384,19 +3542,7 @@
     }
     .doc-header-left { flex: 1; min-width: 0; }
     .doc-header-right { flex-shrink: 0; padding-top: 4px; }
-    .btn-share-analysis {
-      font-size: 12px;
-      font-weight: 500;
-      padding: 5px 12px;
-      border-radius: 5px;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--text-muted);
-      cursor: pointer;
-      font-family: var(--font);
-      white-space: nowrap;
-    }
-    .btn-share-analysis:hover { border-color: var(--text-light); color: var(--text); }
+    /* .btn-share-analysis → now uses .rw-btn .rw-btn-sm (no standalone styles needed) */
 
     .share-link-box {
       display: flex;
@@ -3416,21 +3562,9 @@
       white-space: nowrap;
       font-family: var(--font-mono);
     }
-    .btn-copy-link {
-      font-size: 12px;
-      font-weight: 500;
-      padding: 4px 10px;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--text-muted);
-      cursor: pointer;
-      font-family: var(--font);
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-    .btn-copy-link:hover { color: var(--text); }
-    .btn-copy-link.copied { color: var(--success); border-color: #86EFAC; background: #ECFDF5; }
+    /* .btn-copy-link → now uses .rw-btn .rw-btn-sm; only layout + state overrides remain */
+    .btn-copy-link { flex-shrink: 0; }
+    .btn-copy-link.copied { color: var(--success); border-color: var(--success-border); background: var(--success-bg); }
     .share-modal-note { font-size: 12px; color: var(--text-light); line-height: 1.5; }
     .share-modal-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
 
@@ -3444,14 +3578,14 @@
       font-size: 10.5px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.8px;
+      letter-spacing: 0.08em;
       color: var(--text-muted);
       margin-bottom: 6px;
     }
     .public-page-title {
       font-size: 24px;
       font-weight: 700;
-      letter-spacing: -0.4px;
+      letter-spacing: -0.02em;
       color: var(--text);
       margin-bottom: 6px;
     }
@@ -3518,7 +3652,7 @@
     .hn-label {
       font-size: 10px;
       font-weight: 700;
-      color: #C53030;
+      color: var(--error);
       text-transform: uppercase;
       letter-spacing: 0.10em;
       margin-bottom: 5px;
@@ -3618,15 +3752,15 @@
       border-radius: 4px;
       font-size: 10px;
       font-weight: 700;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
       white-space: nowrap;
       margin-bottom: 5px;
     }
-    .inbox-decision-pill.pill-green { background: #ECFDF5; color: var(--success); }
-    .inbox-decision-pill.pill-amber { background: #FFFBEB; color: #92400E; }
-    .inbox-decision-pill.pill-red   { background: #FEF2F2; color: var(--error); }
-    .inbox-decision-pill.pill-grey  { background: #F3F4F6; color: #6B7280; }
+    .inbox-decision-pill.pill-green { background: var(--success-bg); color: var(--success); }
+    .inbox-decision-pill.pill-amber { background: var(--warning-bg); color: var(--warning); }
+    .inbox-decision-pill.pill-red   { background: var(--error-bg); color: var(--error); }
+    .inbox-decision-pill.pill-grey  { background: var(--gray-100); color: var(--gray-500); }
 
     /* ─── Inbox state explanation line (between meta and signals) ─ */
     .inbox-state-line {
@@ -3646,14 +3780,14 @@
       padding: 1px 5px;
       border-radius: var(--radius-sm);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.06em;
       vertical-align: middle;
       flex-shrink: 0;
     }
-    .ars-active  { background: #DCFCE7; color: #166534; }
-    .ars-waiting { background: #FEF9C3; color: #713F12; }
-    .ars-stale   { background: #FEF3C7; color: #92400E; }
-    .ars-ghosted { background: #FEE2E2; color: var(--error); }
+    .ars-active  { background: var(--success-bg); color: var(--success); }
+    .ars-waiting { background: var(--warning-bg); color: var(--warning); }
+    .ars-stale   { background: var(--warning-bg-alt); color: var(--warning); }
+    .ars-ghosted { background: var(--error-bg); color: var(--error); }
 
     /* ─── Mini reason line — up to 2 decision signals ──────────── */
     .inbox-mini-reasons {
@@ -3871,7 +4005,7 @@
 
     /* ── Intake mode: collapse col-chat column, expand overview ── */
     .app.intake-mode {
-      grid-template-columns: 254px 0px 310px 1fr 0px; /* RW-LAYOUT-WIDTH-01: nav +50, list +50 */
+      grid-template-columns: 254px 0px 310px 1fr; /* RW-LAYOUT-WIDTH-01: chat col removed */
     }
     .app.intake-mode .col-chat {
       display: none;
@@ -4041,11 +4175,15 @@
     #col-overview-cards {
       flex: 1;
       min-width: 0;
+      min-height: 0;       /* allow flex child to shrink below content size */
+      overflow: hidden;    /* prevent outer scroll — children scroll independently */
     }
 
     /* Padding wrapper for workspace-mode analysis card grid (no col-center-inner) */
     .rw-overview-wrap {
-      padding: 32px 24px 48px;
+      padding: 0 0 0 24px;  /* left only — right padding moved inside sidebar panel */
+      height: 100%;      /* pass height through to two-col layout */
+      box-sizing: border-box;
     }
 
     .col-center-inner {
@@ -4070,12 +4208,12 @@
       border-radius: 4px;
       font-size: 11.5px;
       font-weight: 600;
-      letter-spacing: 0.2px;
-      margin-bottom: 20px;
+      letter-spacing: 0.02em; /* RW-SPACING: em-based, replaces 0.2px */
+      margin-bottom: 24px; /* RW-SPACING: sub-group gap */
     }
-    .doc-decision.apply  { background: #ECFDF5; color: var(--success); }
-    .doc-decision.maybe  { background: #FEF3C7; color: #92400E; }
-    .doc-decision.skip   { background: #FEF2F2; color: var(--error); }
+    .doc-decision.apply  { background: var(--success-bg); color: var(--success); }
+    .doc-decision.maybe  { background: var(--warning-bg-alt); color: var(--warning); }
+    .doc-decision.skip   { background: var(--error-bg); color: var(--error); }
     .doc-decision.none   { background: var(--border-light); color: var(--text-muted); }
 
     /* Doc header */
@@ -4083,9 +4221,9 @@
       font-size: var(--text-xs);
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.8px;
+      letter-spacing: 0.06em; /* RW-SPACING: em-based, replaces 0.8px */
       color: var(--text-muted);
-      margin-bottom: 6px;
+      margin-bottom: 4px; /* RW-SPACING: micro gap (label → title) */
     }
 
     .doc-role-title {
@@ -4093,9 +4231,9 @@
       font-weight: 700;
       font-family: var(--font-head);
       line-height: 1.1;
-      letter-spacing: -0.4px;
+      letter-spacing: -0.02em; /* RW-SPACING: em-based, replaces -0.4px */
       color: var(--text);
-      margin-bottom: 10px;
+      margin-bottom: 8px; /* RW-SPACING: tight gap (title → meta) */
       line-height: 1.25;
     }
 
@@ -4228,22 +4366,8 @@
     }
 
     /* ─── Edit details button ────────────────────────────────── */
-    .btn-edit-details {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      background: none;
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: 5px 11px;
-      font-family: var(--font);
-      font-size: 12px;
-      color: var(--text-muted);
-      cursor: pointer;
-      transition: border-color 0.15s, color 0.15s;
-      margin-bottom: 6px;
-    }
-    .btn-edit-details:hover { border-color: var(--text-light); color: var(--text); }
+    /* .btn-edit-details → now uses .rw-btn .rw-btn-sm; only layout override remains */
+    #btn-edit-role-details { margin-bottom: 6px; }
 
     /* ─── Version label (above profile row) ─────────────────── */
     .col-left-version {
@@ -4418,16 +4542,16 @@
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--text-light);
-      margin-bottom: 16px;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 12px; /* RW-SPACING: normal heading gap */
       text-wrap: balance;    /* prevent orphaned words in card titles */
     }
     /* Remove interior dividers from the main analysis panel — only Role Record border remains */
     #match-output-panel .doc-section-heading {
       border-bottom: none;
-      padding-bottom: 4px;
-      margin-bottom: 12px;
+      padding-bottom: 0;
+      margin-bottom: 12px; /* RW-SPACING: normal heading gap */
     }
 
     .doc-prose {
@@ -4437,31 +4561,37 @@
     }
 
     .doc-list {
-      list-style: none;
-      padding: 0;
+      list-style: disc;
+      padding-left: 16px;
       margin: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 7px;
     }
 
     .doc-list li {
-      font-size: 13.5px;
-      line-height: 1.55;
+      font-size: 14px;
+      line-height: 1.5;
       color: var(--text);
-      padding-left: 16px;
-      position: relative;
+      margin-bottom: 8px;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: unset;
+      display: list-item;
+    }
+
+    .doc-list li:last-child {
+      margin-bottom: 0;
     }
 
     .doc-list li::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 8px;
-      width: 4px;
-      height: 4px;
-      background: var(--text-light);
-      border-radius: 50%;
+      /* native disc bullet used instead of pseudo-element */
+      display: none;
+    }
+
+    /* Bullet wrap safety — doc-list */
+    .doc-list,
+    .doc-list * {
+      white-space: normal !important;
+      overflow: visible !important;
+      text-overflow: unset !important;
     }
 
     /* ─── Signal tags (analysis bullet labels) ─────────────── */
@@ -4503,8 +4633,8 @@
     }
     /* Only Hard No uses alert styling (tinted background + coloured border) */
     .decision-summary.ds-red {
-      background: #FEF2F2;
-      border-color: #FCA5A5;
+      background: var(--error-bg);
+      border-color: var(--error-border);
     }
     /* Neutral / positive outcomes: no background tint, no border colour.
        Only the outcome text value itself carries the colour. */
@@ -4512,17 +4642,16 @@
     .decision-summary.ds-amber { background: var(--surface); border-color: var(--border-light); }
     .decision-summary-header {
       font-size: 10px;
-      font-weight: 700;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 1.1px;
-      color: var(--text-light);
-      margin-bottom: 16px;
-      opacity: 0.8;
+      letter-spacing: 0.1em; /* RW-SPACING: em-based, replaces 1.1px */
+      color: var(--text-muted);
+      margin-bottom: 12px; /* RW-SPACING: normal heading gap */
     }
     .decision-summary-rows {
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px; /* RW-SPACING: standard row rhythm */
     }
     .decision-summary-row {
       display: flex;
@@ -4544,7 +4673,7 @@
     }
     /* Colour only the outcome value — not the whole card */
     .decision-summary.ds-green .decision-summary-row:first-child .decision-summary-val { color: var(--success); }
-    .decision-summary.ds-amber .decision-summary-row:first-child .decision-summary-val { color: #92400E; }
+    .decision-summary.ds-amber .decision-summary-row:first-child .decision-summary-val { color: var(--warning); }
     .decision-summary.ds-red   .decision-summary-row:first-child .decision-summary-val { color: var(--error); }
     /* Secondary: when role has progressed past JD Review, DS card is context not primary */
     .decision-summary.ds-secondary {
@@ -4753,6 +4882,164 @@
       cursor: pointer;
     }
 
+    /* Outcome quality prompt */
+    .rw-of__quality {
+      margin-top: 10px;
+    }
+    .rw-of__quality-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    .rw-of__quality-options {
+      display: flex;
+      gap: 6px;
+    }
+    .rw-of__quality-btn {
+      flex: 1;
+      padding: 6px 0;
+      font-size: 12px;
+      font-family: var(--font);
+      background: var(--surface);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .rw-of__quality-btn:hover {
+      border-color: var(--text-secondary);
+      color: var(--text-secondary);
+    }
+    .rw-of__quality-btn--active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    /* ── Candidate Setup Card ─────────────────────────────────────────── */
+    .cs-setup-card {
+      max-width: 540px;
+      margin: 0 auto;
+      padding: 32px 0 24px;
+    }
+    .cs-setup-inner {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 28px 28px 20px;
+    }
+    .cs-setup-title {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0 0 4px;
+    }
+    .cs-setup-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin: 0 0 24px;
+    }
+    .cs-section {
+      margin-bottom: 20px;
+    }
+    .cs-section-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .cs-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .cs-chip {
+      padding: 5px 12px;
+      font-size: 12.5px;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text-light);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .cs-chip:hover {
+      border-color: var(--text-muted);
+      color: var(--text);
+    }
+    .cs-chip--active {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+    }
+    .cs-chip--active:hover {
+      background: var(--text);
+      color: var(--bg);
+    }
+    .cs-other-input {
+      display: block;
+      margin-top: 8px;
+      width: 100%;
+      max-width: 240px;
+      padding: 5px 10px;
+      font-size: 12.5px;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      outline: none;
+    }
+    .cs-other-input:focus {
+      border-color: var(--accent);
+    }
+    .cs-actions {
+      margin-top: 24px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .cs-save-btn {
+      padding: 8px 24px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: var(--font);
+      background: var(--text);
+      color: var(--bg);
+      border: 1px solid var(--text);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+    .cs-save-btn:hover { opacity: 0.85; }
+    .cs-save-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .cs-cancel-btn {
+      padding: 8px 16px;
+      font-size: 13px;
+      font-family: var(--font);
+      background: var(--surface);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+    }
+    .cs-cancel-btn:hover {
+      color: var(--text);
+      border-color: var(--text-muted);
+    }
+    .cs-error {
+      font-size: 12px;
+      color: var(--error);
+      margin-bottom: 4px;
+    }
+
     /* Decision badge secondary state — muted, no colour tint */
     .doc-decision.decision-secondary {
       background: var(--border-light) !important;
@@ -4774,7 +5061,7 @@
     /* Only Hard No gets a tinted sticky bar */
     .sticky-decision-bar.sdb-green { background: var(--surface); border-bottom-color: var(--border-light); }
     .sticky-decision-bar.sdb-amber { background: var(--surface); border-bottom-color: var(--border-light); }
-    .sticky-decision-bar.sdb-red   { background: #FEF2F2; border-bottom-color: #FCA5A5; }
+    .sticky-decision-bar.sdb-red   { background: var(--error-bg); border-bottom-color: var(--error-border); }
     .sticky-decision-inner {
       display: flex;
       align-items: baseline;
@@ -4788,7 +5075,7 @@
       color: var(--text);
     }
     .sticky-decision-bar.sdb-green .sticky-decision-outcome { color: var(--success); }
-    .sticky-decision-bar.sdb-amber .sticky-decision-outcome { color: #92400E; }
+    .sticky-decision-bar.sdb-amber .sticky-decision-outcome { color: var(--warning); }
     .sticky-decision-bar.sdb-red   .sticky-decision-outcome { color: var(--error); }
     .sticky-decision-meta {
       font-size: 12px;
@@ -4837,7 +5124,7 @@
 
     /* ─── Questions emphasis when outcome = Maybe ────────────── */
     .doc-section.questions-maybe {
-      background: #FFFBEB;
+      background: var(--warning-bg);
       border-radius: var(--radius-lg);
       padding: 16px 18px;
       margin-left: -18px;
@@ -4849,23 +5136,23 @@
 
     /* ─── Recommended CV (below decision card) ──────────────── */
     .recommended-cv {
-      margin-bottom: 20px;
-      padding-bottom: 20px;
+      margin-bottom: 24px;
+      padding-bottom: 24px;
       border-bottom: 1px solid var(--border-light);
     }
     .recommended-cv-label {
       font-size: 9.5px;
-      font-weight: 700;
+      font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      color: var(--text-light);
-      margin-bottom: 5px;
+      color: var(--text-muted);
+      margin-bottom: 4px; /* RW-SPACING: micro gap (label → value) */
     }
     .recommended-cv-name {
       font-size: var(--text-lg);
       font-weight: 500;
       color: var(--text);
-      margin-bottom: 6px;
+      margin-bottom: 4px; /* RW-SPACING: micro gap (name → reason) */
     }
     .recommended-cv-reason {
       font-size: var(--text-base);
@@ -4875,7 +5162,7 @@
 
     /* ─── Pattern Signals ───────────────────────────────────── */
     .pattern-signals {
-      margin-top: 20px;
+      margin-top: 24px;
       padding-bottom: 24px;
       border-bottom: 1px solid var(--border-light);
     }
@@ -4883,9 +5170,9 @@
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-light);
-      margin-bottom: 10px;
+      letter-spacing: 0.08em; /* RW-SPACING: em-based, replaces 1px */
+      color: var(--text-muted);
+      margin-bottom: 8px; /* RW-SPACING: tight heading gap */
     }
     .pattern-signals-list {
       list-style: none;
@@ -4935,7 +5222,7 @@
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 1.2px;
+      letter-spacing: 0.1em; /* RW-SPACING: em-based, replaces 1.2px */
       color: var(--text-light);
       transition: color 0.1s;
     }
@@ -4961,10 +5248,10 @@
     /* Role Record headings are secondary — lighter weight, no border */
     .role-record-body .doc-section-heading {
       border-bottom: none;
-      padding-bottom: 2px;
-      margin-bottom: 10px;
+      padding-bottom: 0;
+      margin-bottom: 12px; /* RW-SPACING: normal heading gap */
       font-size: 10px;
-      letter-spacing: 1.1px;
+      letter-spacing: 0.1em; /* RW-SPACING: em-based, replaces 1.1px */
       opacity: 0.75;
     }
     /* Deep analysis subsection inside Role Record */
@@ -4987,8 +5274,8 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      color: var(--text-light);
-      margin-bottom: 5px;
+      color: var(--text-muted);
+      margin-bottom: 4px; /* RW-SPACING: micro gap (label → value) */
     }
     .doc-role-lens-items {
       font-size: var(--text-base);
@@ -4997,15 +5284,15 @@
     }
 
     /* ─── Risks & Unknowns grouped clusters ─────────────────── */
-    .risks-group { margin-bottom: 18px; }
+    .risks-group { margin-bottom: 24px; } /* RW-SPACING: sub-group gap */
     .risks-group:last-child { margin-bottom: 0; }
     .risks-group-label {
       font-size: 10.5px;
-      font-weight: 700;
+      font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--text-muted);
-      margin-bottom: 6px;
+      margin-bottom: 8px; /* RW-SPACING: tight heading gap */
     }
 
     /* ─── Rolewise Verdict chip ─────────────────────────────── */
@@ -5030,7 +5317,7 @@
     .bullet-evidence {
       margin-top: 4px;
       font-size: 11.5px;
-      color: var(--text-muted);
+      color: var(--text-secondary);
       line-height: var(--leading-normal);
       font-style: italic;
     }
@@ -5706,7 +5993,7 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      color: #8A8A8A;
+      color: var(--text-light);
       margin-bottom: 4px;
     }
 
@@ -5730,7 +6017,7 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      color: #8A8A8A;
+      color: var(--text-light);
       margin-bottom: 6px;
     }
 
@@ -5738,11 +6025,7 @@
       margin-bottom: 28px;
     }
 
-    .rail-divider {
-      height: 1px;
-      background: var(--border-light);
-      margin: 0 0 10px;
-    }
+    /* .rail-divider removed — no longer used */
 
     /* ─── Admin actions ─────────────────────────────────────── */
     .rail-admin {
@@ -5767,8 +6050,8 @@
     .rail-admin-btn:hover { color: var(--text-muted); }
     .rail-admin-btn:disabled { opacity: 0.38; cursor: not-allowed; }
 
-    .rail-admin-btn.danger { color: #B45309; }
-    .rail-admin-btn.danger:hover { color: #B91C1C; }
+    .rail-admin-btn.danger { color: var(--warning-bright); }
+    .rail-admin-btn.danger:hover { color: var(--error); }
 
     .rail-admin-confirm {
       font-size: 11.5px;
@@ -5953,9 +6236,9 @@
       flex: 1;
     }
 
-    .rail-step-label.done     { color: #A0A0A0; }
-    .rail-step-label.current  { color: #2B2B2B; font-weight: 500; }
-    .rail-step-label.upcoming { color: #A0A0A0; }
+    .rail-step-label.done     { color: var(--text-light); }
+    .rail-step-label.current  { color: var(--text); font-weight: 500; }
+    .rail-step-label.upcoming { color: var(--text-light); }
 
     /* Clickable steps */
     .rail-step.clickable {
@@ -6095,7 +6378,7 @@
       font-size: 16px;
       font-weight: 600;
       color: var(--color-text-primary, var(--text));
-      letter-spacing: -0.2px;
+      letter-spacing: -0.01em;
     }
 
     .modal-body {
@@ -6198,22 +6481,22 @@
     .btn-icon:hover { color: var(--text); }
 
     .inline-error {
-      background: #FEF2F2;
+      background: var(--error-bg);
       border: 1px solid var(--error-border);
       border-radius: var(--radius);
       padding: 9px 12px;
       font-size: 13px;
-      color: #B91C1C;
+      color: var(--error);
     }
 
     /* LinkedIn truncation warning — non-blocking amber notice */
     .jd-truncation-warning {
-      background: #FFFBEB;
-      border: 1px solid #FCD34D;
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
       border-radius: var(--radius);
       padding: 10px 12px;
       font-size: 12.5px;
-      color: #92400E;
+      color: var(--warning);
       margin-bottom: 8px;
     }
     .jd-truncation-warning p { margin: 0 0 8px; line-height: 1.5; }
@@ -6221,9 +6504,9 @@
     .jd-truncation-actions { display: flex; gap: 8px; margin-top: 8px; }
     .jd-truncation-actions button {
       font-size: 12px; padding: 4px 10px; border-radius: 4px; cursor: pointer;
-      border: 1px solid #D97706; background: transparent; color: #92400E;
+      border: 1px solid var(--warning-bright); background: transparent; color: var(--warning);
     }
-    .jd-truncation-actions button:hover { background: #FEF3C7; }
+    .jd-truncation-actions button:hover { background: var(--warning-bg-alt); }
 
     .hidden { display: none !important; }
 
@@ -6326,10 +6609,10 @@
       font-size: var(--text-xs);
       font-weight: 600;
       color: var(--success);
-      background: #ECFDF5;
+      background: var(--success-bg);
       padding: 1px 7px;
       border-radius: var(--radius-sm);
-      letter-spacing: 0.2px;
+      letter-spacing: 0.02em;
     }
 
     .cv-card-notes {
@@ -6740,7 +7023,7 @@
       font-size: var(--text-xs);
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.05em;
       color: var(--text-light);
       margin-bottom: 6px;
     }
@@ -7519,7 +7802,7 @@
     }
 
     .ws-assistant-status.ws-status-error {
-      color: #C0392B;
+      color: var(--error);
       font-style: normal;
     }
 
@@ -7785,7 +8068,7 @@
 
     .ws-artifact-body .doc-section-heading {
       font-size: 11px;
-      margin-bottom: 5px;
+      margin-bottom: 8px; /* RW-SPACING: tight heading gap */
     }
 
     /* ─── Clarification question ───────────────────────────────────────────── */
@@ -7907,19 +8190,19 @@
     .ws-save-warning {
       display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
       padding: 8px 12px; margin: 8px 0;
-      background: #FEF3C7; border: 1px solid #F59E0B; border-radius: 8px;
-      font-size: 12px; color: #92400E;
+      background: var(--warning-bg-alt); border: 1px solid var(--warning-bright); border-radius: 8px;
+      font-size: 12px; color: var(--warning);
     }
     .ws-save-warning-text { flex: 1 1 auto; }
     .ws-save-warning-retry {
       flex-shrink: 0; font-size: 12px; font-weight: 500; font-family: var(--font);
-      color: #92400E; background: #FDE68A; border: 1px solid #F59E0B;
+      color: var(--warning); background: var(--warning-border); border: 1px solid var(--warning-bright);
       border-radius: 12px; padding: 3px 11px; cursor: pointer; white-space: nowrap;
     }
-    .ws-save-warning-retry:hover { background: #FCD34D; }
+    .ws-save-warning-retry:hover { background: color-mix(in srgb, var(--warning-border) 80%, var(--warning-bright)); }
     .ws-save-warning-retry:disabled { opacity: 0.6; cursor: default; }
     .ws-stale-note {
-      font-size: 11px; color: #92400E; background: #FFFBEB;
+      font-size: 11px; color: var(--warning); background: var(--warning-bg);
       padding: 4px 8px; border-radius: 4px; margin-bottom: 6px;
     }
 
@@ -8728,9 +9011,9 @@
       font-size: 10px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-light);
-      margin-bottom: 7px;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
     }
 
     .ws-dh-list {
@@ -8788,8 +9071,8 @@
       font-size: 10px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--text-light);
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
     }
 
     .rw-bc-value {
@@ -8817,11 +9100,11 @@
 
     .rw-sub-label {
       font-size: 10px;
-      font-weight: 700;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.65px;
-      color: var(--text-light);
-      margin-bottom: 12px; /* RW-ROLEPAGE-STABILITY-04: spacing scale 12px */
+      letter-spacing: 0.06em; /* RW-SPACING: em-based, replaces 0.65px */
+      color: var(--text-muted);
+      margin-bottom: 8px; /* RW-SPACING: tight heading gap (sub-label) */
     }
 
     /* ─── Signal Markers ──────────────────────────────────────────────────────
@@ -8848,7 +9131,7 @@
       font-size: 10.5px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.4px;
+      letter-spacing: 0.04em;
       color: var(--text-muted);
       background: var(--bg-subtle, #F3F4F6);
       border: 1px solid var(--border-light);
@@ -8965,10 +9248,10 @@
 
     .yl-heading {
       font-size: 10px;
-      font-weight: 700;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: var(--text-light);
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
       margin-bottom: 8px;
     }
 
@@ -9034,8 +9317,8 @@
       font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--text-light);
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
       margin-bottom: 10px;
     }
 
@@ -9072,9 +9355,9 @@
     .rw-layer-label {
       font-size: 10.5px;
       font-weight: 700;
-      letter-spacing: 0.7px;
+      letter-spacing: 0.07em;
       text-transform: uppercase;
-      color: var(--text-light);
+      color: var(--text-muted);
       padding: 14px 0 6px;
       display: flex;
       align-items: center;
@@ -9119,7 +9402,7 @@
       font-size: 22px;
       font-weight: 700;
       color: var(--text);
-      letter-spacing: -0.5px;
+      letter-spacing: -0.02em;
       line-height: 1;
     }
 
@@ -9169,7 +9452,7 @@
 
     .cs-pct-btn--active {
       background: var(--text);
-      color: #fff;
+      color: var(--surface, #fff);
       border-color: var(--text);
     }
 
@@ -9199,11 +9482,6 @@
       justify-content: space-between;
       align-items: baseline;
       padding: 4px 0;
-      border-bottom: 1px solid var(--border-light);
-    }
-
-    .cs-row:last-child {
-      border-bottom: none;
     }
 
     .cs-row-label {
@@ -9225,7 +9503,7 @@
 
     .cs-note {
       font-size: 11px;
-      color: var(--text-light);
+      color: var(--text-muted);
       line-height: 1.4;
     }
 
@@ -9244,10 +9522,10 @@
 
     .fd-heading {
       font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
-      color: var(--text-light);
+      color: var(--text-muted);
       margin-bottom: 10px;
     }
 
@@ -9359,7 +9637,7 @@
 
     .cs-assume {
       font-size: 11px;
-      color: var(--text-light);
+      color: var(--text-muted);
       margin-top: 6px;
     }
 
@@ -9378,10 +9656,10 @@
 
     .cs-contract-label {
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: var(--text-light);
+      color: var(--text-muted);
     }
 
     .cs-contract-revenue {
@@ -9428,7 +9706,7 @@
 
     .cs-wks-btn--active {
       background: var(--text);
-      color: #fff;
+      color: var(--surface, #fff);
       border-color: var(--text);
     }
 
@@ -9508,7 +9786,7 @@
        Hiring signal badges for all stages of the hiring model.              */
 
     .inbox-company {
-      font-size: 15px;
+      font-size: 14px;  /* normalized — consistent 14px across left nav (RW-LAYOUT-POLISH) */
       font-weight: 600;
       color: var(--color-text-primary, var(--text));
       line-height: 1.35;
@@ -9519,7 +9797,7 @@
     }
 
     .inbox-title {
-      font-size: 13px;
+      font-size: 14px;  /* normalized — consistent 14px across left nav (RW-LAYOUT-POLISH) */
       font-weight: 400;
       color: var(--color-text-secondary, var(--text-muted));
       line-height: 1.35;
@@ -9542,14 +9820,14 @@
 
     /* Hiring signal badge variants */
     .ars-interviewing { background: #DBEAFE; color: #1e40af; }
-    .ars-offer        { background: #D1FAE5; color: #065f46; }
-    .ars-accepted     { background: #D1FAE5; color: #065f46; }
-    .ars-rejected     { background: #FEE2E2; color: #991b1b; }
-    .ars-ghosted      { background: #F3F4F6; color: #6b7280; } /* grey/muted: no response */
-    .ars-withdrew     { background: #F3F4F6; color: #6b7280; }
-    .ars-waiting      { background: #FEF9C3; color: #713f12; } /* keep existing */
-    .ars-stale        { background: #FEF3C7; color: #92400e; }
-    .ars-active       { background: #DCFCE7; color: #166534; } /* responded */
+    .ars-offer        { background: var(--success-bg); color: var(--success); }
+    .ars-accepted     { background: var(--success-bg); color: var(--success); }
+    .ars-rejected     { background: var(--error-bg); color: var(--error); }
+    .ars-ghosted      { background: var(--gray-100); color: var(--gray-500); } /* grey/muted: no response */
+    .ars-withdrew     { background: var(--gray-100); color: var(--gray-500); }
+    .ars-waiting      { background: var(--warning-bg); color: var(--warning); }
+    .ars-stale        { background: var(--warning-bg-alt); color: var(--warning); }
+    .ars-active       { background: var(--success-bg); color: var(--success); } /* responded */
 
     /* ── Role Overview Card Grid ─────────────────────────────────────────────── */
     /*
@@ -9604,7 +9882,7 @@
     }
 
     .rw-card--narrative > .doc-section-heading {
-      margin-bottom: 16px;
+      margin-bottom: 12px; /* RW-SPACING: normal heading gap */
     }
 
     /* #section-fit-reality removed (RW-ROLEPAGE-FITREALITY-02) — dead rules deleted */
@@ -9620,7 +9898,7 @@
     }
 
     .rw-card--data > .doc-section-heading {
-      margin-bottom: 10px;
+      margin-bottom: 8px; /* RW-SPACING: tight heading gap */
     }
 
     /* ─────────────────────────────────────────────────────────────────────── */
@@ -9632,7 +9910,7 @@
     /* .rw-card--action: surface styles handled by grouped card rule */
 
     .rw-card--action > .doc-section-heading {
-      margin-bottom: 10px;
+      margin-bottom: 8px; /* RW-SPACING: tight heading gap */
       font-weight: 600;              /* slightly less dominant than narrative */
       letter-spacing: 0.05em;        /* narrower tracking = lower authority  */
     }
@@ -9661,7 +9939,7 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: var(--text-light);
+      color: var(--text-muted);
     }
 
     #section-briefing .rw-briefing-header .rw-bc-value {
@@ -9871,9 +10149,9 @@
       margin-top: 16px;
     }
 
-    /* ── Overview wrapper: tighter outer padding ────────────────────────────── */
+    /* ── Overview wrapper: left padding only — right padding inside sidebar ── */
     .rw-overview-wrap {
-      padding: 24px 20px 40px;
+      padding: 0 0 0 24px;
     }
 
     /* ── Legacy doc view: tighter outer padding ─────────────────────────────── */
@@ -9886,13 +10164,13 @@
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.07em;
-      color: var(--text-light);
+      color: var(--text-muted);
       margin-bottom: 4px;
     }
 
     .doc-role-title {
       font-size: 20px;
-      letter-spacing: -0.3px;
+      letter-spacing: -0.02em;
       margin-bottom: 8px;
     }
 
@@ -9928,7 +10206,7 @@
 
     .cs-th-value {
       font-size: 28px;
-      letter-spacing: -0.8px;
+      letter-spacing: -0.03em;
     }
 
     .cs-th-unit {
@@ -9940,7 +10218,7 @@
     .rw-card > .doc-section-heading {
       font-size: 11.5px;
       color: var(--text-muted);
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -9998,7 +10276,7 @@
     .ws-header-company {
       font-size: 13px;
       font-weight: 700;
-      letter-spacing: -0.1px;
+      letter-spacing: -0.01em;
     }
 
     .ws-header-title {
@@ -10097,7 +10375,6 @@
     #section-role-signals .rw-sub-label,
     #section-jd-clarity .rw-sub-label {
       font-size: 10px;
-      color: var(--text-light);
       letter-spacing: 0.06em;
     }
 
@@ -10228,70 +10505,7 @@
       gap: 8px;
     }
 
-    .rw-lens-qa-btn {
-      flex: 1;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-      font-size: 12px;
-      font-weight: 600;
-      font-family: var(--font);
-      letter-spacing: 0.02em;
-      padding: 8px 12px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: var(--bg-card);
-      color: var(--text-muted);
-      cursor: pointer;
-      transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-      white-space: nowrap;
-    }
-
-    .rw-lens-qa-btn:hover {
-      background: var(--bg-subtle, #f5f4f1);
-      color: var(--text);
-      border-color: var(--border);
-    }
-
-    /* Tactile press feedback — scale to 0.96, faster than hover transition */
-    .rw-lens-qa-btn:active {
-      transform: scale(0.96);
-      transition-duration: 60ms;
-    }
-
-    /* Apply button: slight positive accent without a hard colour token */
-    .rw-lens-qa-btn--apply {
-      border-color: var(--green, #27ae60);
-      color: var(--green, #27ae60);
-    }
-
-    .rw-lens-qa-btn--apply:hover {
-      background: color-mix(in srgb, var(--green, #27ae60) 8%, var(--bg-card));
-      color: var(--green, #27ae60);
-    }
-
-    /* Skip button: neutral/muted — should feel low-commitment */
-    .rw-lens-qa-btn--skip {
-      border-color: var(--border-light);
-      color: var(--text-light);
-    }
-
-    .rw-lens-qa-btn--skip:hover {
-      background: var(--bg-subtle, #f5f4f1);
-      color: var(--text-muted);
-      border-color: var(--border);
-    }
-
-    /* Dark mode: invert the apply accent slightly */
-    [data-theme="dark"] .rw-lens-qa-btn--apply {
-      border-color: var(--green, #2ecc71);
-      color: var(--green, #2ecc71);
-    }
-
-    [data-theme="dark"] .rw-lens-qa-btn--apply:hover {
-      background: color-mix(in srgb, var(--green, #2ecc71) 12%, var(--bg-card));
-    }
+    /* .rw-lens-qa-btn removed — use .rw-btn .rw-btn-sm instead */
 
     /* ── Mobile: revert to single column ────────────────────────────────────
        Below 900px the layout collapses to single column.
@@ -10382,70 +10596,27 @@
     /* Card has no title; suppress the default heading slot */
     .rw-srim > .doc-section-heading { display: none; }
 
-    .rw-srim-intro {
-      font-size: 12.5px;
-      color: var(--text-muted);
-      font-weight: 500;
-      line-height: 1.5;
-      margin-bottom: 12px;
-    }
-
-    .rw-srim-section-label {
-      font-size: 10px;
+    .rw-srim-heading {
+      font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: var(--text-light);
-      margin-bottom: 7px;
-      margin-top: 12px;
+      margin-bottom: 8px;
     }
-    .rw-srim-section-label:first-of-type { margin-top: 0; }
 
-    /* Outcome chips */
-    .rw-srim-outcomes {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-    .rw-srim-chip {
-      display: inline-flex;
-      align-items: center;
-      font-size: 11.5px;
-      font-weight: 500;
-      color: var(--text-muted);
-      background: var(--bg-subtle, #fafaf9);
-      border: 1px solid var(--border-light);
-      border-radius: 4px;
-      padding: 3px 8px;
-      white-space: nowrap;
-    }
-    .rw-srim-chip--offer     { color: var(--green, #27ae60); border-color: rgba(39,174,96,0.25); }
-    .rw-srim-chip--interview { color: var(--accent, #2980b9); border-color: rgba(41,128,185,0.2); }
-    .rw-srim-chip--rejected  { color: var(--red, #c0392b); border-color: rgba(192,57,43,0.2); }
-    .rw-srim-chip--muted     { color: var(--text-light); border-color: var(--border-light); }
-
-    /* Common traits list */
-    .rw-srim-traits {
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .rw-srim-traits li {
+    .rw-srim-prose {
       font-size: 12.5px;
       color: var(--text-muted);
-      line-height: 1.4;
-      padding-left: 14px;
-      position: relative;
+      line-height: 1.55;
+      margin-bottom: 2px;
     }
-    .rw-srim-traits li::before {
-      content: '\00b7';
-      position: absolute;
-      left: 3px;
-      color: var(--text-light);
-      font-weight: 700;
+
+    .rw-srim-interp {
+      font-size: 12.5px;
+      color: var(--text);
+      line-height: 1.55;
+      margin-top: 8px;
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -10703,11 +10874,11 @@
        Sticky header, rail, and other structural elements are unaffected.
        ═══════════════════════════════════════════════════════════════════════ */
 
-    /* Overview / analysis card grid wrapper */
+    /* Overview / analysis card grid wrapper — no max-width cap so the
+       two-column layout can span full col-center width and the sidebar
+       reaches the far right edge of the content area. */
     .rw-overview-wrap {
-      max-width: 1200px;   /* RW-ROLEPAGE-TOP-01: expanded from 720px */
-      margin-left: auto;
-      margin-right: auto;
+      /* max-width removed — width governed by col-center (1fr of app grid) */
     }
 
     /* Legacy doc view wrapper — align to the same 720px reading width */
@@ -11003,15 +11174,17 @@
     /* Legacy doc view inner wrapper: also on grey panel — no bg override    */
     /* needed since col-center-inner has no background itself (inherits)     */
 
-    /* ─── Roles list panel: floating surface with full border ─────────────── */
-    /* White bg + 8px radius + 8px vertical inset + 1px full border.         */
-    /* Border follows the corner radius — panel reads as one framed surface. */
+    /* ─── Roles list panel: flat structural column ────────────────────────── */
+    /* White surface with side border only — no radius, shadow, or vertical  */
+    /* margin. Reads as a flush column rather than a floating card.           */
     .col-list {
       background: var(--surface);
-      border-radius: 8px;
-      margin: 8px 0;
+      border-radius: 0;
+      margin: 0;
       border: 1px solid rgba(0, 0, 0, 0.06);
-      box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.06);
+      border-top: none;
+      border-bottom: none;
+      box-shadow: none;
     }
 
     /* ── Middle panel: remove right-edge divider ────────────────────────── */
@@ -11091,12 +11264,11 @@
               intent, and correct dark mode colours for badge/tag variants.
        ═══════════════════════════════════════════════════════════════════════ */
 
-    /* ── Dark mode: col-list panel — rgba(0,0,0,0.06) is invisible ───────── */
-    /* Light-mode uses a near-transparent black tint for the border + shadow. */
-    /* On a dark surface both values disappear entirely. Swap to token values. */
+    /* ── Dark mode: col-list panel border ──────────────────────────────────── */
+    /* Light-mode uses a near-transparent black tint for the side borders.    */
+    /* On a dark surface that value disappears — swap to a visible token.     */
     [data-theme="dark"] .col-list {
       border-color: var(--card-border, #373a41);
-      box-shadow: none;
     }
 
     /* ── Dark mode: inbox-search divider ─────────────────────────────────── */
@@ -11199,7 +11371,6 @@
       line-height: 1.5;
       margin-top: 8px;
       padding-top: 8px;
-      border-top: 1px solid var(--border-light);
     }
 
 /* ── Role Action Cards strip ───────────────────────────────────────────────── */
@@ -11299,121 +11470,79 @@
   line-height: 1.4;
 }
 
-/* ── Decision Lens ─────────────────────────────────────────────────────────── */
+/* ── Decision Lens — signal list ──────────────────────────────────────────── */
 
 .rw-decision-lens {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px 18px;
+  /* uses rw-doc-section spacing */
 }
 
-.rw-decision-lens .doc-section-heading {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 14px;
-}
-
-/* 5-lens grid: all 5 tiles side-by-side; wraps at 140px min */
-.rw-dl-lenses {
+.rw-lens-list {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 0;
+  flex-direction: column;
 }
 
-/* Individual lens tile */
-.rw-dl-lens {
-  flex: 1 1 140px;
-  background: var(--bg-subtle, #fafaf9);
-  border: 1px solid var(--border-light, #e8e5e0);
-  border-radius: 7px;
-  padding: 11px 12px;
-  min-width: 130px;
-}
-
-.rw-dl-lens--negative {
-  border-color: rgba(192, 57, 43, 0.25);
-  background: rgba(192, 57, 43, 0.03);
-}
-
-.rw-dl-lens--caution {
-  border-color: rgba(214, 137, 16, 0.25);
-  background: rgba(214, 137, 16, 0.03);
-}
-
-.rw-dl-lens--positive {
-  border-color: rgba(39, 174, 96, 0.22);
-  background: rgba(39, 174, 96, 0.03);
-}
-
-/* Lens header: icon + title + signal badge */
-.rw-dl-lens__header {
+/* Individual signal row */
+.rw-lens-item {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 7px;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 0;
 }
 
-.rw-dl-lens__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* Status icon */
+.rw-lens-icon {
+  width: 16px;
   flex-shrink: 0;
-  color: var(--text-muted);
-  opacity: 0.75;
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: center;
 }
 
-.rw-dl-lens__title {
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: 0.01em;
-  flex: 1;
+/* Icon colours by signal state */
+.rw-lens-item--positive > .rw-lens-icon { color: var(--green, #27ae60); }
+.rw-lens-item--caution  > .rw-lens-icon { color: var(--amber, #d68910); }
+.rw-lens-item--negative > .rw-lens-icon { color: var(--red, #c0392b); }
+.rw-lens-item--unclear  > .rw-lens-icon { color: var(--text-light, #aaa); }
+
+/* Content block */
+.rw-lens-content {
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-/* Signal badge: dot + label */
-.rw-dl-signal {
-  display: inline-flex;
-  align-items: center;
-  font-size: 10.5px;
+.rw-lens-title {
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  flex-shrink: 0;
+  color: var(--text);
+  line-height: 1.35;
 }
 
-/* Synthesis text */
-.rw-dl-lens__text {
-  font-size: 12px;
-  color: var(--text-muted);
+.rw-lens-desc {
+  font-size: 13px;
+  color: var(--text-secondary, var(--text-muted));
   line-height: 1.5;
+  margin-top: 1px;
 }
 
-/* Verdict strip — sits below the 5 lens tiles */
-.rw-dl-verdict {
+/* Verdict row — sits below the signal list */
+.rw-lens-verdict {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 14px;
-  padding-top: 13px;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 8px;
+  padding-top: 10px;
   border-top: 1px solid var(--border-light, #e8e5e0);
 }
 
-.rw-dl-verdict__reasoning {
-  font-size: 12.5px;
+.rw-lens-verdict--hard-no > .rw-lens-icon {
+  color: var(--red, #c0392b);
+}
+
+.rw-lens-verdict > .rw-lens-title {
+  font-weight: 600;
+}
+
+.rw-lens-verdict > .rw-lens-content > .rw-lens-desc {
   color: var(--text-muted);
-  line-height: 1.5;
-  flex: 1;
-  min-width: 200px;
 }
 
 
@@ -13298,7 +13427,7 @@
 
 .rc-form-error {
   font-size: 12px;
-  color: #c0392b;
+  color: var(--error);
   margin-top: 8px;
 }
 .rc-form-error.hidden { display: none; }
@@ -13344,73 +13473,7 @@
       }
     }
 
-    /* ── Sub-task 2: Risks & Unknowns expandable checklist ── */
-    .rw-risk-list {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .rw-risk-item {
-      border-radius: 4px;
-      overflow: hidden;
-    }
-
-    .rw-risk-item--simple {
-      padding: 6px 0;
-      font-size: 13px;
-      color: var(--text);
-      line-height: 1.5;
-      border-bottom: 1px solid var(--border-light);
-    }
-
-    .rw-risk-item--simple:last-child {
-      border-bottom: none;
-    }
-
-    .rw-risk-summary {
-      display: flex;
-      align-items: center;
-      padding: 6px 0;
-      font-size: 13px;
-      color: var(--text);
-      cursor: pointer;
-      list-style: none;
-      border-bottom: 1px solid var(--border-light);
-      line-height: 1.45;
-      gap: 8px;
-    }
-
-    .rw-risk-summary::-webkit-details-marker { display: none; }
-
-    .rw-risk-summary::before {
-      content: "\25B8";
-      font-size: 10px;
-      color: var(--text-light);
-      flex-shrink: 0;
-      transition: transform 0.15s ease;
-    }
-
-    .rw-risk-item[open] > .rw-risk-summary::before {
-      transform: rotate(90deg);
-    }
-
-    .rw-risk-item[open] > .rw-risk-summary {
-      border-bottom: none;
-    }
-
-    .rw-risk-detail {
-      font-size: 12.5px;
-      color: var(--text-muted);
-      line-height: 1.55;
-      padding: 4px 0 8px 18px;
-      border-bottom: 1px solid var(--border-light);
-    }
-
-    .rw-risk-item:last-child .rw-risk-detail,
-    .rw-risk-item:last-child > .rw-risk-summary {
-      border-bottom: none;
-    }
+    /* (Orphaned .rw-risk-* styles removed — Risks now rendered as plain .rw-doc-bullets) */
 
     /* ── Sub-task 3: Collapsible section headers (CPI, Decision Support) ── */
     /* Collapsible section wrapper — a <details> element spanning the full grid
@@ -13463,3 +13526,576 @@
     /* ═══════════════════════════════════════════════════════════════════════
        End RW-ROLEPAGE-LAYOUT-02
        ═══════════════════════════════════════════════════════════════════════ */
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RW-TWO-COL-LAYOUT — Applicant Mode two-column layout
+   Main column (doc sections) + sticky right sidebar rail
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Outer wrapper ────────────────────────────────────────────────────────── */
+.rw-two-col-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 0;
+  width: 100%;
+  height: 100%;            /* fill col-overview-cards / col-center */
+  box-sizing: border-box;
+}
+
+/* ── Main column — scrolls independently; scrollbar sits left of sidebar ── */
+.rw-main-col {
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-right: 64px;    /* gap between main content and sidebar border */
+}
+/* Inner reading-width constraint — keeps text centered within the scrolling column */
+.rw-main-col > * {
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.rw-main-col > .rw-card-grid {
+  max-width: 720px;
+}
+/* Top/bottom breathing room inside the scrolling region */
+.rw-main-col::before {
+  content: '';
+  display: block;
+  height: 32px;
+}
+.rw-main-col::after {
+  content: '';
+  display: block;
+  height: 48px;
+}
+
+/* ── Sidebar column — fixed in viewport, scrolls its own content ─────────── */
+.rw-sidebar-col {
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.rw-sidebar-inner {
+  height: 100%;
+  overflow-y: auto;
+  padding: 32px 24px 48px 24px; /* top right bottom left — all padding inside the scroll region */
+  scrollbar-width: thin;
+}
+
+/* ── Sidebar top button group (Edit details, Reasoning, Apply, Skip) ───── */
+.rw-rail-top-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* RW-SPACING: standard row rhythm */
+  margin-bottom: 48px; /* RW-SPACING: section gap */
+}
+
+/* ── Uniform button row — does NOT stretch children ───────────────────── */
+.rw-rail-util-btns {
+  display: flex;
+  gap: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UNIFIED BUTTON SYSTEM — .rw-btn
+   Two sizes: sm (12px) and default (13px). One border-radius (6px).
+   Variants: --primary, --danger, --selected.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Base ──────────────────────────────────────────────────────────────── */
+.rw-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font);
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+/* ── Size: small (12px) ────────────────────────────────────────────────── */
+.rw-btn-sm {
+  font-size: 12px;
+  padding: 5px 11px;
+}
+
+/* ── Size: default (13px) ──────────────────────────────────────────────── */
+.rw-btn-default {
+  font-size: 13px;
+  padding: 8px 14px;
+}
+
+/* ── Hover (base) ──────────────────────────────────────────────────────── */
+.rw-btn:hover {
+  border-color: var(--text-light);
+  color: var(--text);
+}
+
+/* ── Variant: primary ──────────────────────────────────────────────────── */
+.rw-btn--primary {
+  border-color: var(--accent, #7c3aed);
+  color: var(--accent, #7c3aed);
+}
+.rw-btn--primary:hover {
+  background: var(--accent-soft, #f4ebff);
+}
+
+/* ── Variant: danger ───────────────────────────────────────────────────── */
+.rw-btn--danger {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 25%, transparent);
+}
+.rw-btn--danger:hover {
+  color: var(--error-hover);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+  background: color-mix(in srgb, var(--error) 4%, transparent);
+}
+[data-theme="dark"] .rw-btn--danger {
+  color: var(--error-300);
+  border-color: color-mix(in srgb, var(--error-300) 25%, transparent);
+}
+[data-theme="dark"] .rw-btn--danger:hover {
+  color: var(--error-200);
+  border-color: color-mix(in srgb, var(--error-200) 35%, transparent);
+  background: color-mix(in srgb, var(--error-300) 8%, transparent);
+}
+
+/* ── Variant: selected (accent fill) ──────────────────────────────────── */
+.rw-btn--selected {
+  border-color: var(--accent);
+  background: var(--accent-soft, #f4ebff);
+  color: var(--accent);
+}
+
+/* ── Disabled state ────────────────────────────────────────────────────── */
+.rw-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* ── Full-width modifier (for stacked action lists) ────────────────────── */
+.rw-btn--block {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+/* ── SVG icon inside button ────────────────────────────────────────────── */
+.rw-btn svg {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+/* Legacy aliases .rw-rail-std-btn, .rw-rail-action-btn, .rw-rail-admin-btn removed */
+
+.rw-rail-apply-row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 48px; }
+.rw-rail-btns { display: flex; gap: 8px; }
+
+/* ── Unified rail row system (RW-RAIL-ROWS) ──────────────────────────────── */
+/* One row pattern for all key/value pairs in the right rail.               */
+.rw-rail-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 6px 0;
+}
+.rw-rail-row-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.rw-rail-row-value {
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  word-break: break-word;
+  min-width: 0;
+}
+/* Dimmed secondary rows (lighter weight context) */
+.rw-rail-row--dimmed .rw-rail-row-value {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+/* Evidence quote beneath a value */
+.rw-rail-row-evidence {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-top: 2px;
+  line-height: 1.35;
+  text-align: left;
+}
+/* Accent colour on value (Operational Signals) */
+.rw-rail-row-value[style] { font-variant-numeric: tabular-nums; }
+/* Total / emphasis row */
+.rw-rail-row--total .rw-rail-row-label,
+.rw-rail-row--total .rw-rail-row-value {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── Rail sections ────────────────────────────────────────────────────────── */
+.rw-rail-section {
+  margin-bottom: 48px;
+}
+
+.rw-rail-section:last-child {
+  margin-bottom: 0;
+}
+
+.rw-rail-h3 {
+  font-family: var(--font-head, var(--font));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 8px 0; /* RW-SPACING: tight heading gap */
+  line-height: 1;
+}
+
+/* ── Rail action buttons (Cover letter, CV Alignment) ─────────────────────── */
+.rw-rail-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* RW-SPACING: standard row rhythm */
+}
+
+/* ── Commute in rail ──────────────────────────────────────────────────────── */
+.rw-rail-commute .commute-card,
+.rw-rail-commute .rw-commute-card {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+}
+
+/* ── Hiring Reality in rail ───────────────────────────────────────────────── */
+.rw-rail-hiring .rw-market-block,
+.rw-rail-hiring .rw-hiring-block {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+/* ── Recruiter details in sidebar ─────────────────────────────────────────── */
+.rw-sidebar-recruiter {
+  /* container; content injected by _refreshRoleContacts sidebar path */
+}
+.rw-sidebar-recruiter .rc-detail {
+  border: none;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+/* ── Sidebar contact cards (RW-SIDEBAR-CONTACTS) ────────────────────────── */
+/* .rw-rail-contacts-section removed — inherits from .rw-rail-section */
+.rw-rail-contact-card {
+  padding: 8px 0;
+}
+.rw-rail-contact-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.rw-rail-contact-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+}
+a.rw-rail-contact-name:hover {
+  text-decoration: underline;
+}
+.rw-rail-contact-type {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.rw-rail-contact-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.rw-rail-contact-detail {
+  font-size: 13px;
+  margin-top: 2px;
+}
+.rw-rail-contact-detail a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.rw-rail-contact-detail a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* .rw-rail-jd-section removed — inherits from .rw-rail-section */
+
+/* .rw-rail-jd-trigger removed — Original JD now uses .rw-btn .rw-btn-sm */
+
+/* .rw-rail-admin-section removed — inherits from .rw-rail-section */
+/* .rw-rail-admin-btn removed — use .rw-btn .rw-btn-sm instead */
+.rw-rail-admin-confirm {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.rw-rail-admin-confirm:not(:empty) {
+  margin-top: 6px;
+}
+
+/* ── JD Modal overlay ─────────────────────────────────────────────────────── */
+.rw-jd-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 24px 24px;
+  box-sizing: border-box;
+}
+.rw-jd-modal[hidden] { display: none; }
+
+.rw-jd-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.rw-jd-modal__dialog {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 680px;
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface, #fff);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+  overflow: hidden;
+}
+
+.rw-jd-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-light, var(--border));
+  flex-shrink: 0;
+}
+
+.rw-jd-modal__title {
+  font-family: var(--font-head, var(--font));
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+}
+
+.rw-jd-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-light);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.rw-jd-modal__close:hover {
+  background: var(--bg, #f5f5f5);
+  color: var(--text);
+}
+
+.rw-jd-modal__body {
+  overflow-y: auto;
+  padding: 24px 24px 28px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.rw-jd-modal__body::-webkit-scrollbar { width: 5px; }
+.rw-jd-modal__body::-webkit-scrollbar-track { background: transparent; }
+.rw-jd-modal__body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Inherit JD section's existing styles cleanly within the modal */
+.rw-jd-modal__body .rw-jd-section,
+.rw-jd-modal__body [class*="jd-"] {
+  /* let existing styles apply; no overrides needed */
+}
+
+/* ── Responsive: collapse to single column on narrow viewports ────────────── */
+@media (max-width: 860px) {
+  .rw-two-col-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .rw-main-col {
+    overflow: visible;
+    padding-right: 0;
+  }
+  .rw-main-col::before { height: 32px; }
+  .rw-main-col::after  { height: 48px; }
+  .rw-sidebar-col {
+    position: static;
+    height: auto;
+    overflow: visible;
+    border-left: none;
+    border-top: 1px solid var(--border-light, var(--border));
+    padding-top: 24px;
+    margin-top: 8px;
+  }
+  .rw-sidebar-inner {
+    position: static;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  .rw-rail-apply-row {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .rw-rail-btns {
+    flex: 0 0 auto;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   End RW-TWO-COL-LAYOUT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RW-CMP-PANEL — "Your pattern vs this role" comparison rows
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.rw-cmp-block {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* Intro line */
+.rw-cmp-intro {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 0 0 14px 0;
+  line-height: 1.5;
+}
+
+/* Comparison rows container */
+.rw-cmp-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Single comparison row: Dimension — Your pattern | Role signal */
+.rw-cmp-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 14px 1fr;
+  gap: 0 6px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-light, var(--border));
+}
+.rw-cmp-row:last-child {
+  border-bottom: none;
+}
+
+/* Dimension label */
+.rw-cmp-dim {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-light);
+  white-space: nowrap;
+  padding-top: 1px;
+}
+
+/* Value cells (Your pattern + Role signal) */
+.rw-cmp-val {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+/* Pipe separator */
+.rw-cmp-pipe {
+  font-size: 11px;
+  color: var(--border);
+  text-align: center;
+  user-select: none;
+  padding-top: 1px;
+}
+
+/* Role signal when it differs from user's pattern */
+.rw-cmp-val--mismatch {
+  color: var(--signal-amber, #b45309);
+}
+
+/* Tension section */
+.rw-cmp-tensions {
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border-light, var(--border));
+}
+
+.rw-cmp-tension-hdr {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-light);
+  margin-bottom: 7px;
+}
+
+.rw-cmp-tension-list {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rw-cmp-tension-list li {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   End RW-CMP-PANEL
+   ═══════════════════════════════════════════════════════════════════════════ */

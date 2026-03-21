@@ -1,0 +1,25 @@
+---
+title: Location rules
+description: How Rolewise interprets location, remote labels, and geography-related role constraints.
+---
+# Location rules
+Location signals affect role suitability and should be handled carefully.
+## Core principle
+Rolewise should read location text literally before applying assumptions.
+If a listing says remote but restricts geography, that restriction matters.
+## Remote with region limits
+A role labelled as remote may still be location-bound.
+Examples include:
+- remote within the UK
+- remote within Europe
+- remote within the United States
+
+These should not be treated as globally remote.
+## Geography restrictions
+If a role is remote but limited to a country or region the user cannot realistically work from, it should be flagged clearly.
+## Hybrid and on-site
+Hybrid expectations should be surfaced directly. If on-site expectations are material, they should not be softened.
+## Unknown location
+If the listing is unclear on location or work model, Rolewise should mark this as unknown and treat it as a verification point.
+## In one sentence
+Location rules ensure remote and geography signals are interpreted literally and not softened into false flexibility.
