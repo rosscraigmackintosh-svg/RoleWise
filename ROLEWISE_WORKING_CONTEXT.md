@@ -7,13 +7,26 @@
 
 ## Current Focus
 
-No task currently in progress.
+No task currently in progress. LI-01 (LinkedIn JD Fetch) is fully shipped including the corrections pass. Next LinkedIn activation step: user sets li_at cookie in Admin → LinkedIn.
 
 RM-04 and RM-06 closed 2026-03-12 (audit-verified as already fully implemented). Only remaining deferred Reasoning Map task: RM-13 (enrich graph data model — split into RM-13a similar_role and RM-13b market_signal). RM-13a is the next planned task.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-22
+**Task: LI-01 — LinkedIn JD Fetch (feature ship + corrections pass)**
+
+Full LinkedIn JD fetch pipeline shipped. Edge function `fetch-linkedin-jd` v1 deployed; fetches LinkedIn job pages server-side using `li_at` cookie stored in `profiles.linkedin_session_cookie`. JSON-LD extraction, JD cleaning, completeness check, and auto-analyse. Admin → LinkedIn section for cookie management.
+
+Corrections pass (Phase 3) applied immediately after ship: source_type + source_url columns added to `roles` table and wired into saveRole insert; auto-analyse replaced `btn-save-add.click()` with direct `saveRole()` call; `closeAddModal` patched to reset `_liSourceMeta`.
+
+`_liSourceMeta` lifecycle is now clean: reset on `openAddModal`, set on successful fetch, read + cleared in `saveRole` finally block, reset on `closeAddModal`.
+
+Files changed: `app/app.js` (6 surgical patches), `app/index.html` (+4 lines), `app/styles.css` (+13 lines), `supabase/functions/fetch-linkedin-jd/index.ts` (new), 3 new migrations applied.
+
+---
 
 ### 2026-03-12
 **Task: RM-04 + RM-06 — Doc closure (audit-verified as already implemented)**

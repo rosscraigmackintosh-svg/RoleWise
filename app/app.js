@@ -1358,6 +1358,7 @@
     let _rwAiOutputCache  = null; // Rendered analysis output — used by Ask AI inline (RW-ROLEPAGE-AI-INTERACTION-01)
     let _candidateProfile = null; // candidate_profile row from DB (loaded at boot)
     let _candidateLearning = null; // candidate_learning row from DB (loaded at boot)
+    let _liSourceMeta      = null; // Set by _fetchLinkedInJD; consumed + cleared by saveRole
 
     // ─── Analysis trace stages ────────────────────────────────────────────────
     // Shared between the workspace paste trace (_wsRunAnalysis), the Add JD modal
@@ -6185,6 +6186,90 @@
       // 3. If URL — save it to the role record; show plain acknowledgement in chat.
       // The URL is displayed in the overview Original job description block, not in chat.
       if (type === 'url') {
+        // ── LinkedIn job URL → auto-fetch JD ───────────────────────────────────
+        // Intercept LinkedIn job posting URLs and fetch the JD via edge function.
+        // LinkedIn search pages are excluded (no single job to fetch).
+        if (_isLinkedInJobUrl(text) && !/linkedin\.com\/jobs\/search/i.test(text)) {
+          const _liStatusEl = _wsStatusLine(timelineEl, 'Fetching job description from LinkedIn…');
+          _wsScrollIfNear(timelineEl);
+          try {
+            const { data: _liProfiles } = await db.from('profiles').select('id').limit(1);
+            const _liUserId = _liProfiles?.[0]?.id || null;
+            // Normalise ?currentJobId= URLs (e.g. collections/recommended pages) to the
+            // canonical /jobs/view/ID/ page so the edge function can extract the JD HTML.
+            const _cjId = text.match(/[?&]currentJobId=(\d+)/)?.[1];
+            const _fetchUrl = _cjId ? `https://www.linkedin.com/jobs/view/${_cjId}/` : text;
+            let _liRes, _liPayload;
+            try {
+              _liRes = await fetch(`${SUPABASE_URL}/functions/v1/fetch-linkedin-jd`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+                body:    JSON.stringify({ url: _fetchUrl, userId: _liUserId }),
+              });
+              _liPayload = await _liRes.json();
+              console.log('[LinkedIn fetch] debug', JSON.stringify(_liPayload?._debug || {desc: _liPayload?.job?.description?.slice(0,100)}).slice(0, 800));
+            } catch (_netErr) {
+              if (_liStatusEl.isConnected) _liStatusEl.remove();
+              const _errMsg = 'Could not reach LinkedIn — check your connection, then paste the job description directly.';
+              _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
+              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
+              return;
+            }
+            if (_liStatusEl.isConnected) _liStatusEl.remove();
+            if (!_liRes.ok || !_liPayload.success) {
+              const _e = _liPayload?.error;
+              const _errMsg = _e === 'no_session'
+                ? 'LinkedIn session not set — add your li_at cookie in Admin → LinkedIn.'
+                : _e === 'session_expired'
+                ? 'LinkedIn session expired — update it in Admin → LinkedIn.'
+                : 'Could not fetch the job description. Try pasting it directly.';
+              _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
+              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
+              return;
+            }
+            const _liJob = _liPayload.job;
+            if (!_liJob?.description || _liJob.description.trim().length < 50) {
+              const _errMsg = 'No usable job description found on that LinkedIn page — try pasting it directly.';
+              _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
+              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
+              return;
+            }
+            const _liCleaned = cleanLinkedInJD(_liJob.description);
+            // Store URL (and any metadata) on the role
+            if (!role._isTemp) {
+              const _liMeta = {};
+              if (!role.job_url)                        _liMeta.job_url  = text;
+              if (!role.company && _liJob.company)      _liMeta.company  = _liJob.company;
+              if (!role.title   && _liJob.title)        _liMeta.title    = _liJob.title;
+              if (!role.location && _liJob.location)    _liMeta.location = _liJob.location;
+              if (Object.keys(_liMeta).length) {
+                db.from('roles').update(_liMeta).eq('id', role.id).then(() => {
+                  Object.assign(role, _liMeta);
+                  const _arEntry = allRoles.find(r => r.id === role.id);
+                  if (_arEntry && _arEntry !== role) Object.assign(_arEntry, _liMeta);
+                }).catch(() => {});
+              }
+            } else {
+              role.job_url = text;
+              if (!role.company && _liJob.company) role.company = _liJob.company;
+              if (!role.title   && _liJob.title)   role.title   = _liJob.title;
+            }
+            // Warn if the fetched JD looks truncated
+            if (!_isLinkedInJDComplete(_liCleaned)) {
+              const _warnMsg = 'Heads up — this job description may be cut off. You can paste the full version if needed.';
+              _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_warnMsg)}</div>`);
+              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _warnMsg).catch(() => {});
+            }
+            // Hand off to the normal JD paste path (analysis, mismatch detection, etc.)
+            await _wsHandlePaste(role, _liCleaned, timelineEl);
+          } catch (_liErr) {
+            const _errMsg = 'Something went wrong fetching from LinkedIn — try pasting the job description directly.';
+            _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
+            if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
+          }
+          return;
+        }
+
         if (!role._isTemp) {
           // LinkedIn search page — not a specific job posting, invalid as a source URL
           if (/linkedin\.com\/jobs\/search/i.test(text)) {
@@ -11432,6 +11517,7 @@
       const _jdEl = document.getElementById('add-jd');
       if (_jdEl) _jdEl.dataset.pasteAnyway = '';
       document.getElementById('jd-truncation-warning')?.classList.add('hidden');
+      _liSourceMeta = null;  // clear any stale LinkedIn fetch metadata
       document.getElementById('modal-add').classList.remove('hidden');
       setTimeout(() => document.getElementById('add-jd').focus(), 60);
     }
@@ -11443,6 +11529,7 @@
       const _formEl  = document.getElementById('add-modal-form-body');
       if (_traceEl) { _traceEl.classList.add('hidden'); _traceEl.classList.remove('add-analysis-trace--done'); _traceEl.innerHTML = ''; }
       if (_formEl)  { _formEl.classList.remove('add-modal-form--hidden'); }
+      _liSourceMeta = null;  // reset on modal close/cancel
     }
 
     async function saveRole() {
@@ -11503,8 +11590,12 @@
           engagement_type:     _engType,
           ir35_status:         _ir35Status,
           day_rate_text:       _dayRateText,
-          contract_length:     _contractLength,
-          start_timeline:      _startTimeline,
+          contract_length:        _contractLength,
+          start_timeline:         _startTimeline,
+          captured_via:           _liSourceMeta?.captured_via          || null,
+          recruiter_intermediary: _liSourceMeta?.recruiter_intermediary ?? null,
+          source_type:            _liSourceMeta?.source_type            || null,
+          source_url:             _liSourceMeta?.source_url             || null,
         }).select().single();
         if (re) throw re;
 
@@ -11705,6 +11796,7 @@
       } finally {
         btn.disabled = false;
         btn.textContent = 'Save JD';
+        _liSourceMeta = null;  // always clear after save attempt
       }
     }
 
@@ -12078,6 +12170,7 @@
     // ─── Profile view ──────────────────────────────────────────────────────────
     function renderProfileView() {
       document.getElementById('col-overview-cards').innerHTML = `
+        <div style="height:100%;overflow-y:auto;box-sizing:border-box;">
         <div class="col-center-inner">
           <h1 class="doc-role-title" style="margin-bottom:4px;">Profile</h1>
           <p style="font-size:13px;color:var(--text-secondary);margin:0 0 32px;line-height:1.5;">Your preferences and CV context. Rolewise can use this to understand you better over time.</p>
@@ -12238,6 +12331,21 @@
               </div>
             </div>
           </div>
+
+          <!-- F: LinkedIn ─────────────────────────────────── -->
+          <div class="doc-section" id="profile-linkedin-section" style="margin-top:32px; padding-top:28px; border-top:1px solid var(--border-light);">
+            <div class="doc-section-heading">LinkedIn</div>
+            <p class="pref-context-note" style="margin-bottom:16px;">Paste your LinkedIn <code>li_at</code> session cookie to enable one-click JD fetch. Find it in Chrome DevTools → Application → Cookies → www.linkedin.com.</p>
+            <div class="field-group" style="margin-bottom:16px;">
+              <label class="field-label" for="pref-li-at">li_at cookie value</label>
+              <textarea class="field-textarea" id="pref-li-at" placeholder="Paste your li_at value here…" spellcheck="false" autocomplete="off" style="min-height:72px;font-family:var(--font-mono,monospace);font-size:11px;word-break:break-all;"></textarea>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;">
+              <button class="btn-primary" id="btn-save-li-at">Save</button>
+              <span id="li-at-save-confirm" style="font-size:12.5px;color:var(--text-muted);"></span>
+            </div>
+          </div>
+        </div>
         </div>
       `;
 
@@ -12286,6 +12394,42 @@
       document.querySelectorAll('.appearance-mode-btn').forEach(el => {
         el.classList.toggle('active', el.dataset.mode === _curMode);
       });
+
+      // ── LinkedIn session cookie: load existing value + wire save ──────────────
+      (async () => {
+        const _liAtEl      = document.getElementById('pref-li-at');
+        const _liAtConfirm = document.getElementById('li-at-save-confirm');
+        const _liAtBtn     = document.getElementById('btn-save-li-at');
+
+        // Pre-fill textarea with current stored value
+        const { data: _liProfile } = await db.from('profiles').select('id, linkedin_session_cookie').limit(1).maybeSingle();
+        if (_liAtEl && _liProfile?.linkedin_session_cookie) {
+          _liAtEl.value = _liProfile.linkedin_session_cookie;
+        }
+
+        // Save handler
+        if (_liAtBtn) {
+          _liAtBtn.addEventListener('click', async () => {
+            const _val = _liAtEl?.value.trim() || null;
+            _liAtBtn.disabled = true;
+            if (_liAtConfirm) _liAtConfirm.textContent = 'Saving…';
+            const _profileId = _liProfile?.id;
+            if (!_profileId) {
+              if (_liAtConfirm) _liAtConfirm.textContent = 'Could not find profile row.';
+              _liAtBtn.disabled = false;
+              return;
+            }
+            const { error: _liErr } = await db.from('profiles').update({ linkedin_session_cookie: _val }).eq('id', _profileId);
+            if (_liErr) {
+              if (_liAtConfirm) _liAtConfirm.textContent = 'Save failed: ' + _liErr.message;
+            } else {
+              if (_liAtConfirm) _liAtConfirm.textContent = 'Saved';
+              setTimeout(() => { if (_liAtConfirm) _liAtConfirm.textContent = ''; }, 3000);
+            }
+            _liAtBtn.disabled = false;
+          });
+        }
+      })();
     }
 
     // ─── Legacy → canonical converter ─────────────────────────────────────────
@@ -20441,6 +20585,49 @@
 
         const narrative = data.narrative;
 
+        // ── Em-dash cleanup ───────────────────────────────────────────────
+        // The model occasionally outputs em dashes despite prompt rules.
+        // Strip them from all string values before validation/render.
+        (function _stripEmDashes(obj) {
+          if (!obj || typeof obj !== 'object') return;
+          var keys = Object.keys(obj);
+          for (var i = 0; i < keys.length; i++) {
+            var k = keys[i];
+            var v = obj[k];
+            if (typeof v === 'string') {
+              obj[k] = v.replace(/\u2014/g, ',').replace(/\u2013/g, '-');
+            } else if (Array.isArray(v)) {
+              for (var j = 0; j < v.length; j++) {
+                if (typeof v[j] === 'string') {
+                  v[j] = v[j].replace(/\u2014/g, ',').replace(/\u2013/g, '-');
+                } else if (v[j] && typeof v[j] === 'object') {
+                  _stripEmDashes(v[j]);
+                }
+              }
+            } else if (v && typeof v === 'object') {
+              _stripEmDashes(v);
+            }
+          }
+        })(narrative);
+
+        // ── CV-on-Skip cleanup ──────────────────────────────────────────────
+        // If the decision is a clear Skip (not conditionally viable),
+        // null out recommended_cv and why_that_cv.
+        (function _nullCvOnClearSkip() {
+          var dec = narrative.decision;
+          if (!dec || !dec.paragraphs || !Array.isArray(dec.paragraphs)) return;
+          var decText = dec.paragraphs.join(' ').toLowerCase();
+          // Clear skip signals: "skip this", "not a decision", "hard blocker",
+          // "automatic skip", "disqualifies", "not advised"
+          var isClearSkip = /\bskip this\b|\bnot a decision\b|\bhard blocker|\bautomatic skip|\bdisqualif|\bnot advised\b/.test(decText);
+          // Conditional viability: "if … pursue" or "if … worth exploring"
+          var isConditional = /\bif\b.{5,80}\bpursue\b|\bif\b.{5,80}\bworth exploring\b/.test(decText);
+          if (isClearSkip && !isConditional) {
+            narrative.recommended_cv = null;
+            narrative.why_that_cv = null;
+          }
+        })();
+
         // ── Strict validation ─────────────────────────────────────────────
         // Every key must exist with the correct shape. If any check fails
         // the entire payload is rejected and the renderer falls back to
@@ -23119,6 +23306,7 @@
         { id: 'audit',         label: 'Audit',         desc: 'Read-only view of recent role activity from role_updates.' },
         { id: 'intelligence',  label: 'Intelligence',  desc: 'Outcome patterns and signals from your closed application history.' },
         { id: 'preferences',   label: 'Preferences',   desc: 'Edit your role preferences, blockers, and CV setup.' },
+        { id: 'linkedin',      label: 'LinkedIn',      desc: 'Store your LinkedIn session cookie so Rolewise can fetch JDs automatically.' },
       ];
 
       let _activeSection = 'overview';
@@ -24255,6 +24443,55 @@ If a field cannot be determined from the message, return null for that field.`,
         });
       }
 
+      // ── Admin > LinkedIn Session ─────────────────────────────────────────────
+      async function _renderAdminLinkedIn(contentEl) {
+        // Load current cookie status (masked) from profiles
+        const { data: profile } = await db.from('profiles').select('id, linkedin_session_cookie').limit(1).single();
+        const hasCookie = !!(profile?.linkedin_session_cookie);
+        const profileId = profile?.id || null;
+        const masked = hasCookie ? '••••••••••••••••' + (profile.linkedin_session_cookie.slice(-6)) : null;
+
+        contentEl.innerHTML = `
+          <div class="admin-section-title">LinkedIn Session</div>
+          <div class="admin-section-desc">Rolewise can fetch full job descriptions directly from LinkedIn using your session cookie. Your <code>li_at</code> cookie is stored privately in your profile and never shared.</div>
+          <div style="margin:20px 0 6px;">
+            <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">
+              ${hasCookie
+                ? `<span style="color:var(--green,#22c55e);">✓ Session active</span> — last 6 chars: <code>${masked.slice(-6)}</code>`
+                : `<span style="color:var(--text-muted);">No session set.</span> Paste jobs will ask you to add this.`}
+            </div>
+            <label style="font-size:12.5px;font-weight:500;display:block;margin-bottom:6px;">li_at cookie value</label>
+            <input id="admin-li-at-input" type="password" class="field-input" style="width:100%;max-width:440px;font-family:monospace;font-size:12px;"
+              placeholder="Paste your li_at value here…" autocomplete="off" value="">
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">
+              To find it: open LinkedIn → F12 → Application → Cookies → linkedin.com → copy the <code>li_at</code> value.
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:14px;align-items:center;">
+            <button class="cs-save-btn" id="admin-li-at-save" style="min-width:80px;">Save</button>
+            ${hasCookie ? `<button class="cs-save-btn" id="admin-li-at-clear" style="background:transparent;color:var(--red,#ef4444);border-color:var(--red,#ef4444);">Clear</button>` : ''}
+            <span id="admin-li-at-status" style="font-size:12px;color:var(--text-muted);"></span>
+          </div>
+        `;
+
+        const statusEl = contentEl.querySelector('#admin-li-at-status');
+
+        contentEl.querySelector('#admin-li-at-save')?.addEventListener('click', async () => {
+          const val = contentEl.querySelector('#admin-li-at-input')?.value.trim();
+          if (!val) { if (statusEl) statusEl.textContent = 'Please paste a cookie value first.'; return; }
+          if (!profileId) { if (statusEl) statusEl.textContent = 'No profile found.'; return; }
+          const { error } = await db.from('profiles').update({ linkedin_session_cookie: val }).eq('id', profileId);
+          if (statusEl) statusEl.textContent = error ? 'Save failed. Try again.' : '✓ Saved.';
+          if (!error) setTimeout(() => _renderAdminLinkedIn(contentEl), 1200);
+        });
+
+        contentEl.querySelector('#admin-li-at-clear')?.addEventListener('click', async () => {
+          if (!profileId) return;
+          await db.from('profiles').update({ linkedin_session_cookie: null }).eq('id', profileId);
+          _renderAdminLinkedIn(contentEl);
+        });
+      }
+
       // ── Section dispatcher ──────────────────────────────────────────────────
       function _renderSection(sectionId) {
         _activeSection = sectionId;
@@ -24274,6 +24511,7 @@ If a field cannot be determined from the message, return null for that field.`,
         if (sectionId === 'audit')         { _renderAdminAudit(contentEl);         return; }
         if (sectionId === 'intelligence')  { _renderAdminIntelligence(contentEl);  return; }
         if (sectionId === 'preferences')   { _renderAdminPreferences(contentEl);   return; }
+        if (sectionId === 'linkedin')      { _renderAdminLinkedIn(contentEl);      return; }
 
         contentEl.innerHTML = `
           <div class="admin-section-title">${sec.label}</div>
@@ -26017,6 +26255,168 @@ If a field cannot be determined from the message, return null for that field.`,
       _addJdTextarea.addEventListener('blur', _tryAutoFillRecruiter);
     }
     document.getElementById('add-url')?.addEventListener('change', _tryAutoFillRecruiter);
+
+    // ─── LinkedIn JD helpers ─────────────────────────────────────────────────
+
+    // Lightweight clean of LinkedIn-fetched JD text.
+    // Normalises spacing, removes "Show more" artifacts, collapses duplicate lines.
+    // Does NOT rewrite or re-order content.
+    function cleanLinkedInJD(text) {
+      if (!text) return text;
+      let t = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      t = t.replace(/\bshow\s+more\b[ \t]*/gi, '');          // remove "Show more" artifacts
+      t = t.replace(/\n{3,}/g, '\n\n');                       // collapse 3+ blank lines to 2
+      t = t.replace(/^[ \t]+|[ \t]+$/gm, '');                 // trim each line
+      // Remove duplicate consecutive lines (same line appearing twice in a row)
+      t = t.replace(/^(.{20,})\n\1$/gm, '$1');
+      return t.trim();
+    }
+
+    // Returns true if the JD text looks complete enough to save without warning.
+    // Threshold: >= 900 chars AND contains at least one typical section keyword.
+    function _isLinkedInJDComplete(text) {
+      if (!text || text.length < 900) return false;
+      const lower = text.toLowerCase();
+      return ['about', 'responsibilit', 'requirement', 'qualif', 'experience', 'what you'].some(s => lower.includes(s));
+    }
+
+    // ─── LinkedIn JD Fetch ───────────────────────────────────────────────────
+    // Detects LinkedIn job URLs in the URL field and offers a one-click fetch
+    // that pre-fills the JD textarea + metadata fields via the fetch-linkedin-jd
+    // edge function (which uses the li_at session cookie stored in profiles).
+
+    const _liBar    = document.getElementById('linkedin-fetch-bar');
+    const _liBtn    = document.getElementById('btn-linkedin-fetch');
+    const _liStatus = document.getElementById('linkedin-fetch-status');
+
+    function _isLinkedInJobUrl(url) {
+      return /linkedin\.com\/(jobs\/view\/\d+|jobs\/collections\/|jobs\/search)/.test(url)
+        || /linkedin\.com.*currentJobId=\d+/.test(url);
+    }
+
+    function _showLinkedInFetchBar(show) {
+      if (_liBar) _liBar.classList.toggle('hidden', !show);
+      if (_liStatus && !show) _liStatus.textContent = '';
+    }
+
+    // Show fetch bar when a LinkedIn URL is typed/pasted into the URL field
+    document.getElementById('add-url')?.addEventListener('input', (e) => {
+      _showLinkedInFetchBar(_isLinkedInJobUrl(e.target.value.trim()));
+    });
+
+    // Also detect if a LinkedIn URL is pasted directly into the JD textarea
+    if (_addJdTextarea) {
+      _addJdTextarea.addEventListener('paste', (e) => {
+        const pasted = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+        if (_isLinkedInJobUrl(pasted.trim())) {
+          e.preventDefault();
+          const _urlEl = document.getElementById('add-url');
+          if (_urlEl && !_urlEl.value.trim()) _urlEl.value = pasted.trim();
+          _showLinkedInFetchBar(true);
+          if (_liStatus) _liStatus.textContent = 'LinkedIn URL detected — click Fetch JD to load it.';
+        }
+      });
+    }
+
+    async function _fetchLinkedInJD() {
+      const url = document.getElementById('add-url')?.value.trim();
+      if (!url || !_isLinkedInJobUrl(url)) return;
+
+      if (_liBtn)    { _liBtn.disabled = true; _liBtn.textContent = 'Fetching from LinkedIn…'; }
+      if (_liStatus) { _liStatus.textContent = ''; }
+
+      try {
+        // ── Network call ──────────────────────────────────────────────────────
+        const { data: profiles } = await db.from('profiles').select('id').limit(1);
+        const userId = profiles?.[0]?.id || null;
+
+        let res, payload;
+        try {
+          res     = await fetch(`${SUPABASE_URL}/functions/v1/fetch-linkedin-jd`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+            body:    JSON.stringify({ url, userId }),
+          });
+          payload = await res.json();
+        } catch (_netErr) {
+          if (_liStatus) _liStatus.textContent = 'Could not fetch job description. Try opening the role and pasting manually.';
+          return;
+        }
+
+        // ── Failure states ────────────────────────────────────────────────────
+        if (!res.ok || !payload.success) {
+          const _e = payload?.error;
+          if (_liStatus) _liStatus.textContent =
+            _e === 'no_session'
+              ? 'LinkedIn session not set. Add it in Admin → LinkedIn.'
+              : (_e === 'session_expired')
+              ? 'LinkedIn session expired. Update it in Admin → LinkedIn.'
+              : 'Could not fetch job description. Try opening the role and pasting manually.';
+          return;
+        }
+
+        const job = payload.job;
+
+        // ── Empty / unusable JD ───────────────────────────────────────────────
+        if (!job?.description || job.description.trim().length < 50) {
+          if (_liStatus) _liStatus.textContent = 'No usable job description found.';
+          return;
+        }
+
+        // ── Clean JD text ─────────────────────────────────────────────────────
+        const _cleaned = cleanLinkedInJD(job.description);
+
+        // ── Pre-fill JD textarea ──────────────────────────────────────────────
+        const _jdEl = document.getElementById('add-jd');
+        if (_jdEl) {
+          _jdEl.value = _cleaned;
+          _jdEl.dispatchEvent(new Event('input'));   // triggers autofill + truncation check
+        }
+
+        // ── Pre-fill metadata fields (non-destructive) ────────────────────────
+        const compEl   = document.getElementById('add-company');
+        const titleEl  = document.getElementById('add-title');
+        const locEl    = document.getElementById('add-location');
+        const sourceEl = document.getElementById('add-source');
+        if (compEl  && !compEl.value.trim()  && job.company)  compEl.value  = job.company;
+        if (titleEl && !titleEl.value.trim() && job.title)    titleEl.value = job.title;
+        if (locEl   && !locEl.value.trim()   && job.location) locEl.value   = job.location;
+        if (sourceEl && !sourceEl.value)                      sourceEl.value = 'LinkedIn';
+
+        // ── Source metadata — consumed by saveRole ────────────────────────────
+        const _isIntermediary = !job.company || _recruiterTypeLabel(job.company) === 'Agency';
+        _liSourceMeta = {
+          captured_via:           'auto_fetch',
+          source_type:            'linkedin',
+          source_url:             url,
+          recruiter_intermediary: _isIntermediary,
+        };
+
+        // ── Truncation / completeness check ──────────────────────────────────
+        if (!_isLinkedInJDComplete(_cleaned)) {
+          if (_liStatus) _liStatus.textContent = 'This job description may be incomplete. Consider opening LinkedIn and copying the full version.';
+        } else {
+          if (_liStatus) _liStatus.textContent = 'JD loaded';
+        }
+        if (_liBtn) _liBtn.textContent = 'Re-fetch';
+
+        // ── Auto-analyse: trigger full save+analyse pipeline if JD is complete ─
+        // Delay is UX-only: gives the user a moment to see "JD loaded" before
+        // the form body is replaced by the analysis trace. Not required for
+        // correctness — all DOM writes and _liSourceMeta are already set above.
+        if (_cleaned.length > 900) {
+          setTimeout(() => { saveRole(); }, 800);
+        }
+
+      } catch (_err) {
+        if (_liStatus) _liStatus.textContent = 'Could not fetch job description. Try opening the role and pasting manually.';
+      } finally {
+        if (_liBtn) _liBtn.disabled = false;
+      }
+    }
+
+    _liBtn?.addEventListener('click', _fetchLinkedInJD);
+    // ─── End LinkedIn JD Fetch ───────────────────────────────────────────────
 
     // Truncation warning action buttons
     document.getElementById('btn-jd-paste-anyway')?.addEventListener('click', () => {

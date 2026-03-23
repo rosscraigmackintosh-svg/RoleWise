@@ -354,7 +354,7 @@ serve(async (req: Request) => {
     if (!extraction_json || typeof extraction_json !== 'object') {
       return new Response(
         JSON.stringify({ error: 'Missing or invalid extraction_json' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
       )
     }
 
@@ -387,7 +387,7 @@ serve(async (req: Request) => {
       console.error('[generate-narrative] Anthropic API error:', response.status, errText)
       return new Response(
         JSON.stringify({ error: 'Anthropic API error', status: response.status }),
-        { status: 502, headers: { 'Content-Type': 'application/json' } }
+        { status: 502, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
       )
     }
 
@@ -404,7 +404,7 @@ serve(async (req: Request) => {
       console.error('[generate-narrative] JSON parse failed:', parseErr, 'raw:', rawText.slice(0, 200))
       return new Response(
         JSON.stringify({ error: 'Failed to parse narrative JSON', raw: rawText.slice(0, 500) }),
-        { status: 422, headers: { 'Content-Type': 'application/json' } }
+        { status: 422, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
       )
     }
 
@@ -441,7 +441,7 @@ serve(async (req: Request) => {
     console.error('[generate-narrative] Unexpected error:', err)
     return new Response(
       JSON.stringify({ error: 'Internal error', message: String(err) }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
     )
   }
 })

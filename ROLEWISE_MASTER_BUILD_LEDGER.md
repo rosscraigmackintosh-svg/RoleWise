@@ -1,6 +1,6 @@
 # ROLEWISE — Master Build Ledger
 
-> **Last updated:** 2026-03-16 (Analysis Trace Pass shipped — ANL-01 done; Add Recruiter fix REC-04 done; rw-analysis-arrive CSS added)
+> **Last updated:** 2026-03-22 (LinkedIn JD Fetch — LI-01 shipped + corrections pass complete; source_type/source_url fields live; auto-analyse hardened)
 > **Maintainer:** Ross Mackintosh
 > **Purpose:** Single source of truth for everything built, in progress, and planned.
 > **Rule:** Every feature gets a task ID. Every completion moves to Completed Tasks. Every architectural decision is logged in Build Notes. Every subtask is tracked.
@@ -140,6 +140,8 @@ All features must receive a task ID from this index. All task references through
 | `enrich-role` | v1 | No | ACTIVE | Enrich role with external data |
 | `smart-endpoint` | v5 | Yes | ACTIVE | Multi-purpose smart routing endpoint |
 | `generate-lens` | v1 | No | ACTIVE | Generate analytical lenses for role views |
+| `generate-narrative` | v6 | No | ACTIVE | Pass 2 narrative generation (candidate-aware) |
+| `fetch-linkedin-jd` | v1 | No | ACTIVE | Fetch LinkedIn job page using stored li_at session |
 
 ### 1E — Database (Supabase, 26 tables, RLS on all)
 
@@ -465,6 +467,104 @@ During JD analysis, show step-by-step progress: "Extracting role traits…", "De
 ---
 
 ## 6. Build Notes
+
+### 2026-03-22 — LinkedIn JD Fetch — Corrections Pass (LI-01 Phase 3)
+
+**Goal:** Harden the LinkedIn JD fetch feature against three identified defects before the feature is considered production-ready. No new capabilities added.
+
+**Defect 1 — source_type and source_url not persisted to DB**
+
+`_liSourceMeta` was updated to include `source_type: 'linkedin'` and `source_url: url` but the `saveRole` insert did not read those fields. Two new DB columns (`source_type text`, `source_url text`) were added in migration `20260322_roles_source_type_source_url.sql`. The insert was patched to read both from `_liSourceMeta`.
+
+**Defect 2 — auto-analyse used simulated button click**
+
+The `setTimeout` inside `_fetchLinkedInJD` called `document.getElementById('btn-save-add').click()` to trigger save after a successful fetch. This is fragile: it depends on the DOM element existing and not being disabled, and bypasses any guard logic. Replaced with a direct `saveRole()` call.
+
+**Defect 3 — _liSourceMeta not reset on modal close/cancel**
+
+`_liSourceMeta` was reset in `openAddModal` (on open) and in `saveRole`'s finally block (on save attempt). The `closeAddModal` path (Cancel button, ESC key, outside-click) had no reset. Stale LinkedIn metadata from an aborted fetch could have leaked into the next manually-entered role save. Added `_liSourceMeta = null` to `closeAddModal`.
+
+**Files changed**
+- `app/app.js` — 3 targeted edits:
+  - `closeAddModal()`: added `_liSourceMeta = null` reset (line ~11448)
+  - `saveRole()` insert: added `source_type` and `source_url` fields (lines 11513–11514)
+  - `_fetchLinkedInJD()`: replaced `btn-save-add.click()` with direct `saveRole()` call (line ~26269)
+- `supabase/migrations/20260322_roles_source_type_source_url.sql` — new, applied
+- `supabase/migrations/20260322_roles_linkedin_source_fields.sql` — new (captured_via, recruiter_intermediary), applied
+- `supabase/migrations/20260322_linkedin_session.sql` — new (linkedin_session_cookie on profiles), applied
+
+**Schema changes**
+- `roles.source_type text` — null = unknown origin; 'linkedin' = fetched via LinkedIn JD fetch
+- `roles.source_url text` — original URL for LinkedIn-fetched roles
+- `roles.captured_via text` — 'auto_fetch' for LinkedIn-fetched roles; null for manual entry
+- `roles.recruiter_intermediary boolean` — true if company appears to be a recruiter agency
+- `profiles.linkedin_session_cookie text` — stores li_at cookie for server-side LinkedIn fetches
+
+**_liSourceMeta full lifecycle (post-corrections):**
+1. `openAddModal` — reset to null
+2. `_fetchLinkedInJD` success — set with captured_via, source_type, source_url, recruiter_intermediary
+3. `saveRole` — read all four fields into DB insert; cleared in finally block regardless of outcome
+4. `closeAddModal` — reset to null (cancel/close path)
+
+**Lines added / modified / removed**
+- Lines added: 2 (source_type and source_url in insert)
+- Lines modified: 2 (closeAddModal close line, setTimeout auto-analyse)
+- Lines removed: 3 (old multi-line setTimeout block replaced with 1 line)
+
+---
+
+### 2026-03-22 — LinkedIn JD Fetch — Feature Ship (LI-01)
+
+**Goal:** Allow users to paste a LinkedIn job URL into the Add JD modal and have the job description fetched and pre-filled automatically, with optional auto-analysis if the JD is complete.
+
+**Architecture**
+
+A new Supabase edge function (`fetch-linkedin-jd`) fetches the LinkedIn job page server-side using a stored `li_at` session cookie from the user's profile. The function extracts job data from JSON-LD structured data embedded in the page HTML and returns a structured job object. No third-party scraping service.
+
+**Edge function: `fetch-linkedin-jd` v1**
+- Receives `{ url }` in POST body
+- Reads `linkedin_session_cookie` from `profiles` via service role key
+- Fetches LinkedIn job page with `li_at` cookie + browser-like headers
+- Detects expired session / auth wall → returns `{ success: false, error: 'session_expired' }`
+- Extracts JSON-LD structured data (`<script type="application/ld+json">`)
+- Falls back to OG meta tags if JSON-LD not found
+- Returns `{ success, job: { job_id, linkedin_url, title, company, location, description, salary_text, employment_type, posted_date, apply_url } }`
+- JWT verification: false (single-user app, no auth header plumbing needed)
+
+**Frontend: `index.html`**
+- Added `#linkedin-fetch-bar` below the URL input field in the Add JD modal
+- Contains `#btn-linkedin-fetch` and `#linkedin-fetch-status` span
+
+**Frontend: `styles.css`**
+- Added `.linkedin-fetch-bar`, `.linkedin-fetch-btn`, `.linkedin-fetch-btn:hover`, `.linkedin-fetch-btn:disabled`, `.linkedin-fetch-status` CSS
+
+**Frontend: `app.js`**
+- Module-level `let _liSourceMeta = null` — carries fetch metadata through to saveRole
+- `openAddModal`: reset `_liSourceMeta = null`
+- URL field: `input` event shows/hides the fetch bar based on whether the value looks like a LinkedIn URL
+- `_fetchLinkedInJD(url)`: fetches via edge function, cleans JD with `cleanLinkedInJD()`, validates with `_isLinkedInJDComplete()`, pre-fills title/company/JD fields, sets `_liSourceMeta`, auto-triggers save if JD is complete
+- `cleanLinkedInJD(text)`: normalises fetched JD — CRLF, "show more" artefacts, triple newlines, trailing whitespace, duplicate lines
+- `_isLinkedInJDComplete(text)`: checks length ≥ 900 chars + at least one section keyword
+- Admin panel: `_renderAdminLinkedIn()` for li_at cookie management; wired into ADMIN_SECTIONS + section dispatcher
+
+**Files changed**
+- `supabase/functions/fetch-linkedin-jd/index.ts` — new file, deployed as v1
+- `app/index.html` — +4 lines (linkedin-fetch-bar)
+- `app/styles.css` — +13 lines (linkedin fetch UI)
+- `app/app.js` — 8 surgical edits:
+  - Module var `_liSourceMeta`
+  - `openAddModal` reset
+  - URL field input handler (fetch bar visibility)
+  - `cleanLinkedInJD` helper
+  - `_isLinkedInJDComplete` helper
+  - `_fetchLinkedInJD` function (~80 lines)
+  - Admin LinkedIn section
+  - ADMIN_SECTIONS + dispatcher wiring
+- 3 Supabase migrations applied (see Corrections Pass entry above)
+
+**Activation requirement:** User must set their LinkedIn `li_at` session cookie in Admin → LinkedIn for the fetch button to work.
+
+---
 
 ### 2026-03-16 — Analysis Trace Pass
 

@@ -6508,6 +6508,19 @@
     }
     .jd-truncation-actions button:hover { background: var(--warning-bg-alt); }
 
+    /* LinkedIn JD fetch bar */
+    .linkedin-fetch-bar {
+      display: flex; align-items: center; gap: 10px; margin-top: 6px;
+    }
+    .linkedin-fetch-btn {
+      font-size: 12px; padding: 4px 12px; border-radius: 4px; cursor: pointer;
+      border: 1px solid var(--brand-border, #0077b5); background: transparent;
+      color: var(--brand-color, #0077b5); white-space: nowrap;
+    }
+    .linkedin-fetch-btn:hover { background: var(--brand-bg, #e8f4fa); }
+    .linkedin-fetch-btn:disabled { opacity: 0.6; cursor: default; }
+    .linkedin-fetch-status { font-size: 12px; color: var(--text-light); }
+
     .hidden { display: none !important; }
 
     /* ─── Profile view ─────────────────────────────────────── */
