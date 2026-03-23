@@ -3291,6 +3291,146 @@
       font-style: italic;
     }
 
+    /* ── Post-analysis decision capture (Apply / Skip / Not sure) ───────────── */
+    #ws-decision-capture {
+      margin-top: 32px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    .rw-dc-question {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin: 0 0 12px 0;
+    }
+
+    .rw-dc-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .rw-dc-btn {
+      font-size: 13px;
+      font-family: inherit;
+      padding: 6px 14px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      line-height: 1.4;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+    }
+    .rw-dc-btn:hover {
+      background: var(--bg-hover, rgba(0,0,0,0.04));
+      border-color: var(--text-muted);
+    }
+    .rw-dc-btn--chosen {
+      border-color: var(--text-muted);
+      background: var(--bg-hover, rgba(0,0,0,0.05));
+      color: var(--text);
+    }
+
+    .rw-dc-save-btn {
+      font-size: 13px;
+      font-family: inherit;
+      padding: 5px 12px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .rw-dc-save-btn:hover { background: var(--bg-hover, rgba(0,0,0,0.04)); }
+
+    .rw-dc-reasons {
+      margin-top: 14px;
+      animation: ws-settle 160ms ease-out both;
+    }
+
+    .rw-dc-reasons-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin: 0 0 10px 0;
+    }
+
+    .rw-dc-reasons-hint {
+      font-size: 12px;
+      color: var(--text-light);
+    }
+
+    .rw-dc-reason-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .rw-dc-reason-chip {
+      font-size: 12.5px;
+      font-family: inherit;
+      padding: 4px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      line-height: 1.4;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+    }
+    .rw-dc-reason-chip:hover {
+      background: var(--bg-hover, rgba(0,0,0,0.04));
+      border-color: var(--text-muted);
+      color: var(--text);
+    }
+
+    .rw-dc-other-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      align-items: center;
+    }
+
+    .rw-dc-other-input {
+      font-size: 13px;
+      font-family: inherit;
+      flex: 1;
+      padding: 5px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+    }
+    .rw-dc-other-input:focus { border-color: var(--text-muted); }
+
+    .rw-dc-confirm {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: ws-settle 160ms ease-out both;
+    }
+
+    .rw-dc-confirm-text {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .rw-dc-undo-btn {
+      font-size: 12px;
+      font-family: inherit;
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: color 0.1s;
+    }
+    .rw-dc-undo-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
     /* Your decision — action buttons */
     .rw-doc-action-row {
       display: flex;
@@ -7808,15 +7948,32 @@
       font-style: italic;
       margin-bottom: 4px;
       transition: opacity 0.5s;
+      display: flex;
+      align-items: center;
+      gap: 4px;
     }
 
     .ws-assistant-status.ws-status-faded {
       opacity: 0.35;
     }
 
+    .ws-assistant-status.ws-status-done {
+      opacity: 0.38;
+    }
+
     .ws-assistant-status.ws-status-error {
       color: var(--error);
       font-style: normal;
+    }
+
+    /* Dots shown on single status lines until done/faded/error */
+    .ws-assistant-status .ws-step-dots {
+      display: inline-flex;
+    }
+    .ws-assistant-status.ws-status-faded .ws-step-dots,
+    .ws-assistant-status.ws-status-done .ws-step-dots,
+    .ws-assistant-status.ws-status-error .ws-step-dots {
+      display: none;
     }
 
     /* ─── Informative analysis step list ────────────────────────────────────── */
@@ -7882,14 +8039,30 @@
       gap: 9px;
       font-size: 13px;
       color: var(--text-light);
-      opacity: 0.3;
       transition: opacity 0.35s ease, color 0.35s ease;
+    }
+
+    /* Steps that haven't appeared yet are invisible and collapsed */
+    .ws-step--pending {
+      opacity: 0;
+      max-height: 0;
+      padding: 0;
+      margin: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    /* Slide-in animation when a pending step becomes active */
+    @keyframes wsStepIn {
+      0%   { opacity: 0; transform: translateY(7px); }
+      100% { opacity: 1; transform: translateY(0); }
     }
 
     .ws-step--active {
       color: var(--text);
       opacity: 1;
       font-style: italic;
+      animation: wsStepIn 0.28s ease both;
     }
 
     .ws-step--done {
@@ -7897,6 +8070,36 @@
       color: var(--text-light);
       font-style: normal;
     }
+
+    /* ── Bouncing dots ──────────────────────────────────────────────────────── */
+    @keyframes wsStepDot {
+      0%, 70%, 100% { transform: translateY(0);    opacity: 0.35; }
+      35%           { transform: translateY(-3px); opacity: 1;    }
+    }
+
+    /* Dots structure — hidden by default, shown when step/status is active */
+    .ws-step-dots {
+      display: none;
+      align-items: center;
+      gap: 2px;
+      margin-left: 2px;
+      flex-shrink: 0;
+    }
+
+    .ws-step--active .ws-step-dots {
+      display: inline-flex;
+    }
+
+    .ws-step-dots span {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: currentColor;
+      display: inline-block;
+      animation: wsStepDot 1.3s ease-in-out infinite;
+    }
+    .ws-step-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .ws-step-dots span:nth-child(3) { animation-delay: 0.30s; }
 
     .ws-step-check {
       width: 13px;

@@ -1565,8 +1565,8 @@
 
       const _decisionSlots = [
         // ws-blockers-section removed — blockers box removed from main column (RW-REMOVE-MAIN-BLOCKERS)
-        // ws-decision-capture removed — Apply/Skip live in sidebar only (RW-REMOVE-MAIN-DECISION)
         { id: 'ws-decision-history-dl' },        // Decision Layer V1: history read view
+        { id: 'ws-decision-capture' },            // Post-analysis decision capture (Apply / Skip / Not sure)
       ];
       const _lowerSlots = [
         // col-jd-section removed — JD accessible only via sidebar modal (RW-REMOVE-MAIN-JD)
@@ -3882,7 +3882,15 @@
       div.className = 'ws-assistant-status';
       div.dataset.wsEntry = WS_ENTRY.UI_TEMP;
       if (id) div.id = id;
-      div.textContent = text;
+      // Text span + bouncing dots (dots hidden via CSS when done/faded/error)
+      const _txtSpan = document.createElement('span');
+      _txtSpan.className = 'ws-status-text';
+      _txtSpan.textContent = text;
+      const _dotsSpan = document.createElement('span');
+      _dotsSpan.className = 'ws-step-dots';
+      _dotsSpan.innerHTML = '<span></span><span></span><span></span>';
+      div.appendChild(_txtSpan);
+      div.appendChild(_dotsSpan);
       timelineEl.appendChild(div);
       _wsScrollIfNear(timelineEl);
       return div;
@@ -5652,9 +5660,10 @@
       statusEl.dataset.wsEntry = WS_ENTRY.UI_TEMP;
       statusEl.id = 'ws-status-analysing';
       statusEl.innerHTML = _ANALYSIS_STAGES.map((s, i) =>
-        `<div class="ws-step${i === 0 ? ' ws-step--active' : ''}" data-step="${i}">` +
+        `<div class="ws-step${i === 0 ? ' ws-step--active' : ' ws-step--pending'}" data-step="${i}">` +
           `<span class="ws-step-check"></span>` +
           `<span class="ws-step-label">${s}</span>` +
+          `<span class="ws-step-dots"><span></span><span></span><span></span></span>` +
         `</div>`
       ).join('');
       timelineEl.appendChild(statusEl);
@@ -5665,11 +5674,12 @@
         if (_seqDone || !statusEl.isConnected) return;
         const _stepEls = statusEl.querySelectorAll('.ws-step');
         for (let i = 0; i < n; i++) {
-          _stepEls[i]?.classList.remove('ws-step--active');
+          _stepEls[i]?.classList.remove('ws-step--active', 'ws-step--pending');
           _stepEls[i]?.classList.add('ws-step--done');
         }
         if (n < _stepEls.length) {
-          _stepEls[n]?.classList.remove('ws-step--done');
+          // Slide the next step in: remove pending (unhides it), add active (triggers animation)
+          _stepEls[n]?.classList.remove('ws-step--done', 'ws-step--pending');
           _stepEls[n]?.classList.add('ws-step--active');
         }
       };
@@ -5683,11 +5693,10 @@
         _seqTimers.forEach(clearTimeout);
         if (statusEl.isConnected) {
           statusEl.querySelectorAll('.ws-step').forEach(el => {
-            el.classList.remove('ws-step--active');
+            el.classList.remove('ws-step--active', 'ws-step--pending');
             el.classList.add('ws-step--done');
           });
-          // Brief fade-out so the list doesn't vanish abruptly
-          setTimeout(() => { if (statusEl.isConnected) statusEl.classList.add('ws-analysis-steps--fading'); }, 120);
+          // Steps stay visible as a completed history — no fade/remove
         }
       };
 
@@ -5760,6 +5769,40 @@
         }
         if (!_title && analysis._roleTitle) _title = analysis._roleTitle;
 
+        // ── Platform metadata overrides (DATA PRECEDENCE RULE) ──────────────
+        // LinkedIn / Spiffy metadata is more reliable than AI inference from
+        // JD text. Apply it as the authoritative source BEFORE Pass 2 so the
+        // narrative receives correct, grounded data.
+        // Priority: platform metadata > AI extraction > JD text inference.
+        if (analysis.practical_details) {
+          const _pd = analysis.practical_details;
+          // Work model — LinkedIn Voyager provides this directly; never infer over it
+          if (role._liWorkModel && role._liWorkModel !== 'Not stated') {
+            _pd.remote_model = role._liWorkModel;
+          }
+          // Employment type — from Voyager metadata
+          if (role._liEmploymentType && role._liEmploymentType !== 'Not stated') {
+            _pd.employment_type = role._liEmploymentType;
+          }
+          // Location — only fill gap; AI may have a richer normalised form
+          if (role._liLocation && (!_pd.location || _pd.location === 'Not stated')) {
+            _pd.location = role._liLocation;
+          }
+        }
+
+        // ── Company mismatch detection ────────────────────────────────────────
+        // If LinkedIn listing company ≠ company found in JD text, surface the
+        // discrepancy for Pass 2 to call out explicitly (rebrand / parent co / error).
+        if (role._liCompany && _meta.company_name) {
+          const _norm = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const _liN  = _norm(role._liCompany);
+          const _jdN  = _norm(_meta.company_name);
+          if (_liN !== _jdN && _liN.length > 2 && _jdN.length > 2 &&
+              !_liN.includes(_jdN) && !_jdN.includes(_liN)) {
+            analysis._companyMismatch = { listing: role._liCompany, jd: _meta.company_name };
+          }
+        }
+
         // Annotate analysis with role identity for artefact heading
         analysis._company   = _company;
         analysis._roleTitle = _title;
@@ -5822,11 +5865,7 @@
       // Use a local placeholder id; wsAddArtifact will return the real one later.
       _clearSeq();
       const _localArtifactId = 'local-' + Date.now();
-      // Fade the step list out — 150 ms matches Phase 6 loader exit target.
-      if (statusEl.isConnected) {
-        statusEl.classList.add('ws-analysis-steps--fading');
-        setTimeout(() => { if (statusEl.isConnected) statusEl.remove(); }, 150);
-      }
+      // Steps stay visible as completed history — analysis artifact appears below them
       // If the "Analyse anyway" path left a processing spinner in the overview body,
       // remove it and un-hide all children now that real content is about to render.
       // This prevents the blank scaffold from ever being visible — the children go
@@ -6207,7 +6246,6 @@
                 body:    JSON.stringify({ url: _fetchUrl, userId: _liUserId }),
               });
               _liPayload = await _liRes.json();
-              console.log('[LinkedIn fetch] debug', JSON.stringify(_liPayload?._debug || {desc: _liPayload?.job?.description?.slice(0,100)}).slice(0, 800));
             } catch (_netErr) {
               if (_liStatusEl.isConnected) _liStatusEl.remove();
               const _errMsg = 'Could not reach LinkedIn — check your connection, then paste the job description directly.';
@@ -6215,8 +6253,8 @@
               if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
               return;
             }
-            if (_liStatusEl.isConnected) _liStatusEl.remove();
             if (!_liRes.ok || !_liPayload.success) {
+              if (_liStatusEl.isConnected) _liStatusEl.remove();
               const _e = _liPayload?.error;
               const _errMsg = _e === 'no_session'
                 ? 'LinkedIn session not set — add your li_at cookie in Admin → LinkedIn.'
@@ -6229,11 +6267,14 @@
             }
             const _liJob = _liPayload.job;
             if (!_liJob?.description || _liJob.description.trim().length < 50) {
+              if (_liStatusEl.isConnected) _liStatusEl.remove();
               const _errMsg = 'No usable job description found on that LinkedIn page — try pasting it directly.';
               _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
               if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
               return;
             }
+            // Success — mark the fetch status as done (dots hide, line fades but stays visible)
+            if (_liStatusEl.isConnected) _liStatusEl.classList.add('ws-status-done');
             const _liCleaned = cleanLinkedInJD(_liJob.description);
             // Store URL (and any metadata) on the role
             if (!role._isTemp) {
@@ -6254,6 +6295,14 @@
               if (!role.company && _liJob.company) role.company = _liJob.company;
               if (!role.title   && _liJob.title)   role.title   = _liJob.title;
             }
+            // Store authoritative LinkedIn metadata on role so _wsRunAnalysis can
+            // use it as the primary source (overrides AI inference).
+            // These fields come directly from the LinkedIn Voyager API and are
+            // more reliable than anything extracted from the JD text.
+            if (_liJob.work_remote)     role._liWorkModel      = _liJob.work_remote;
+            if (_liJob.employment_type) role._liEmploymentType = _liJob.employment_type;
+            if (_liJob.location)        role._liLocation       = _liJob.location;
+            if (_liJob.company)         role._liCompany        = _liJob.company;
             // Warn if the fetched JD looks truncated
             if (!_isLinkedInJDComplete(_liCleaned)) {
               const _warnMsg = 'Heads up — this job description may be cut off. You can paste the full version if needed.';
@@ -10607,13 +10656,236 @@
     }
 
     // ─── Decision Capture ─────────────────────────────────────────────────────
-    // RW-REMOVE-MAIN-DECISION: "Your decision" section removed from main column.
-    // Apply / Skip now live exclusively in the right-hand sidebar panel.
-    // Function kept as a no-op so existing call sites don't throw.
+
+    /**
+     * Persist a post-analysis decision (apply | skip | save) to existing data structures.
+     * Updates: roles.user_decision, roles.current_stage (apply only), roles.outcome_reason (skip+reason),
+     *          role_updates (stage row, apply only), role_decisions + role_decisions_ext (via wsAppendDecision).
+     * Returns an async undo function that reverts all DB and in-memory changes.
+     *
+     * @param {Object} role
+     * @param {'apply'|'skip'|'save'} decision
+     * @param {Object} [opts] – { reason: string|null, notes: string|null }
+     * @returns {Promise<Function>} async undo()
+     */
+    async function _persistRoleDecision(role, decision, opts = {}) {
+      const _prevUserDecision  = role.user_decision  || null;
+      const _prevCurrentStage  = role.current_stage  || null;
+      const _prevOutcomeReason = role.outcome_reason || null;
+      let   _insertedUpdateId  = null;
+
+      // ── 1. Roles table update ────────────────────────────────────────────────
+      const _roleFields = { user_decision: decision };
+      if (decision === 'apply')            _roleFields.current_stage  = 'Applied';
+      if (decision === 'skip' && opts.reason) _roleFields.outcome_reason = opts.reason;
+
+      await db.from('roles').update(_roleFields).eq('id', role.id);
+      Object.assign(role, _roleFields);
+      allRoles = allRoles.map(r => r.id === role.id ? { ...r, ..._roleFields } : r);
+
+      // ── 2. Stage row in role_updates (apply only) ────────────────────────────
+      if (decision === 'apply') {
+        const { data: _row } = await db.from('role_updates').insert({
+          role_id:       role.id,
+          event_type:    'stage',
+          status:        'in_progress',
+          stage_reached: 'Applied',
+          note:          null,
+        }).select('id').single().catch(() => ({ data: null }));
+
+        _insertedUpdateId = _row?.id || null;
+        const _entry = {
+          id:            _insertedUpdateId || crypto.randomUUID(),
+          role_id:       role.id,
+          event_type:    'stage',
+          status:        'in_progress',
+          stage_reached: 'Applied',
+          note:          null,
+          created_at:    new Date().toISOString(),
+        };
+        role.role_updates = [_entry, ...(role.role_updates || [])];
+        allRoles = allRoles.map(r => r.id === role.id
+          ? { ...r, role_updates: [_entry, ...(r.role_updates || [])], current_stage: 'Applied' }
+          : r
+        );
+      }
+
+      // ── 3. Decision ledger + learning (fire-and-forget) ─────────────────────
+      // 'save' → 'other' maps to keep_reviewing in the learning layer
+      const _ledgerType = decision === 'apply' ? 'apply' : decision === 'skip' ? 'skip' : 'other';
+      wsAppendDecision(role.id, _ledgerType, opts.reason || null, opts.notes || null);
+
+      // ── 4. For apply: backfill actual_cv_used after ledger write settles ────
+      if (decision === 'apply') {
+        const _cv = (role.latest_match_output || role.analysis || {}).recommended_cv;
+        if (_cv) {
+          setTimeout(() => {
+            db.from('role_decisions_ext')
+              .update({ actual_cv_used: _cv })
+              .eq('role_id', role.id)
+              .eq('decision_type', 'apply')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .catch(() => {});
+          }, 600);
+        }
+      }
+
+      // ── Undo ──────────────────────────────────────────────────────────────────
+      return async function _undo() {
+        const _revert = { user_decision: _prevUserDecision };
+        if (decision === 'apply')               _revert.current_stage  = _prevCurrentStage;
+        if (decision === 'skip' && opts.reason) _revert.outcome_reason = _prevOutcomeReason;
+
+        await db.from('roles').update(_revert).eq('id', role.id).catch(() => {});
+        Object.assign(role, _revert);
+        allRoles = allRoles.map(r => r.id === role.id ? { ...r, ..._revert } : r);
+
+        if (_insertedUpdateId) {
+          await db.from('role_updates').delete().eq('id', _insertedUpdateId).catch(() => {});
+          role.role_updates = (role.role_updates || []).filter(u => u.id !== _insertedUpdateId);
+          allRoles = allRoles.map(r => r.id === role.id
+            ? { ...r, role_updates: (r.role_updates || []).filter(u => u.id !== _insertedUpdateId) }
+            : r
+          );
+        }
+        // Note: role_decisions ledger rows are immutable — undo does not remove them.
+      };
+    }
+
+    /**
+     * Render the post-analysis decision capture strip at the bottom of the analysis view.
+     * Three options: Apply, Skip (with optional reason chips), Not sure.
+     * Decisions are persisted via _persistRoleDecision and mirrored in renderRail.
+     */
     function _renderDecisionCapture(role) {
       _ensureOverviewLowerCards();
       const el = document.getElementById('ws-decision-capture');
-      if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+      if (!el) return;
+
+      // Hide for temp roles, un-analysed roles, or roles with a terminal outcome
+      const _output = role?.latest_match_output || role?.analysis || null;
+      if (!_output || role?._isTemp || role?.outcome_state) {
+        el.style.display = 'none';
+        el.innerHTML = '';
+        return;
+      }
+
+      const _dec = role.user_decision || null;
+
+      el.style.display = '';
+      el.innerHTML = `
+        <div class="rw-dc">
+          <p class="rw-dc-question">What do you want to do with this role?</p>
+          <div class="rw-dc-actions" id="rw-dc-actions">
+            <button class="rw-dc-btn${_dec === 'apply' ? ' rw-dc-btn--chosen' : ''}" data-dc="apply">Apply</button>
+            <button class="rw-dc-btn${_dec === 'skip'  ? ' rw-dc-btn--chosen' : ''}" data-dc="skip">Skip</button>
+            <button class="rw-dc-btn${_dec === 'save'  ? ' rw-dc-btn--chosen' : ''}" data-dc="save">Not sure</button>
+          </div>
+          <div class="rw-dc-reasons" id="rw-dc-reasons" style="display:none;"></div>
+          <div class="rw-dc-confirm" id="rw-dc-confirm" style="display:none;"></div>
+        </div>
+      `;
+
+      const _actionsEl = el.querySelector('#rw-dc-actions');
+      const _reasonsEl = el.querySelector('#rw-dc-reasons');
+      const _confirmEl = el.querySelector('#rw-dc-confirm');
+
+      const SKIP_REASONS = [
+        { label: 'Requires coding',    notes: 'Production coding requirement' },
+        { label: 'On-site / location', notes: 'Hybrid requirement or location constraint note' },
+        { label: 'Salary missing',     notes: 'Salary missing' },
+        { label: 'Scope unclear',      notes: 'Unclear scope' },
+        { label: 'Not a fit',          notes: null },
+        { label: 'Other',              notes: null },
+      ];
+
+      let _pendingUndo = null;
+
+      // ── Show inline confirmation + Undo ─────────────────────────────────────
+      function _showConfirm(msg, undoFn) {
+        _pendingUndo = undoFn;
+        _confirmEl.innerHTML = `<span class="rw-dc-confirm-text">${esc(msg)}</span><button class="rw-dc-undo-btn" id="rw-dc-undo-btn">Undo</button>`;
+        _confirmEl.style.display = '';
+        document.getElementById('rw-dc-undo-btn')?.addEventListener('click', async () => {
+          if (_pendingUndo) {
+            await _pendingUndo().catch(() => {});
+            _pendingUndo = null;
+          }
+          _confirmEl.style.display = 'none';
+          _confirmEl.innerHTML = '';
+          _actionsEl.querySelectorAll('.rw-dc-btn').forEach(b => b.classList.remove('rw-dc-btn--chosen'));
+          const _r = allRoles.find(r => r.id === role.id) || role;
+          renderRail(_r);
+        }, { once: true });
+      }
+
+      // ── Persist + show confirmation ──────────────────────────────────────────
+      async function _commit(decision, opts = {}) {
+        _actionsEl.querySelectorAll('.rw-dc-btn').forEach(b => b.classList.remove('rw-dc-btn--chosen'));
+        _actionsEl.querySelector(`[data-dc="${decision}"]`)?.classList.add('rw-dc-btn--chosen');
+        _reasonsEl.style.display = 'none';
+
+        const _undoFn = await _persistRoleDecision(role, decision, opts).catch(() => null);
+        const _MSGS = { apply: 'Saved as Applied', skip: 'Saved as Skipped', save: 'Saved for later' };
+        _showConfirm(_MSGS[decision] || 'Saved', _undoFn);
+
+        const _r = allRoles.find(r => r.id === role.id) || role;
+        renderRail(_r);
+      }
+
+      // ── Build skip reasons drawer ────────────────────────────────────────────
+      function _openReasons() {
+        _reasonsEl.style.display = '';
+        _reasonsEl.innerHTML = `
+          <p class="rw-dc-reasons-label">Why skip? <span class="rw-dc-reasons-hint">(optional)</span></p>
+          <div class="rw-dc-reason-chips" id="rw-dc-reason-chips"></div>
+          <div class="rw-dc-other-row" id="rw-dc-other-row" style="display:none;">
+            <input class="rw-dc-other-input" id="rw-dc-other-input" type="text" placeholder="Describe reason…" maxlength="140" />
+            <button class="rw-dc-save-btn" id="rw-dc-other-save">Save</button>
+          </div>
+        `;
+        const _chips = document.getElementById('rw-dc-reason-chips');
+        SKIP_REASONS.forEach(r => {
+          const btn = document.createElement('button');
+          btn.className = 'rw-dc-reason-chip';
+          btn.textContent = r.label;
+          btn.addEventListener('click', async () => {
+            if (r.label === 'Other') {
+              document.getElementById('rw-dc-other-row').style.display = '';
+              const _inp = document.getElementById('rw-dc-other-input');
+              _inp?.focus();
+              document.getElementById('rw-dc-other-save')?.addEventListener('click', async () => {
+                const typed = (_inp?.value || '').trim();
+                await _commit('skip', { reason: typed || 'Other', notes: typed || null });
+              }, { once: true });
+              return;
+            }
+            await _commit('skip', { reason: r.label, notes: r.notes });
+          }, { once: true });
+          _chips.appendChild(btn);
+        });
+      }
+
+      // ── Button click handler ─────────────────────────────────────────────────
+      _actionsEl.addEventListener('click', async e => {
+        const btn = e.target.closest('[data-dc]');
+        if (!btn) return;
+        const _d = btn.dataset.dc;
+
+        if (_d === 'skip') {
+          // Already open → second click on Skip = save with no reason
+          if (_reasonsEl.style.display === '' && _reasonsEl.innerHTML) {
+            await _commit('skip', {});
+            return;
+          }
+          _openReasons();
+          return;
+        }
+
+        if (_d === 'apply') { await _commit('apply'); return; }
+        if (_d === 'save')  { await _commit('save');  return; }
+      });
     }
 
     // ─── Decision Layer V1 — Blocker detection ────────────────────────────────
@@ -20544,13 +20816,13 @@
       if (!n.decision?.paragraphs || !_nonEmptyArr(n.decision.paragraphs, 1))
         reasons.push('decision.paragraphs missing or empty');
 
-      // recommended_cv: string (top-level, CV variant ID)
-      if (!_nonEmptyStr(n.recommended_cv))
-        reasons.push('recommended_cv missing');
+      // recommended_cv: string or null (null = skip decision / no CV variants)
+      if (n.recommended_cv !== null && n.recommended_cv !== undefined && !_nonEmptyStr(n.recommended_cv))
+        reasons.push('recommended_cv must be a non-empty string or null');
 
-      // why_that_cv: string (top-level)
-      if (!_nonEmptyStr(n.why_that_cv))
-        reasons.push('why_that_cv missing');
+      // why_that_cv: string or null (null = skip decision / no CV variants)
+      if (n.why_that_cv !== null && n.why_that_cv !== undefined && !_nonEmptyStr(n.why_that_cv))
+        reasons.push('why_that_cv must be a non-empty string or null');
 
       // final_note: must be present
       if (!_nonEmptyStr(n.final_note))

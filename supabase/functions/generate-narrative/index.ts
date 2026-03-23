@@ -130,14 +130,31 @@ Every value is a structured type, never a raw prose blob.
   "final_note": "Use this as context, not a verdict."
 }
 
+COMPANY CONTEXT RULES
+If extraction includes company_mismatch (two different company names detected):
+- In what_this_role_actually_is, state: "The listing appears under [listing name], but the job description refers to [jd name]. This may indicate a rebrand, parent company, or a posting error — worth verifying before applying."
+- Do NOT say "Company not specified" if any company name exists.
+- Do NOT guess which name is correct.
+If the posting company is a recruiter or agency (not the actual employer):
+- In what_this_role_actually_is, identify both the recruiter and the (unnamed) actual employer clearly.
+- e.g. "This is posted by [Recruiter], not the hiring company. The actual employer is not named in the JD."
+
+TRACTION AND CLAIMS
+When the JD includes growth metrics, revenue claims, funding signals, or "post-PMF" language:
+- Label these as "Stated by company" or "Claimed in JD" — not as facts.
+- e.g. "They describe themselves as post-PMF with 3x YoY growth (company claim)."
+- Do NOT present unverified company assertions as verified facts.
+
 SECTION RULES
 FIT REALITY
 - paragraphs: 2-3 short strings max
-- First paragraph states overall alignment TO THIS CANDIDATE
-  - Reference their specific strengths that match (e.g. "Strong match with your zero-to-one experience and health-tech background")
-  - If a hard blocker is triggered, state it here in plain language (e.g. "However, the 4-day on-site requirement is a hard no by your own rules")
-- One paragraph must call out the single biggest friction for this specific candidate
-- Mention key unknowns (e.g. salary) in the final paragraph
+- Lead with the alignment or blocker — be surgical, not narrative
+  - State specific match: e.g. "Strong match on 0→1 scope, autonomy, and product complexity."
+  - If a hard blocker is triggered, state it plainly and immediately: e.g. "Blocked by explicit requirement for production frontend coding (React/TypeScript), which is a hard constraint."
+  - Do NOT open with narrative build-up ("This looks compelling...", "Interesting opportunity...")
+  - Do NOT use emotional or hype language
+- One paragraph: state the single biggest friction for this candidate plainly
+- If salary is unknown, state it factually (e.g. "Compensation not stated.")
 - Do NOT drift into role explanation
 WHAT THIS ROLE ACTUALLY IS
 - paragraphs: 1-2 strings
@@ -157,7 +174,8 @@ WHAT YOU WOULD ACTUALLY DO
 PRACTICAL DETAILS
 - items: array of { label, value } pairs
 - Always include a Salary item (value "Not stated" if missing)
-- Only factual information
+- DATA PRECEDENCE: Use values from extraction.practical exactly as provided. If work_model is "On-site", the Work Model item MUST say "On-site" — not "Not stated", not inferred.
+- Only factual information. Do NOT mark a field "Not stated" if it appears in the extraction data.
 - Do NOT include Recommended CV in practical_details.items — it is a separate top-level field
 RISKS & UNKNOWNS
 - stated_intro: contextual lead-in for stated risks
@@ -175,8 +193,10 @@ QUESTIONS WORTH ASKING
 - No filler
 DECISION
 - paragraphs: exactly 2 strings
-- First: summarise alignment and opportunity, referencing how the role connects to what the candidate values
+- First: summarise alignment and opportunity, referencing how the role connects to what the candidate values. Be direct — no narrative build-up.
 - Second: clear conditional framed for this candidate. Format: "If X, pursue. If Y, skip."
+- Only include signals that are clearly stated or clearly inferred with evidence. If a signal is weak or uncertain, omit it rather than pad with filler.
+- Do NOT include generic observations like "Culture not assessable from JD alone" or "Balanced craft/strategy focus".
 - Do NOT include "Use this as context, not a verdict." inside decision paragraphs
 RECOMMENDED CV
 - recommended_cv: the ID of the best CV variant for this role (e.g. "founding-product-designer")
@@ -199,13 +219,18 @@ IMPORTANT CONSTRAINTS
 
 QUALITY CHECK (MANDATORY)
 Before returning, verify:
+- Fit reality opens with a direct alignment/blocker statement — no narrative build-up
 - Fit reality references the candidate's actual background, not generic statements
 - Fit reality mentions hard blockers in the prose if any are triggered (no separate field)
 - What they really need from you connects at least one bullet to the candidate's strengths
 - Risks section includes at least one candidate-specific concern
 - Decision is framed for this specific candidate, not generically
+- Decision contains no generic filler ("Culture not assessable", "Balanced craft/strategy", etc.)
 - recommended_cv is a valid CV variant ID from the candidate context
 - Practical details does NOT include a "Recommended CV" item (the renderer handles placement)
+- Practical details does NOT mark a field "Not stated" if it was provided in the extraction JSON
+- Company mismatch: if company_mismatch is set in extraction, it is called out in what_this_role_actually_is
+- Growth/revenue claims from the JD are labelled "Stated by company" or "Claimed in JD" — not presented as fact
 - If learned behaviour data was provided, at least one reference appears in fit_reality or decision
 - Learned behaviour references are brief and natural, not statistical
 - No section repeats the same idea
