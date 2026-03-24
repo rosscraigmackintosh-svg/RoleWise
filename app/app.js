@@ -57,7 +57,7 @@
 
     // Append a decision to the ledger. role_id REQUIRED. Fire-and-forget — never throws.
     // decision_type: 'skip' | 'apply' | 'withdraw' | 'accept' | 'other'
-    // reason: short text (chip label or typed), may be null for apply decisions.
+    // reason: canonical key (e.g. 'requires_coding') or 'other', may be null for apply decisions.
     async function wsAppendDecision(roleId, decisionType, reason = null, notes = null) {
       if (!roleId || !decisionType) return;
       const VALID = ['skip', 'apply', 'withdraw', 'accept', 'other'];
@@ -1114,16 +1114,18 @@
     async function _wsHasData(roleId) {
       if (!roleId) return false;
       try {
-        const [convRes, artRes, interRes, insiRes] = await Promise.all([
+        const [convRes, artRes, interRes, insiRes, matchRes] = await Promise.all([
           db.from('role_conversations').select('id', { count: 'exact', head: true }).eq('role_id', roleId).limit(1),
           db.from('role_artifacts')   .select('id', { count: 'exact', head: true }).eq('role_id', roleId).limit(1),
           db.from('role_interactions').select('id', { count: 'exact', head: true }).eq('role_id', roleId).limit(1),
           db.from('role_insights')    .select('id', { count: 'exact', head: true }).eq('role_id', roleId).limit(1),
+          db.from('jd_matches')       .select('id', { count: 'exact', head: true }).eq('role_id', roleId).limit(1),
         ]);
         return (convRes.count  || 0) > 0
             || (artRes.count   || 0) > 0
             || (interRes.count || 0) > 0
-            || (insiRes.count  || 0) > 0;
+            || (insiRes.count  || 0) > 0
+            || (matchRes.count || 0) > 0;
       } catch (_) {
         return false; // on error, fall through to legacy view safely
       }
@@ -1300,9 +1302,20 @@
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
+    // Fix missing spaces after punctuation in AI-generated text.
+    // Handles: "limit,you" → "limit, you", "experience.However" → "experience. However"
+    function _fixPunct(s) {
+      if (!s || typeof s !== 'string') return s || '';
+      return s
+        .replace(/,([^\s\d"')}\]])/g, ', $1')    // comma not followed by space/digit/quote/bracket
+        .replace(/\.([A-Z])/g, '. $1')            // period followed by uppercase (sentence boundary)
+        .replace(/:([^\s/\d"'])/g, ': $1')        // colon not followed by space/slash/digit
+        .replace(/;([^\s])/g, '; $1');             // semicolon not followed by space
+    }
+
     function esc(s) {
       if (s == null) return '';
-      return String(s)
+      return _fixPunct(String(s))
         .replace(/&/g, '&amp;').replace(/</g, '&lt;')
         .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
@@ -1366,16 +1379,12 @@
     const _ANALYSIS_STAGES = [
       'Reading job description',
       'Extracting practical details',
-      'Identifying likely risks',
-      'Detecting role signals',
-      'Preparing fit summary',
-      'Finalising analysis',
+      'Preparing analysis',
     ];
-    // Timer offsets (ms) for advancing from stage 1 → 2 → 3 → 4 → 5 → 6.
-    // Stage 1 is active at t=0. These fire stages 2–6.
-    // Calibrated to a typical AI response time of 6–14s; later stages may not
-    // be reached before the API returns — that is correct and expected.
-    const _ANALYSIS_TIMINGS = [1800, 3600, 5400, 7200, 9500];
+    // Timer offsets (ms) for advancing stages.
+    // Local analysis returns in <1s; these just give a calm cadence.
+    // AI enrichment continues in background after the overlay closes.
+    const _ANALYSIS_TIMINGS = [400, 800];
 
     // ─── Recruiter state ──────────────────────────────────────────────────────
     let allRecruiters        = [];
@@ -1448,6 +1457,7 @@
         if (dhEl) { dhEl.innerHTML = ''; dhEl.style.display = 'none'; }
         _clearStickyHeader();
         _clearRoleHeader();
+        _clearDecisionBanner();
         _clearNextAction();
         _clearJDSection();
       }
@@ -1464,10 +1474,9 @@
       }
       if (role.salary_text_raw) parts.push(esc(role.salary_text_raw));
       const company = sanitiseCompanyName(role.company_name) || '';
-      const metaParts = company ? [company, ...parts] : parts;
       el.innerHTML = `
         <div class="rsh-title">${esc(role.role_title || 'Untitled role')}</div>
-        ${metaParts.length ? `<div class="rsh-meta">${metaParts.join(' · ')}</div>` : ''}
+        ${company || parts.length ? `<div class="rsh-meta">${company ? `<span class="rsh-company">${esc(company)}</span>` : ''}${parts.length ? `<span class="rsh-details">${parts.join(' · ')}</span>` : ''}</div>` : ''}
       `;
       el.style.display = '';
     }
@@ -1491,6 +1500,34 @@
 
       const _company  = sanitiseCompanyName(role.company_name) || null;
       const _title    = role.role_title || 'Untitled role';
+
+      // ── Company name resolution — surface JD company if header is blank ──────
+      // Also detect mismatch between listing company and JD-body company.
+      const _lmo = role.latest_match_output || role.analysis || {};
+      const _jdCompany = (() => {
+        // Try AI-extracted company from analysis
+        if (_lmo._company) return sanitiseCompanyName(_lmo._company) || null;
+        // Try to find company from role_summary
+        const _summ = _lmo.role_summary || '';
+        const _m = _summ.match(/\bat\s+([A-Z][a-zA-Z0-9&. '-]{1,40}?)(?:[,.]|\s+(?:is|you|the|a|as|where|that|for|in)\b)/);
+        if (_m?.[1]) return sanitiseCompanyName(_m[1].trim().replace(/[.,]+$/, '')) || null;
+        return null;
+      })();
+
+      let _companyDisplay = '';
+      if (_company && _jdCompany && _company.toLowerCase() !== _jdCompany.toLowerCase()) {
+        // Mismatch: listing says X but JD says Y
+        _companyDisplay = `<span>${esc(_company.toUpperCase())}</span>
+          <span class="rh-company-mismatch">Listing shows ${esc(_company)}, but JD refers to ${esc(_jdCompany)}. Worth verifying.</span>`;
+      } else if (_company) {
+        _companyDisplay = esc(_company.toUpperCase());
+      } else if (_jdCompany) {
+        // No listing company but JD mentions one
+        _companyDisplay = `<span>${esc(_jdCompany.toUpperCase())}</span>
+          <span class="rh-company-unverified">Referenced in JD (unverified)</span>`;
+      } else {
+        _companyDisplay = 'COMPANY NOT SPECIFIED';
+      }
 
       // Metadata parts: Location (Work model) · Engagement type
       const _metaParts = [];
@@ -1521,10 +1558,10 @@
       headerEl.innerHTML = `
         <div class="rh-inner">
           <div class="rh-left">
-            <div class="rh-company">${_company ? esc(_company.toUpperCase()) : 'COMPANY NOT SPECIFIED'}</div>
+            <div class="rh-company">${_companyDisplay}</div>
             <div class="rh-title">${esc(_title)}</div>
             ${_metaLine ? `<div class="rh-meta">${_metaLine}</div>` : ''}
-            <div class="rh-added">${esc(_addedLabel)}</div>
+            <div class="rh-added">${esc(_addedLabel)}<span class="rh-analysis-id" title="Role: ${esc(role.id)}${role.latest_match_id ? '\nAnalysis: ' + esc(role.latest_match_id) : ''}"> · ${esc(role.id.slice(0, 8))}${role.latest_match_id ? ' / ' + esc(role.latest_match_id.slice(0, 8)) : ''}</span><button class="rh-copy-id" title="Copy IDs" data-role-id="${esc(role.id)}" data-match-id="${esc(role.latest_match_id || '')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
           </div>
           <!-- Edit details + Reasoning Map moved to right panel (RW-SIDEBAR-BUTTONS) -->
           <div class="rh-actions" style="display:none;">
@@ -1543,6 +1580,131 @@
 
     function _clearRoleHeader() {
       document.querySelectorAll('#col-role-header').forEach(el => el.remove());
+    }
+
+    // ─── Decision Banner ──────────────────────────────────────────────────────
+    // Surface-level clarity layer: binary viable / not-viable summary above
+    // the analysis sections. Uses existing detection logic only.
+
+    function _renderDecisionBanner(role) {
+      // Remove any existing banner
+      document.querySelectorAll('#rw-decision-banner').forEach(el => el.remove());
+      if (!role || role._isTemp) return;
+
+      const output = role.latest_match_output || role.analysis || null;
+      if (!output) return; // no analysis yet
+
+      // ── Collect hard blockers from existing detection ─────────────────────
+      const _blockers = _detectBlockers(role);
+      const _isHardNo = output.hard_no === true ||
+                        (Array.isArray(output.hardNoFlags) && output.hardNoFlags.length > 0);
+
+      // Hard blocker keys that represent genuine viability constraints
+      // (not salary_missing or scope_unclear — those are friction, not viability)
+      const VIABILITY_KEYS = ['production_coding', 'hybrid_onsite'];
+      const _hardBlockers = _blockers.filter(b => VIABILITY_KEYS.includes(b.key));
+
+      // Also check candidate profile hard_blockers against role
+      const _profileBlockers = [];
+      if (userProfile && Array.isArray(userProfile.hard_blockers)) {
+        userProfile.hard_blockers.forEach(hb => {
+          const _hbLower = (hb || '').toLowerCase();
+          if (_hbLower.includes('coding') && _blockers.some(b => b.key === 'production_coding')) {
+            // Already captured above — skip duplicate
+          } else if (_hbLower.includes('on-site') || _hbLower.includes('onsite') || _hbLower.includes('hybrid')) {
+            if (_blockers.some(b => b.key === 'hybrid_onsite')) {
+              // Already captured — skip duplicate
+            }
+          }
+          // If a candidate hard blocker matches a detected blocker not in VIABILITY_KEYS,
+          // still surface it (e.g. "marketing-heavy" if candidate listed it as hard no)
+        });
+      }
+
+      const _isNotViable = _isHardNo || _hardBlockers.length > 0;
+
+      // ── Build banner content ──────────────────────────────────────────────
+      const bannerEl = document.createElement('div');
+      bannerEl.id = 'rw-decision-banner';
+
+      if (_isNotViable) {
+        bannerEl.className = 'rw-db--not-viable';
+        const _reasons = [];
+        if (_isHardNo) {
+          _reasons.push('Production coding required');
+        }
+        _hardBlockers.forEach(b => {
+          const _label = b.label || BLOCKER_DEFS[b.key] || b.key;
+          if (!_reasons.some(r => r.toLowerCase() === _label.toLowerCase())) {
+            _reasons.push(_label);
+          }
+        });
+        // Cap at 3
+        const _capped = _reasons.slice(0, 3);
+        bannerEl.innerHTML = `
+          <div class="rw-db-header">
+            <span class="rw-db-icon">\u2715</span>
+            <span>Not viable for you</span>
+          </div>
+          ${_capped.length ? `<ul class="rw-db-reasons">${_capped.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+        `;
+      } else {
+        // ── Worth exploring — gather strong positive signals ──────────────
+        bannerEl.className = 'rw-db--worth-exploring';
+        const _positives = [];
+        const pd  = output.practical_details || {};
+
+        // Remote/flexible work
+        const _wm = (role.work_model || pd.remote_model || '').toLowerCase();
+        if (_wm === 'remote') {
+          _positives.push('Remote role, no office requirement');
+        }
+
+        // No production coding detected
+        if (!_blockers.some(b => b.key === 'production_coding')) {
+          _positives.push('No production coding requirement detected');
+        }
+
+        // Salary stated
+        const _salaryAnnual = (pd.salary_annual || '').toLowerCase();
+        const _hasSalary = pd.salary_annual && _salaryAnnual !== 'not stated'
+          && !_salaryAnnual.includes('not stated')
+          && !_salaryAnnual.includes('competitive');
+        if (_hasSalary) {
+          _positives.push('Compensation is stated');
+        }
+
+        // Seniority match
+        const _seniority = (pd.role_seniority || output.role_seniority || '').toLowerCase();
+        const _isSenior  = ['senior', 'lead', 'principal', 'staff', 'head of', 'director'].some(t => _seniority.includes(t));
+        if (_isSenior) {
+          _positives.push('Seniority level aligns with your background');
+        }
+
+        // Pattern match from learned behaviour
+        if (output.pattern_type === 'pursue_pattern') {
+          _positives.push('Matches roles you tend to pursue');
+        }
+
+        const _capped = _positives.slice(0, 3);
+        bannerEl.innerHTML = `
+          <div class="rw-db-header">
+            <span class="rw-db-icon">\u2713</span>
+            <span>Worth exploring</span>
+          </div>
+          ${_capped.length ? `<ul class="rw-db-reasons">${_capped.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+        `;
+      }
+
+      // ── Insert after role header, before analysis sections ─────────────
+      const headerEl = document.getElementById('col-role-header');
+      if (headerEl && headerEl.parentNode) {
+        headerEl.parentNode.insertBefore(bannerEl, headerEl.nextSibling);
+      }
+    }
+
+    function _clearDecisionBanner() {
+      document.querySelectorAll('#rw-decision-banner').forEach(el => el.remove());
     }
 
     // ─── Overview lower-card slots ─────────────────────────────────────────────
@@ -1566,7 +1728,7 @@
       const _decisionSlots = [
         // ws-blockers-section removed — blockers box removed from main column (RW-REMOVE-MAIN-BLOCKERS)
         { id: 'ws-decision-history-dl' },        // Decision Layer V1: history read view
-        { id: 'ws-decision-capture' },            // Post-analysis decision capture (Apply / Skip / Not sure)
+        // ws-decision-capture removed — bottom action block removed (RW-ACTION-DUPLICATION-01)
       ];
       const _lowerSlots = [
         // col-jd-section removed — JD accessible only via sidebar modal (RW-REMOVE-MAIN-JD)
@@ -1724,7 +1886,7 @@
                    archived, next_action, user_decision,
                    fit_assessment, fit_reasons, fit_assessed_at,
                    decision_state, verdict_state, nudge_snoozed_until,
-                   outcome_state, outcome_reason, outcome_at, current_stage,
+                   outcome_state, outcome_reason, outcome_at, current_stage, source_meta,
                    role_updates(id, status, event_type, stage_reached, outcome_state, note, created_at),
                    role_recruiters(id, recruiter_id, link_source, contact_type, created_at,
                      recruiters(id, name, company, email, linkedin_url, recruiter_type, office_phone, mobile_phone, website_url, notes, notes_log, created_at, updated_at))`)
@@ -1733,7 +1895,7 @@
           .select('role_id, decision, full_output'),
         // Fetch the latest jd_match date + output_json per role (for draft cards + sorting)
         db.from('jd_matches')
-          .select('role_id, created_at, output_json')
+          .select('id, role_id, created_at, output_json')
           .not('role_id', 'is', null)
           .order('created_at', { ascending: false }),
       ]);
@@ -1743,13 +1905,15 @@
       const analysesMap = {};
       (analysesRes.data || []).forEach(a => { analysesMap[a.role_id] = a; });
 
-      // Build maps: role_id → latest date + latest output_json
+      // Build maps: role_id → latest date + latest output_json + match id
       const jdDateMap   = {};
       const jdOutputMap = {};
+      const jdIdMap     = {};
       (jdDatesRes.data || []).forEach(m => {
         if (m.role_id && !jdDateMap[m.role_id]) {
           jdDateMap[m.role_id]   = m.created_at;
           jdOutputMap[m.role_id] = m.output_json || null;
+          jdIdMap[m.role_id]     = m.id || null;
         }
       });
 
@@ -1762,6 +1926,7 @@
         r.analysis            = analysesMap[r.id] || null;
         r.latest_match_at     = jdDateMap[r.id]   || null;
         r.latest_match_output = jdOutputMap[r.id]  || null;
+        r.latest_match_id     = jdIdMap[r.id]      || null;
 
         // ── Derived role fields (Role as single source of truth) ────────────
         // Primary linked recruiter (first link, if any)
@@ -1781,6 +1946,18 @@
             )
           : null;
         r._firstResponseDate = _response?.created_at || null;
+
+        // ── Hydrate LinkedIn metadata from persisted source_meta ────────────
+        // So platform data precedence and mismatch detection survive page reload.
+        if (r.source_meta && typeof r.source_meta === 'object') {
+          r._liMeta = r.source_meta;
+          if (r.source_meta.company_meta)   r._liCompanyMeta = r.source_meta.company_meta;
+          // Re-hydrate the _li* fields used by data-precedence overrides
+          if (!r._liWorkModel      && r.source_meta.work_remote)     r._liWorkModel      = r.source_meta.work_remote;
+          if (!r._liEmploymentType && r.source_meta.employment_type) r._liEmploymentType = r.source_meta.employment_type;
+          if (!r._liLocation       && r.source_meta.location)        r._liLocation       = r.source_meta.location;
+          if (!r._liCompany        && r.source_meta.company)         r._liCompany        = r.source_meta.company;
+        }
 
         return r;
       });
@@ -2357,8 +2534,17 @@
           return `<div class="inbox-boundary-match">Boundary flagged</div>`;
         })();
 
+        // ── Decision marker (✕ / ✓ / ○) — small inline icon ──────────────
+        const _decMarker = role.user_decision === 'skip'
+          ? '<span class="rw-dm rw-dm--skip" title="Skipped">\u2715</span>'
+          : role.user_decision === 'apply'
+          ? '<span class="rw-dm rw-dm--apply" title="Applied">\u2713</span>'
+          : role.user_decision === 'save'
+          ? '<span class="rw-dm rw-dm--save" title="Saved">\u2713</span>'
+          : '<span class="rw-dm rw-dm--none" title="No decision">\u25CB</span>';
+
         return `<div class="rw-role-card inbox-role${role.id === selectedRoleId ? ' active' : ''}"${decAttr} data-meta-state="${_metaState}" data-id="${esc(role.id)}">
-          <div class="rw-role-card__company inbox-company inbox-role-company${company ? '' : ' inbox-company-unknown rw-role-card__company--unknown'}">${esc(company || 'Unknown company')}</div>
+          <div class="rw-role-card__company inbox-company inbox-role-company${company ? '' : ' inbox-company-unknown rw-role-card__company--unknown'}">${_decMarker}${esc(company || 'Unknown company')}</div>
           <div class="rw-role-card__title inbox-title inbox-role-title">${esc(title)}</div>
           ${intelSigHtml}
           ${footerHtml}
@@ -5704,6 +5890,7 @@
       // Metadata extraction + AI analysis only. Failure here is a true analysis
       // failure — the JD was never processed. Retry reruns the whole function.
       let analysis, _company, _title, _location, _jobUrl, jdClean;
+      let _titleSource = null;  // tracks where the title came from
 
       try {
         const _meta = extractJDMetadata(text, cleanJobDescription(text));
@@ -5743,7 +5930,9 @@
         }
 
         jdClean  = cleanJobDescription(text);
+        const _wsT0 = performance.now();
         analysis = await callAnalysisAPI(jdClean || text);
+        console.log('[perf][ws] Local analysis ready in', Math.round(performance.now() - _wsT0) + 'ms (AI enrichment in background)');
 
         // ── Company/title backfill from AI output ────────────────────────────
         // extractJDMetadata runs before the AI call. If it missed the company
@@ -5767,15 +5956,34 @@
             }
           }
         }
-        if (!_title && analysis._roleTitle) _title = analysis._roleTitle;
+        if (!_title && analysis._roleTitle) {
+          _title = analysis._roleTitle;
+          _titleSource = 'ai_analysis';
+        }
+        // Last resort: extract from role_summary "This is a Senior Designer role at..."
+        if (!_title && analysis.role_summary) {
+          const _summTitleRe = /^(?:This\s+is\s+(?:a|an)\s+)?(.{4,60}?)\s+(?:role|position)\b/i;
+          const _stMatch = analysis.role_summary.match(_summTitleRe);
+          if (_stMatch?.[1]) {
+            const _cand = _stMatch[1].trim().replace(/[.,:]+$/, '');
+            if (_cand.length >= 4 && _cand.split(/\s+/).length <= 8) {
+              _title = _cand;
+              _titleSource = 'ai_summary';
+            }
+          }
+        }
+        // Log title extraction source for debugging
+        console.log('[title-extract]', { title: _title, source: _titleSource });
 
         // ── Platform metadata overrides (DATA PRECEDENCE RULE) ──────────────
-        // LinkedIn / Spiffy metadata is more reliable than AI inference from
-        // JD text. Apply it as the authoritative source BEFORE Pass 2 so the
+        // LinkedIn / Apify / Spiffy metadata is more reliable than AI inference
+        // from JD text. Apply as the authoritative source BEFORE Pass 2 so the
         // narrative receives correct, grounded data.
-        // Priority: platform metadata > AI extraction > JD text inference.
+        // Priority: structured platform metadata > AI extraction > JD text inference.
         if (analysis.practical_details) {
-          const _pd = analysis.practical_details;
+          const _pd  = analysis.practical_details;
+          const _lm  = role._liMeta || {};
+
           // Work model — LinkedIn Voyager provides this directly; never infer over it
           if (role._liWorkModel && role._liWorkModel !== 'Not stated') {
             _pd.remote_model = role._liWorkModel;
@@ -5788,6 +5996,15 @@
           if (role._liLocation && (!_pd.location || _pd.location === 'Not stated')) {
             _pd.location = role._liLocation;
           }
+          // Salary — structured platform data overrides "Not stated" gaps only
+          if (_lm.salary_text && (!_pd.salary_annual || _pd.salary_annual === 'Not stated')) {
+            _pd.salary_annual = _lm.salary_text;
+          }
+        }
+
+        // ── Attach LinkedIn metadata to analysis for rendering + persistence ──
+        if (role._liMeta) {
+          analysis._linkedinMeta = role._liMeta;
         }
 
         // ── Company mismatch detection ────────────────────────────────────────
@@ -5804,8 +6021,9 @@
         }
 
         // Annotate analysis with role identity for artefact heading
-        analysis._company   = _company;
-        analysis._roleTitle = _title;
+        analysis._company      = _company;
+        analysis._roleTitle    = _title;
+        analysis._titleSource  = _titleSource;
 
         // Signal strength check — run after cleaning, before render.
         // If the cleaned text lacks JD role signals (e.g. partial page paste, nav-heavy content),
@@ -5864,6 +6082,7 @@
       // Artefact is visible from this point on regardless of what the save step does.
       // Use a local placeholder id; wsAddArtifact will return the real one later.
       _clearSeq();
+      console.log('[perf][ws] First useful render at', Math.round(performance.now() - _wsT0) + 'ms');
       const _localArtifactId = 'local-' + Date.now();
       // Steps stay visible as completed history — analysis artifact appears below them
       // If the "Analyse anyway" path left a processing spinner in the overview body,
@@ -5902,6 +6121,7 @@
         _initCompSnapshot(_liveOvCards);
         const _liveRole = allRoles.find(r => r.id === role.id) || role;
         _renderRoleHeader(_liveRole);
+        _clearDecisionBanner(); // renderMatchOutput already includes decision block
         // Refresh decision capture card in case analysis was the first trigger
         _renderDecisionCapture(_liveRole);
         // Render blocker checklist + decision history (Decision Layer V1)
@@ -6037,7 +6257,7 @@
         // lost on reload. Surface a warning so the user knows to retry.
         console.log('[_doSave] step 5: jd_matches.insert — start');
         try {
-          await db.from('jd_matches').insert({
+          const { data: _matchRow1 } = await db.from('jd_matches').insert({
             role_id:             role.id,
             job_description_raw: text,
             jd_text_raw:         text,
@@ -6052,6 +6272,9 @@
           }).select('id').single();
           insertEvent(role.id, { event_type: 'analysis_saved', title: 'Analysis saved', detail: `Source: ${analysis._source || 'ai'}` });
           console.log('[_doSave] step 5: jd_matches.insert SUCCESS');
+
+          // Background: patch narrative into DB when Pass 2 completes
+          if (_matchRow1?.id) _backgroundAIPatch(analysis, role.id, _matchRow1.id);
         } catch (jdErr) {
           console.error('[_doSave] step 5: jd_matches.insert FAILED —', jdErr);
           // Surface a user-visible warning — the analysis is visible now but won't
@@ -6303,6 +6526,36 @@
             if (_liJob.employment_type) role._liEmploymentType = _liJob.employment_type;
             if (_liJob.location)        role._liLocation       = _liJob.location;
             if (_liJob.company)         role._liCompany        = _liJob.company;
+
+            // ── Expanded LinkedIn metadata (structured fields) ────────────────
+            // Stored on role._liMeta for in-session use and persisted to
+            // roles.source_meta for cross-session availability.
+            role._liMeta = {
+              work_remote:       _liJob.work_remote       || null,
+              employment_type:   _liJob.employment_type   || null,
+              location:          _liJob.location           || null,
+              company:           _liJob.company            || null,
+              posted_date:       _liJob.posted_date        || null,
+              posted_at_raw:     _liJob.posted_at_raw      || null,
+              applicants_count:  _liJob.applicants_count   ?? null,
+              easy_apply:        _liJob.easy_apply         ?? null,
+              apply_url:         _liJob.apply_url          || null,
+              seniority_level:   _liJob.seniority_level    || null,
+              salary_text:       _liJob.salary_text        || null,
+              job_functions:     _liJob.job_functions      || null,
+              industries:        _liJob.industries         || null,
+              company_meta:      _liJob.company_meta       || null,
+              poster:            _liJob.poster             || null,
+              job_id:            _liJob.job_id             || null,
+            };
+            // Persist to DB — fire-and-forget
+            if (!role._isTemp) {
+              db.from('roles').update({ source_meta: role._liMeta }).eq('id', role.id).then(() => {
+                role.source_meta = role._liMeta;
+                const _arE = allRoles.find(r => r.id === role.id);
+                if (_arE && _arE !== role) _arE.source_meta = role._liMeta;
+              }).catch(() => {});
+            }
             // Warn if the fetched JD looks truncated
             if (!_isLinkedInJDComplete(_liCleaned)) {
               const _warnMsg = 'Heads up — this job description may be cut off. You can paste the full version if needed.';
@@ -7372,6 +7625,18 @@
         document.body.style.overflow = '';
       }
       _ovCards.addEventListener('click', e => {
+        // ── Copy role/analysis IDs to clipboard ──
+        const _copyBtn = e.target.closest('.rh-copy-id');
+        if (_copyBtn) {
+          const _rid = _copyBtn.dataset.roleId || '';
+          const _mid = _copyBtn.dataset.matchId || '';
+          const _text = _mid ? `Role: ${_rid.slice(0, 8)} (${_rid})\nAnalysis: ${_mid.slice(0, 8)} (${_mid})` : `Role: ${_rid.slice(0, 8)} (${_rid})`;
+          navigator.clipboard.writeText(_text).then(() => {
+            _copyBtn.classList.add('rh-copy-id--done');
+            setTimeout(() => _copyBtn.classList.remove('rh-copy-id--done'), 1200);
+          }).catch(() => {});
+          return;
+        }
         if (e.target.closest('#rw-jd-modal-trigger')) { _rwOpenJdModal(); return; }
         if (e.target.closest('#rw-jd-modal-close'))   { _rwCloseJdModal(); return; }
         if (e.target.closest('#rw-jd-modal-backdrop')){ _rwCloseJdModal(); return; }
@@ -7908,13 +8173,34 @@
       if (!skipOverview) {
         const _ovBody = document.getElementById('col-overview-cards');
         if (_ovBody) {
+          _ovBody.classList.remove('col-ov--legacy-doc');
+          // Try role_artifacts first, then fall back to jd_matches
+          let _aJson = null;
           const _analysisArt = memory?.artifacts?.find(a => a.artifact_type === 'analysis');
           if (_analysisArt?.content) {
+            try { _aJson = JSON.parse(_analysisArt.content); } catch (_) {}
+          }
+          if (!_aJson) {
             try {
-              const _aJson = JSON.parse(_analysisArt.content);
+              const { data: _match } = await db.from('jd_matches')
+                .select('output_json')
+                .eq('role_id', role.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (_match?.output_json) _aJson = _match.output_json;
+            } catch (_) {}
+          }
+          if (_aJson) {
+            try {
               _ovBody.innerHTML = `<div class="rw-overview-wrap">${renderMatchOutput(_aJson)}</div>`;
               _initCompSnapshot(_ovBody);
               _renderRoleHeader(role);
+              // Skip _renderDecisionBanner — renderMatchOutput already includes
+              // a detailed decision block (rw-decision-block) with fit assessment.
+              // Calling _renderDecisionBanner here would create a duplicate/conflicting card.
+              _clearDecisionBanner();
+              _fillFitAssessmentCV(); // Resolve CV recommendation placeholder
               _refreshRoleContacts(role);
             } catch (e) {
               _ovBody.innerHTML = '<div class="doc-empty">Could not load analysis</div>';
@@ -7922,6 +8208,7 @@
           } else {
             _ovBody.innerHTML = '<div class="rw-overview-wrap"><div class="doc-empty" style="color:var(--text-light);font-size:13.5px;">Paste a job description to understand whether this role is worth pursuing.</div></div>';
             _renderRoleHeader(role);
+            _clearDecisionBanner();
             _refreshRoleContacts(role);
           }
         }
@@ -8604,6 +8891,270 @@
       });
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // APPLIED STATE  (RW-APPLIED-STATE-01)
+    // Renders into #doc-progressed-actions for roles at Applied / beyond.
+    // Called synchronously from renderRoleDoc; PrepPanel filled async via
+    // _updateAsPrepPanel() once analysis data arrives.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function renderAppliedState(role) {
+      const _pActEl = document.getElementById('doc-progressed-actions');
+      if (!_pActEl) return;
+
+      const _stageIdx = currentStageIndex(role);
+      const _nextIdx  = _stageIdx + 1;
+      const _nextStep = RAIL_STAGE_STEPS[_nextIdx] || null;
+      const _ars      = _appResponseStatus(role);
+
+      // ── Stage Timeline ────────────────────────────────────────────────────
+      // Interleave stage nodes with connector lines
+      let _tlHtml = '';
+      RAIL_STAGE_STEPS.forEach((s, i) => {
+        const isDone    = i < _stageIdx;
+        const isCurrent = i === _stageIdx;
+        const stCls     = isCurrent ? ' as-stage-node--current' : isDone ? ' as-stage-node--done' : '';
+        _tlHtml += `<div class="as-stage-node${stCls}">
+          <div class="as-stage-dot"></div>
+          <div class="as-stage-label">${esc(s.label)}</div>
+        </div>`;
+        if (i < RAIL_STAGE_STEPS.length - 1) {
+          const connCls = isDone ? ' as-stage-connector--done' : '';
+          _tlHtml += `<div class="as-stage-connector${connCls}"></div>`;
+        }
+      });
+
+      // ── Quick Context Row ─────────────────────────────────────────────────
+      const _ctxParts = [];
+      if (role.job_url) {
+        _ctxParts.push(`<a href="${esc(role.job_url)}" target="_blank" rel="noopener">Job posting ↗</a>`);
+      }
+      if (role._appliedDate) {
+        const _dStr = new Date(role._appliedDate)
+          .toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        _ctxParts.push(`Applied ${_dStr}`);
+      }
+      if (role.role_recruiters && role.role_recruiters.length) {
+        const _rec = role.role_recruiters[0];
+        if (_rec.name) {
+          const _recLabel = _rec.email
+            ? `<a href="mailto:${esc(_rec.email)}">${esc(_rec.name)}</a>`
+            : esc(_rec.name);
+          _ctxParts.push(`Recruiter: ${_recLabel}`);
+        }
+      }
+      if (_ars && _ars.status !== 'active') {
+        const _col = (_ars.status === 'stale' || _ars.status === 'ghosted') ? '#B45309' : 'inherit';
+        _ctxParts.push(`<span style="color:${_col};">${esc(_ars.label)}</span>`);
+      }
+      const _qcSep = '<span class="as-qc-sep">·</span>';
+      const _qcHtml = _ctxParts.length
+        ? `<div class="as-quick-context">${_ctxParts.join(_qcSep)}</div>`
+        : '';
+
+      // ── Action Buttons ────────────────────────────────────────────────────
+      // "Got a response" — only at Applied (index 1), waiting for first contact
+      const _showGotResponse = _stageIdx === 1;
+      const _gotRespHtml = _showGotResponse
+        ? `<button class="as-action-btn" id="as-btn-got-response">Got a response</button>`
+        : '';
+      const _nextStageHtml = _nextStep
+        ? `<button class="as-action-btn" id="as-btn-next-stage">Moved to ${esc(_nextStep.label)}</button>`
+        : '';
+
+      _pActEl.innerHTML = `
+        <div class="as-stage-timeline">${_tlHtml}</div>
+        ${_qcHtml}
+        <div class="as-action-block">
+          <div class="as-action-label">Update what happened</div>
+          <div class="as-action-btns">
+            ${_gotRespHtml}
+            ${_nextStageHtml}
+            <button class="as-action-btn as-action-btn--rejected" id="as-btn-rejected">Rejected</button>
+          </div>
+        </div>
+        <div id="as-prep-panel-slot"></div>
+        <div id="as-rejection-flow-slot" hidden></div>
+      `;
+
+      // ── Wire: Got a response → advance to Recruiter Screen ───────────────
+      document.getElementById('as-btn-got-response')?.addEventListener('click', async () => {
+        const _rsStep = RAIL_STAGE_STEPS.find(s => s.stage === 'Recruiter Screen');
+        if (!_rsStep) return;
+        const _btn = document.getElementById('as-btn-got-response');
+        if (_btn) { _btn.disabled = true; _btn.textContent = 'Saving…'; }
+        await markStage(role.id, _rsStep.status, _rsStep.stage);
+        const _upd = allRoles.find(r => r.id === role.id);
+        if (_upd) renderRoleDoc(_upd);
+      });
+
+      // ── Wire: Moved to next stage ─────────────────────────────────────────
+      document.getElementById('as-btn-next-stage')?.addEventListener('click', async () => {
+        if (!_nextStep) return;
+        const _btn = document.getElementById('as-btn-next-stage');
+        if (_btn) { _btn.disabled = true; _btn.textContent = 'Saving…'; }
+        await markStage(role.id, _nextStep.status, _nextStep.stage);
+        const _upd = allRoles.find(r => r.id === role.id);
+        if (_upd) renderRoleDoc(_upd);
+      });
+
+      // ── Wire: Rejected → show rejection flow ─────────────────────────────
+      document.getElementById('as-btn-rejected')?.addEventListener('click', () => {
+        _showAsRejectionFlow(role);
+      });
+    }
+
+    // ── Prep Panel: called async after analysis data loads ───────────────────
+    // Injects 3–4 role-specific prep bullets into the slot left by renderAppliedState.
+    function _updateAsPrepPanel(analysisOutput) {
+      const _slot = document.getElementById('as-prep-panel-slot');
+      if (!_slot || !analysisOutput) return;
+
+      const _bullets = [];
+
+      // what_they_are_really_looking_for → top 2 sentences or items
+      const _wtr = analysisOutput.what_they_are_really_looking_for;
+      if (typeof _wtr === 'string' && _wtr.trim()) {
+        const _sents = _wtr.match(/[^.!?]+[.!?]+/g) || [_wtr];
+        _sents.slice(0, 2).forEach(s => { if (s.trim()) _bullets.push(s.trim()); });
+      } else if (Array.isArray(_wtr)) {
+        _wtr.slice(0, 2).forEach(r => {
+          const _t = typeof r === 'string' ? r : (r.point || r.text || r.item || '');
+          if (_t.trim()) _bullets.push(_t.trim());
+        });
+      }
+
+      // risks_and_unknowns → up to 2, prefixed with "Watch:"
+      const _risks = analysisOutput.risks_and_unknowns;
+      if (Array.isArray(_risks)) {
+        _risks.slice(0, 2).forEach(r => {
+          const _t = typeof r === 'string' ? r : (r.risk || r.point || r.text || '');
+          if (_t.trim()) _bullets.push(`Watch: ${_t.trim()}`);
+        });
+      } else if (typeof _risks === 'string' && _risks.trim()) {
+        _bullets.push(`Watch: ${_risks.trim()}`);
+      }
+
+      if (!_bullets.length) return; // nothing useful — leave slot empty
+
+      const _items = _bullets.slice(0, 4).map(b => `<li class="as-prep-item">${esc(b)}</li>`).join('');
+      _slot.innerHTML = `<div class="as-prep-panel">
+        <div class="as-prep-heading">If they reply, be ready for this</div>
+        <ul class="as-prep-list">${_items}</ul>
+      </div>`;
+    }
+
+    // ── Rejection Flow: lightweight inline panel ──────────────────────────────
+    function _showAsRejectionFlow(role) {
+      const _slot = document.getElementById('as-rejection-flow-slot');
+      if (!_slot) return;
+
+      // Hide action block while rejection flow is visible
+      const _actBlock = _slot.previousElementSibling?.previousElementSibling;
+
+      _slot.removeAttribute('hidden');
+      _slot.innerHTML = `<div class="as-rejection-flow">
+        <div class="as-rejection-heading">Sorry to hear that.</div>
+        <div class="as-rejection-sub">Did they give any feedback?</div>
+        <div class="as-rejection-choice">
+          <button class="as-rejection-btn" id="as-rej-yes">Yes, they gave feedback</button>
+          <button class="as-rejection-btn" id="as-rej-no">No, just a rejection</button>
+        </div>
+        <div id="as-rej-feedback-area" class="as-rejection-feedback-area" hidden>
+          <textarea class="as-rejection-textarea" id="as-rej-textarea"
+            placeholder="Paste their message or describe what they said…"></textarea>
+          <button class="as-rejection-submit" id="as-rej-submit">Analyse feedback</button>
+        </div>
+        <div id="as-rej-result" hidden></div>
+      </div>`;
+
+      // Yes — show textarea
+      document.getElementById('as-rej-yes')?.addEventListener('click', () => {
+        document.getElementById('as-rej-feedback-area')?.removeAttribute('hidden');
+        document.getElementById('as-rej-yes')?.setAttribute('disabled', '');
+        document.getElementById('as-rej-no')?.setAttribute('disabled', '');
+        document.getElementById('as-rej-textarea')?.focus();
+      });
+
+      // No feedback — route to the outcome form and hide flow
+      document.getElementById('as-rej-no')?.addEventListener('click', () => {
+        const _noBtn = document.getElementById('as-rej-no');
+        const _yesBtn = document.getElementById('as-rej-yes');
+        if (_noBtn) { _noBtn.disabled = true; _noBtn.textContent = 'OK…'; }
+        if (_yesBtn) _yesBtn.disabled = true;
+        showOutcomeReasonForm(role.id, 'rejected');
+        _slot.setAttribute('hidden', '');
+      });
+
+      // Submit feedback for AI signal extraction
+      document.getElementById('as-rej-submit')?.addEventListener('click', async () => {
+        const _ta   = document.getElementById('as-rej-textarea');
+        const _text = _ta?.value?.trim();
+        if (!_text) { _ta?.focus(); return; }
+
+        const _btn = document.getElementById('as-rej-submit');
+        if (_btn) { _btn.disabled = true; _btn.textContent = 'Analysing…'; }
+
+        const _resultEl = document.getElementById('as-rej-result');
+
+        try {
+          const _msg = [
+            'You are helping a job seeker understand a rejection. Be brief and kind.',
+            '',
+            `Role: ${role.role_title || 'Unknown role'} at ${role.company_name || 'Unknown company'}`,
+            '',
+            'Rejection message or notes:',
+            _text,
+            '',
+            'Respond with exactly two lines:',
+            'SIGNAL: [one sentence — the most likely reason they weren\'t selected]',
+            'TAKEAWAY: [one sentence — the most useful thing they can learn or do differently]',
+          ].join('\n');
+
+          const _res = await callWorkspaceChatAPI(_msg, {
+            role_title:   role.role_title   || '',
+            company_name: role.company_name || '',
+          });
+
+          let _signal   = '';
+          let _takeaway = '';
+
+          if (_res?.reply) {
+            const _lines = _res.reply.split('\n').map(l => l.trim()).filter(Boolean);
+            _signal   = (_lines.find(l => /^signal:/i.test(l))   || '').replace(/^signal:\s*/i,   '').trim();
+            _takeaway = (_lines.find(l => /^takeaway:/i.test(l)) || '').replace(/^takeaway:\s*/i, '').trim();
+          }
+
+          if (_resultEl) {
+            _resultEl.removeAttribute('hidden');
+            if (_signal || _takeaway) {
+              _resultEl.innerHTML = `<div class="as-rejection-result">
+                ${_signal   ? `<div class="as-rejection-signal">${esc(_signal)}</div>`   : ''}
+                ${_takeaway ? `<div class="as-rejection-takeaway">${esc(_takeaway)}</div>` : ''}
+              </div>`;
+            } else if (_res?.reply) {
+              _resultEl.innerHTML = `<div class="as-rejection-result">
+                <div class="as-rejection-takeaway">${esc(_res.reply)}</div>
+              </div>`;
+            } else {
+              _resultEl.innerHTML = `<div class="as-rejection-result">
+                <div class="as-rejection-takeaway">Couldn't analyse the feedback — you can still note it below.</div>
+              </div>`;
+            }
+          }
+
+          // Route to outcome form after showing insight
+          setTimeout(() => showOutcomeReasonForm(role.id, 'rejected'), 600);
+
+        } catch (_err) {
+          console.error('[as-rejection-flow] analysis failed', _err);
+          if (_btn) { _btn.disabled = false; _btn.textContent = 'Try again'; }
+        }
+      });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+
     async function renderRoleDoc(role) {
       // Exit intake mode if active (user selected a role while Add JD was open)
       _exitIntakeMode();
@@ -8631,10 +9182,11 @@
         renderWorkspaceView(role);
         return;
       }
-
       // ── Legacy doc view (no workspace data) ─────────────────────────────────
       _renderStickyHeader(role);
       const el = document.getElementById('col-overview-cards');
+      // Legacy doc mode: enable page-level scroll and full-width two-col layout
+      el.classList.add('col-ov--legacy-doc');
       // Ensure workspace mode class is cleared for legacy doc view
       document.getElementById('col-chat')?.classList.remove('ws-active');
       // Show workspace in blank state in the chat panel for legacy roles
@@ -9074,42 +9626,21 @@
         }
       }
 
-      // ── Fill progressed quick-actions (synchronous — only for in-process roles) ──
+      // ── Applied State — full tracking view for in-process roles ─────────────
+      // Replaces the old minimal quick-action row with StageTimeline + ActionBlock
+      // + PrepPanel (filled async) + RejectionFlow.
       if (_isProgressed && !isArchivedRole(role) && !role.outcome_state) {
-        const _pActEl = document.getElementById('doc-progressed-actions');
-        if (_pActEl) {
-          const _nextIdx  = currentStageIndex(role) + 1;
-          const _nextStep = RAIL_STAGE_STEPS[_nextIdx] || null;
-          const _nextBtnHtml = _nextStep
-            ? `<button class="doc-pa-btn doc-pa-btn--next" id="doc-pa-next">Moved to ${esc(_nextStep.label)}</button>`
-            : '';
-          _pActEl.innerHTML = `<div class="doc-progressed-actions">
-            ${_nextBtnHtml}
-            <button class="doc-pa-btn doc-pa-btn--rejected" id="doc-pa-rejected">Mark as Rejected</button>
-          </div>`;
-
-          if (_nextStep) {
-            document.getElementById('doc-pa-next')?.addEventListener('click', async () => {
-              const _btn = document.getElementById('doc-pa-next');
-              if (_btn) { _btn.disabled = true; _btn.textContent = 'Saving…'; }
-              await markStage(role.id, _nextStep.status, _nextStep.stage);
-              // Re-render doc to reflect new stage (rail already updates via markStage)
-              const _updated = allRoles.find(r => r.id === role.id);
-              if (_updated) renderRoleDoc(_updated);
-            });
-          }
-
-          document.getElementById('doc-pa-rejected')?.addEventListener('click', () => {
-            // Route to the rail's existing outcome form — no new infrastructure
-            showOutcomeReasonForm(role.id, 'rejected');
-          });
-        }
+        renderAppliedState(role);
       }
 
       // Populate match output panel — analysis is primary content, raw JD is collapsible fallback
       (async () => {
         const panel = document.getElementById('match-output-panel');
         if (!panel) return;
+        // Track whether a jd_matches row was actually found.
+        // The catch block uses this to decide whether to show the ingestion
+        // overlay (no analysis) or a simple inline error (rendering failure).
+        let _analysisFound = false;
         try {
           const { data: match } = await db.from('jd_matches')
             .select('output_json')
@@ -9119,6 +9650,7 @@
             .maybeSingle();
 
           if (match && match.output_json) {
+            _analysisFound = true; // analysis row exists — errors below are rendering errors
             // Analysis found — show share button
             const _shareBtn = document.getElementById('btn-share-analysis');
             if (_shareBtn) {
@@ -9129,6 +9661,8 @@
             panel.innerHTML = renderMatchOutput(match.output_json);
             _initCompSnapshot(panel);
             renderFitDecisionPanel(role);
+            // Update the Applied State prep panel with analysis data (no-op if not progressed)
+            if (_isProgressed) _updateAsPrepPanel(match.output_json);
             // Inject deep context sections into Role Record
             const _deepEl = document.getElementById('role-record-deep-analysis');
             if (_deepEl) _deepEl.innerHTML = renderDeepContextHtml(match.output_json);
@@ -9641,199 +10175,23 @@
               }
             }
           } else {
-            // No saved analysis — promote CTA into doc-decision-summary slot (visible near top);
-            // raw JD goes to Role Record collapsible.
+            // No saved analysis — open the unified ingestion overlay immediately.
+            // If the role already has a JD, pre-fill the textarea so the user
+            // can review/edit it before triggering analysis.
             const rawJD = role.job_description_raw || '';
-            if (rawJD) {
-              // Put JD collapsible into the Role Record placeholder
-              const jdPlaceholder = document.getElementById('role-record-jd-placeholder');
-              if (jdPlaceholder) {
-                jdPlaceholder.innerHTML = `<div class="doc-section" style="padding-top:0;">
-                  <details>
-                    <summary class="doc-section-heading" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;">
-                      <span style="font-size:11px;opacity:0.5;">▶</span> Original job description
-                    </summary>
-                    <p class="doc-prose" style="white-space:pre-wrap;margin-top:12px;">${esc(rawJD)}</p>
-                  </details>
-                </div>`;
-              }
-              // Promote generate CTA into decision-summary slot so it appears near the top
-              const _dsEl2 = document.getElementById('doc-decision-summary');
-              if (_dsEl2) {
-                _dsEl2.innerHTML = `<div class="decision-summary ds-empty">
-                  <div class="decision-summary-header">Ready to analyse</div>
-                  <p class="doc-prose" style="color:var(--text-secondary);margin-bottom:12px;">Run the analysis to see fit, risks, and a recommended action for this role.</p>
-                  <button id="btn-generate-analysis" class="btn-primary" style="font-size:13px;">Generate analysis</button>
-                </div>`;
-                _dsEl2.style.display = '';
-              }
-              // Analysis panel stays empty — the CTA above is the call to action
-              panel.innerHTML = '';
-
-              const genBtn = document.getElementById('btn-generate-analysis');
-              if (genBtn) {
-                genBtn.addEventListener('click', async () => {
-                  genBtn.disabled = true;
-                  genBtn.textContent = 'Generating…';
-                  try {
-                    const analysis = await callAnalysisAPI(rawJD);
-                    const { data: insertedMatch, error: insertErr } = await db.from('jd_matches').insert({
-                      role_id:             role.id,
-                      job_description_raw: rawJD,
-                      jd_text:             rawJD,
-                      company_name:        role.company_name,
-                      role_title:          role.role_title,
-                      job_url:             role.job_url || null,
-                      selected_cv_ids:     [],
-                      cv_version_ids:      [],
-                      output_json:         analysis,
-                    }).select('id').single();
-                    if (insertErr) throw insertErr;
-                    insertEvent(role.id, { event_type: 'analysis_saved', title: 'Analysis saved', ref_match_id: insertedMatch?.id || null });
-                    const _dec1 = analysis.suggested_actions?.next_step || null;
-                    createSnapshot(role.id, 'initial_analysis', 'Analysis recorded', {
-                      stage:                            'JD Review',
-                      decision:                         _dec1,
-                      company_name:                     role.company_name,
-                      role_title:                       role.role_title,
-                      work_model:                       role.work_model || null,
-                      location_text:                    role.location_text || null,
-                      salary_text_raw:                  role.salary_text_raw || null,
-                      raw_jd:                           rawJD,
-                      fit_reality_summary:              analysis.fit_reality_summary              || null,
-                      what_they_are_really_looking_for: analysis.what_they_are_really_looking_for || null,
-                      what_you_would_actually_do:       analysis.what_you_would_actually_do       || null,
-                      risks_and_unknowns:               analysis.risks_and_unknowns               || null,
-                    });
-                    if (_dec1) createSnapshot(role.id, 'decision_set', _decisionSnapTitle(_dec1), { stage: 'JD Review', decision: _dec1 });
-
-                    // Auto-detect recruiter from JD (fire-and-forget)
-                    runRecruiterAutoDetection(role, rawJD).catch(() => {});
-
-                    // Clear the "Ready to analyse" CTA — analysis is now shown in the panel below
-                    const _dsElPost = document.getElementById('doc-decision-summary');
-                    if (_dsElPost) { _dsElPost.innerHTML = ''; _dsElPost.style.display = 'none'; }
-
-                    let _html2 = renderMatchOutput(analysis);
-                    _html2 += `
-                      <div class="rw-card rw-card--full" style="margin-top:4px;">
-                        <details>
-                          <summary class="doc-section-heading" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;">
-                            <span style="font-size:11px;opacity:0.5;">▶</span> Original job description
-                          </summary>
-                          <p class="doc-prose" style="white-space:pre-wrap;margin-top:12px;">${esc(rawJD)}</p>
-                        </details>
-                      </div>`;
-                    panel.innerHTML = _html2;
-                    _initCompSnapshot(panel);
-                    renderFitDecisionPanel(role);
-                    // Inject deep context into Role Record
-                    const _deepElA = document.getElementById('role-record-deep-analysis');
-                    if (_deepElA) _deepElA.innerHTML = renderDeepContextHtml(analysis);
-                    if (!_isProgressed && !isArchivedRole(role)) renderDecisionBar(role);
-                  } catch (genErr) {
-                    genBtn.disabled = false;
-                    genBtn.textContent = 'Generate analysis';
-                    const errP = document.createElement('p');
-                    errP.style.cssText = 'color:var(--error);font-size:12px;margin-top:8px;';
-                    errP.textContent = 'Failed to generate: ' + (genErr.message || 'Unknown error');
-                    genBtn.insertAdjacentElement('afterend', errP);
-                  }
-                });
-              }
-            } else {
-              panel.innerHTML = `<p class="doc-no-analysis">No analysis saved for this role yet.</p>`;
-            }
+            panel.innerHTML = '';
+            openIngestionOverlay({ context: 'unanalysed', role, prefillText: rawJD });
           }
         } catch (_) {
-          // On error — error empty state; raw JD in collapsible + Generate button if available
-          const rawJD = role.job_description_raw || '';
-          const collapsibleJD = rawJD ? `
-            <div class="doc-section" style="margin-top:24px;">
-              <details>
-                <summary class="doc-section-heading" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;">
-                  <span style="font-size:11px;opacity:0.5;">▶</span> Original job description
-                </summary>
-                <p class="doc-prose" style="white-space:pre-wrap;margin-top:12px;">${esc(rawJD)}</p>
-              </details>
-            </div>` : '';
-
-          if (rawJD) {
-            panel.innerHTML = `
-              <div class="doc-section">
-                <p class="doc-no-analysis" style="margin-bottom:14px;">Couldn't load saved analysis right now.</p>
-                <button id="btn-generate-analysis" class="btn-primary" style="font-size:13px;">Generate analysis</button>
-              </div>
-              ${collapsibleJD}`;
-
-            const genBtn = document.getElementById('btn-generate-analysis');
-            if (genBtn) {
-              genBtn.addEventListener('click', async () => {
-                genBtn.disabled = true;
-                genBtn.textContent = 'Generating…';
-                try {
-                  const analysis = await callAnalysisAPI(rawJD);
-                  const { data: insertedMatch, error: insertErr } = await db.from('jd_matches').insert({
-                    role_id:             role.id,
-                    job_description_raw: rawJD,
-                    jd_text:             rawJD,
-                    company_name:        role.company_name,
-                    role_title:          role.role_title,
-                    job_url:             role.job_url || null,
-                    selected_cv_ids:     [],
-                    cv_version_ids:      [],
-                    output_json:         analysis,
-                  }).select('id').single();
-                  if (insertErr) throw insertErr;
-                  insertEvent(role.id, { event_type: 'analysis_saved', title: 'Analysis saved', ref_match_id: insertedMatch?.id || null });
-                  const _dec2 = analysis.suggested_actions?.next_step || null;
-                  createSnapshot(role.id, 'initial_analysis', 'Analysis recorded', {
-                    stage:                            'JD Review',
-                    decision:                         _dec2,
-                    company_name:                     role.company_name,
-                    role_title:                       role.role_title,
-                    work_model:                       role.work_model || null,
-                    location_text:                    role.location_text || null,
-                    salary_text_raw:                  role.salary_text_raw || null,
-                    raw_jd:                           rawJD,
-                    fit_reality_summary:              analysis.fit_reality_summary              || null,
-                    what_they_are_really_looking_for: analysis.what_they_are_really_looking_for || null,
-                    what_you_would_actually_do:       analysis.what_you_would_actually_do       || null,
-                    risks_and_unknowns:               analysis.risks_and_unknowns               || null,
-                  });
-                  if (_dec2) createSnapshot(role.id, 'decision_set', _decisionSnapTitle(_dec2), { stage: 'JD Review', decision: _dec2 });
-
-                  // Auto-detect recruiter from JD (fire-and-forget)
-                  runRecruiterAutoDetection(role, rawJD).catch(() => {});
-
-                  let _html3 = renderMatchOutput(analysis);
-                  _html3 += `
-                    <div class="rw-card rw-card--full" style="margin-top:4px;">
-                      <details>
-                        <summary class="doc-section-heading" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;">
-                          <span style="font-size:11px;opacity:0.5;">▶</span> Original job description
-                        </summary>
-                        <p class="doc-prose" style="white-space:pre-wrap;margin-top:12px;">${esc(rawJD)}</p>
-                      </details>
-                    </div>`;
-                  panel.innerHTML = _html3;
-                  _initCompSnapshot(panel);
-                  renderFitDecisionPanel(role);
-                  // Inject deep context into Role Record
-                  const _deepElB = document.getElementById('role-record-deep-analysis');
-                  if (_deepElB) _deepElB.innerHTML = renderDeepContextHtml(analysis);
-                  if (!_isProgressed && !isArchivedRole(role)) renderDecisionBar(role);
-                } catch (genErr) {
-                  genBtn.disabled = false;
-                  genBtn.textContent = 'Generate analysis';
-                  const errP = document.createElement('p');
-                  errP.style.cssText = 'color:var(--error);font-size:12px;margin-top:8px;';
-                  errP.textContent = 'Failed to generate: ' + (genErr.message || 'Unknown error');
-                  genBtn.insertAdjacentElement('afterend', errP);
-                }
-              });
-            }
+          if (!_analysisFound) {
+            // Error fetching analysis, or no analysis row exists —
+            // open the ingestion overlay so the user can provide or re-run the JD.
+            const rawJD = role.job_description_raw || '';
+            panel.innerHTML = '';
+            openIngestionOverlay({ context: 'unanalysed', role, prefillText: rawJD });
           } else {
+            // Analysis was found but a rendering error occurred —
+            // show a simple inline message rather than replacing the page with the overlay.
             panel.innerHTML = `<p class="doc-no-analysis">Couldn't load saved analysis right now.</p>`;
           }
         }
@@ -10168,8 +10526,8 @@
       // Shown only when user_decision is set AND role is not yet progressed.
       // Once applied/interviewing/etc., the decision is settled — showing
       // "Applying" at Panel stage is stale noise.
-      // Labels deliberately distinct from outcome_state equivalents (skip→Passed, apply→Applying).
-      const _DEC_LABELS  = { skip: 'Passed', apply: 'Applying', save: 'Saved' };
+      // Labels match the user-facing decision language: Applied / Skipped / Saved.
+      const _DEC_LABELS  = { skip: 'Skipped', apply: 'Applied', save: 'Saved' };
       const _userDec     = role.user_decision;
       const _railProgressed = PROGRESSED_STAGES.has(currentStage);
       const _decRowHtml  = (_userDec && !_railProgressed)
@@ -10750,142 +11108,72 @@
           );
         }
         // Note: role_decisions ledger rows are immutable — undo does not remove them.
+        // But learning counters are decremented so undo doesn't inflate stats.
+        await _decrementCandidateLearningCounters(_ledgerType, role, opts.reason || null);
       };
     }
 
     /**
-     * Render the post-analysis decision capture strip at the bottom of the analysis view.
-     * Three options: Apply, Skip (with optional reason chips), Not sure.
-     * Decisions are persisted via _persistRoleDecision and mirrored in renderRail.
+     * Reverse the counter increments made by _updateCandidateLearningCounters
+     * when a decision is undone. Keeps learning counters honest.
      */
-    function _renderDecisionCapture(role) {
-      _ensureOverviewLowerCards();
-      const el = document.getElementById('ws-decision-capture');
-      if (!el) return;
+    async function _decrementCandidateLearningCounters(decisionType, role, reason) {
+      if (!_profileId || !_candidateLearning) return;
+      const output = role?.latest_match_output || role?.analysis || {};
+      const roleType     = output.role_type     || 'unknown';
+      const companyStage = output.company_stage || 'unknown';
 
-      // Hide for temp roles, un-analysed roles, or roles with a terminal outcome
-      const _output = role?.latest_match_output || role?.analysis || null;
-      if (!_output || role?._isTemp || role?.outcome_state) {
-        el.style.display = 'none';
-        el.innerHTML = '';
-        return;
-      }
+      try {
+        const cl = _candidateLearning;
+        const updates = {
+          total_roles_analysed: Math.max(0, (cl.total_roles_analysed || 0) - 1),
+          updated_at: new Date().toISOString(),
+        };
 
-      const _dec = role.user_decision || null;
-
-      el.style.display = '';
-      el.innerHTML = `
-        <div class="rw-dc">
-          <p class="rw-dc-question">What do you want to do with this role?</p>
-          <div class="rw-dc-actions" id="rw-dc-actions">
-            <button class="rw-dc-btn${_dec === 'apply' ? ' rw-dc-btn--chosen' : ''}" data-dc="apply">Apply</button>
-            <button class="rw-dc-btn${_dec === 'skip'  ? ' rw-dc-btn--chosen' : ''}" data-dc="skip">Skip</button>
-            <button class="rw-dc-btn${_dec === 'save'  ? ' rw-dc-btn--chosen' : ''}" data-dc="save">Not sure</button>
-          </div>
-          <div class="rw-dc-reasons" id="rw-dc-reasons" style="display:none;"></div>
-          <div class="rw-dc-confirm" id="rw-dc-confirm" style="display:none;"></div>
-        </div>
-      `;
-
-      const _actionsEl = el.querySelector('#rw-dc-actions');
-      const _reasonsEl = el.querySelector('#rw-dc-reasons');
-      const _confirmEl = el.querySelector('#rw-dc-confirm');
-
-      const SKIP_REASONS = [
-        { label: 'Requires coding',    notes: 'Production coding requirement' },
-        { label: 'On-site / location', notes: 'Hybrid requirement or location constraint note' },
-        { label: 'Salary missing',     notes: 'Salary missing' },
-        { label: 'Scope unclear',      notes: 'Unclear scope' },
-        { label: 'Not a fit',          notes: null },
-        { label: 'Other',              notes: null },
-      ];
-
-      let _pendingUndo = null;
-
-      // ── Show inline confirmation + Undo ─────────────────────────────────────
-      function _showConfirm(msg, undoFn) {
-        _pendingUndo = undoFn;
-        _confirmEl.innerHTML = `<span class="rw-dc-confirm-text">${esc(msg)}</span><button class="rw-dc-undo-btn" id="rw-dc-undo-btn">Undo</button>`;
-        _confirmEl.style.display = '';
-        document.getElementById('rw-dc-undo-btn')?.addEventListener('click', async () => {
-          if (_pendingUndo) {
-            await _pendingUndo().catch(() => {});
-            _pendingUndo = null;
+        if (decisionType === 'apply') {
+          updates.total_applied = Math.max(0, (cl.total_applied || 0) - 1);
+          const artMap = cl.applied_role_types || {};
+          if (artMap[roleType]) { artMap[roleType] = Math.max(0, artMap[roleType] - 1); }
+          updates.applied_role_types = artMap;
+          const acsMap = cl.applied_company_stages || {};
+          if (acsMap[companyStage]) { acsMap[companyStage] = Math.max(0, acsMap[companyStage] - 1); }
+          updates.applied_company_stages = acsMap;
+        } else if (decisionType === 'skip') {
+          updates.total_skipped = Math.max(0, (cl.total_skipped || 0) - 1);
+          const srtMap = cl.skipped_role_types || {};
+          if (srtMap[roleType]) { srtMap[roleType] = Math.max(0, srtMap[roleType] - 1); }
+          updates.skipped_role_types = srtMap;
+          const scsMap = cl.skipped_company_stages || {};
+          if (scsMap[companyStage]) { scsMap[companyStage] = Math.max(0, scsMap[companyStage] - 1); }
+          updates.skipped_company_stages = scsMap;
+          if (reason) {
+            const srcMap = cl.skip_reason_counts || {};
+            if (srcMap[reason]) { srcMap[reason] = Math.max(0, srcMap[reason] - 1); }
+            updates.skip_reason_counts = srcMap;
           }
-          _confirmEl.style.display = 'none';
-          _confirmEl.innerHTML = '';
-          _actionsEl.querySelectorAll('.rw-dc-btn').forEach(b => b.classList.remove('rw-dc-btn--chosen'));
-          const _r = allRoles.find(r => r.id === role.id) || role;
-          renderRail(_r);
-        }, { once: true });
-      }
-
-      // ── Persist + show confirmation ──────────────────────────────────────────
-      async function _commit(decision, opts = {}) {
-        _actionsEl.querySelectorAll('.rw-dc-btn').forEach(b => b.classList.remove('rw-dc-btn--chosen'));
-        _actionsEl.querySelector(`[data-dc="${decision}"]`)?.classList.add('rw-dc-btn--chosen');
-        _reasonsEl.style.display = 'none';
-
-        const _undoFn = await _persistRoleDecision(role, decision, opts).catch(() => null);
-        const _MSGS = { apply: 'Saved as Applied', skip: 'Saved as Skipped', save: 'Saved for later' };
-        _showConfirm(_MSGS[decision] || 'Saved', _undoFn);
-
-        const _r = allRoles.find(r => r.id === role.id) || role;
-        renderRail(_r);
-      }
-
-      // ── Build skip reasons drawer ────────────────────────────────────────────
-      function _openReasons() {
-        _reasonsEl.style.display = '';
-        _reasonsEl.innerHTML = `
-          <p class="rw-dc-reasons-label">Why skip? <span class="rw-dc-reasons-hint">(optional)</span></p>
-          <div class="rw-dc-reason-chips" id="rw-dc-reason-chips"></div>
-          <div class="rw-dc-other-row" id="rw-dc-other-row" style="display:none;">
-            <input class="rw-dc-other-input" id="rw-dc-other-input" type="text" placeholder="Describe reason…" maxlength="140" />
-            <button class="rw-dc-save-btn" id="rw-dc-other-save">Save</button>
-          </div>
-        `;
-        const _chips = document.getElementById('rw-dc-reason-chips');
-        SKIP_REASONS.forEach(r => {
-          const btn = document.createElement('button');
-          btn.className = 'rw-dc-reason-chip';
-          btn.textContent = r.label;
-          btn.addEventListener('click', async () => {
-            if (r.label === 'Other') {
-              document.getElementById('rw-dc-other-row').style.display = '';
-              const _inp = document.getElementById('rw-dc-other-input');
-              _inp?.focus();
-              document.getElementById('rw-dc-other-save')?.addEventListener('click', async () => {
-                const typed = (_inp?.value || '').trim();
-                await _commit('skip', { reason: typed || 'Other', notes: typed || null });
-              }, { once: true });
-              return;
-            }
-            await _commit('skip', { reason: r.label, notes: r.notes });
-          }, { once: true });
-          _chips.appendChild(btn);
-        });
-      }
-
-      // ── Button click handler ─────────────────────────────────────────────────
-      _actionsEl.addEventListener('click', async e => {
-        const btn = e.target.closest('[data-dc]');
-        if (!btn) return;
-        const _d = btn.dataset.dc;
-
-        if (_d === 'skip') {
-          // Already open → second click on Skip = save with no reason
-          if (_reasonsEl.style.display === '' && _reasonsEl.innerHTML) {
-            await _commit('skip', {});
-            return;
-          }
-          _openReasons();
-          return;
+        } else if (decisionType === 'archive') {
+          updates.total_archived = Math.max(0, (cl.total_archived || 0) - 1);
         }
 
-        if (_d === 'apply') { await _commit('apply'); return; }
-        if (_d === 'save')  { await _commit('save');  return; }
-      });
+        await db.from('candidate_learning')
+          .update(updates)
+          .eq('profile_id', _profileId);
+
+        Object.assign(_candidateLearning, updates);
+      } catch (e) {
+        console.warn('[_decrementCandidateLearningCounters]', e);
+      }
+    }
+
+    /**
+     * _renderDecisionCapture — REMOVED (RW-ACTION-DUPLICATION-01)
+     * Bottom "What do you want to do with this role?" block removed.
+     * Actions now live exclusively in the top-right decision bar (renderDecisionBar).
+     * Function kept as no-op so existing call sites don't break.
+     */
+    function _renderDecisionCapture(role) {
+      const el = document.getElementById('ws-decision-capture');
+      if (el) { el.style.display = 'none'; el.innerHTML = ''; }
     }
 
     // ─── Decision Layer V1 — Blocker detection ────────────────────────────────
@@ -11715,6 +12003,510 @@
       return html || '<div style="font-size:13px;color:var(--text-light);font-style:italic;padding:8px 0;">No analysis available yet.</div>';
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── Unified JD Ingestion Overlay ─────────────────────────────────────────
+    // One shared system for both "Add JD" and "Unanalysed Role" entry points.
+    //
+    // openIngestionOverlay({ context, role })
+    //   context: 'add'         — brand-new role (no DB record yet)
+    //            'unanalysed'  — existing role, has JD but no analysis
+    //                           (or has no JD yet and needs one added)
+    //   role:    required for 'unanalysed', null for 'add'
+    //
+    // States:
+    //   idle        → waiting for pasted JD or URL input
+    //   processing  → stacking progress lines (top) + optional questions (bottom)
+    //   ready       → analysis loaded behind overlay; fade-out queued
+    //   done        → overlay hidden; analysis view visible
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // ── Ingestion timer ───────────────────────────────────────────────────
+    // Counts up from 0:00 while JD is being processed. Stored on overlay element
+    // so each overlay instance has its own timer state.
+    function _ingestionTimerStart(overlay) {
+      _ingestionTimerStop(overlay);
+      const _timerEl = document.getElementById('rw-ing-timer');
+      if (!_timerEl) return;
+      _timerEl.textContent = '0:00';
+      const _startTime = Date.now();
+      overlay._ingTimerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - _startTime) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        _timerEl.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+      }, 1000);
+    }
+    function _ingestionTimerStop(overlay) {
+      if (overlay && overlay._ingTimerInterval) {
+        clearInterval(overlay._ingTimerInterval);
+        overlay._ingTimerInterval = null;
+      }
+    }
+    function _ingestionTimerReset() {
+      const _timerEl = document.getElementById('rw-ing-timer');
+      if (_timerEl) _timerEl.textContent = '0:00';
+    }
+
+    function openIngestionOverlay({ context = 'add', role = null, prefillText = '' } = {}) {
+      const _overlay    = document.getElementById('rw-ingestion-overlay');
+      const _idleEl     = document.getElementById('rw-ing-idle');
+      const _procEl     = document.getElementById('rw-ing-processing');
+      const _headline   = document.getElementById('rw-ing-headline');
+      const _sub        = document.getElementById('rw-ing-sub');
+      const _textarea   = document.getElementById('rw-ing-textarea');
+      const _submitRow  = document.getElementById('rw-ing-submit-row');
+      const _submitBtn  = document.getElementById('rw-ing-submit');
+      const _cancelBtn  = document.getElementById('rw-ing-cancel');
+      const _errorEl    = document.getElementById('rw-ing-error');
+      const _linesEl    = document.getElementById('rw-ing-progress-lines');
+      const _q1         = document.getElementById('rw-ing-q1');
+      const _q2         = document.getElementById('rw-ing-q2');
+      const _q3         = document.getElementById('rw-ing-q3');
+      if (!_overlay) return;
+
+      // ── Reset to idle state ─────────────────────────────────────────────────
+      _overlay.classList.remove('rw-ingestion-overlay--exit');
+      _idleEl.removeAttribute('hidden');
+      _procEl.setAttribute('hidden', '');
+      _textarea.value   = prefillText || '';
+      _errorEl.setAttribute('hidden', '');
+      _errorEl.textContent = '';
+      if (_linesEl) _linesEl.innerHTML = '';
+      [_q1, _q2, _q3].forEach(q => { if (q) q.value = ''; });
+      _ingestionTimerStop(_overlay);
+      _ingestionTimerReset();
+
+      // Show/hide submit row based on whether textarea starts with content
+      const _updateSubmitRow = () => {
+        const hasContent = _textarea.value.trim().length > 0;
+        if (_submitRow) {
+          if (hasContent) _submitRow.removeAttribute('hidden');
+          else _submitRow.setAttribute('hidden', '');
+        }
+      };
+      _updateSubmitRow();
+
+      // ── Copy varies by context ──────────────────────────────────────────────
+      if (context === 'unanalysed') {
+        _headline.textContent = 'This role hasn\u2019t been analysed yet';
+        _sub.textContent = 'Paste a job description or a link to one';
+      } else {
+        _headline.textContent = 'Add a role';
+        _sub.textContent = 'Paste a job description or a link to one';
+      }
+
+      // ── Show overlay ────────────────────────────────────────────────────────
+      _overlay.removeAttribute('hidden');
+      if (!prefillText) setTimeout(() => _textarea.focus(), 60);
+
+      // ── Submit button ────────────────────────────────────────────────────────
+      const _onSubmitBtn = () => _submitIngestion();
+      if (_submitBtn) _submitBtn.addEventListener('click', _onSubmitBtn);
+
+      // ── Cancel button ────────────────────────────────────────────────────────
+      const _onCancelBtn = () => _closeIngestionOverlay(_overlay);
+      if (_cancelBtn) _cancelBtn.addEventListener('click', _onCancelBtn);
+
+      // ── Keyboard shortcut: Ctrl/Cmd+Enter in textarea to submit ────────────
+      const _onTextareaKey = (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          _submitIngestion();
+        }
+        // Escape to cancel
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          _closeIngestionOverlay(_overlay);
+        }
+      };
+      _textarea.addEventListener('keydown', _onTextareaKey);
+
+      // ── Textarea input — update submit row visibility ───────────────────────
+      const _onTextareaInput = () => {
+        _updateSubmitRow();
+      };
+      _textarea.addEventListener('input', _onTextareaInput);
+
+      // ── Internal cleanup reference ──────────────────────────────────────────
+      _overlay._ingCleanup = () => {
+        _textarea.removeEventListener('keydown', _onTextareaKey);
+        _textarea.removeEventListener('input', _onTextareaInput);
+        if (_submitBtn) _submitBtn.removeEventListener('click', _onSubmitBtn);
+        if (_cancelBtn) _cancelBtn.removeEventListener('click', _onCancelBtn);
+      };
+
+      // ── URL detection helper ────────────────────────────────────────────────
+      function _looksLikeUrl(str) {
+        return /^https?:\/\/.{4,}$/i.test(str) || /^www\..{4,}$/i.test(str);
+      }
+
+      // ── Submission handler ──────────────────────────────────────────────────
+      let _submitted = false;
+      function _submitIngestion() {
+        if (_submitted) return;
+
+        const _raw = _textarea.value.trim();
+        if (!_raw) {
+          _errorEl.textContent = 'Please paste a job description or URL.';
+          _errorEl.removeAttribute('hidden');
+          _textarea.focus();
+          return;
+        }
+
+        let text = '';
+        let url  = '';
+
+        // Auto-detect: if the input looks like a URL, treat it as a URL submission
+        if (_looksLikeUrl(_raw)) {
+          url = _raw.startsWith('www.') ? 'https://' + _raw : _raw;
+        } else {
+          text = _raw;
+        }
+
+        _submitted = true;
+        _overlay._ingSubmittedReset = () => { _submitted = false; };
+        _errorEl.setAttribute('hidden', '');
+
+        // Transition to processing state
+        _idleEl.setAttribute('hidden', '');
+        _procEl.removeAttribute('hidden');
+
+        // Start processing timer
+        _ingestionTimerStart(_overlay);
+
+        // Run the analysis flow
+        _runIngestionFlow({ context, role, text, url, overlay: _overlay, linesEl: _linesEl, qEls: [_q1, _q2, _q3] });
+      }
+    }
+
+    // ── Processing flow ─────────────────────────────────────────────────────
+    async function _runIngestionFlow({ context, role, text, url, overlay, linesEl, qEls }) {
+      // Helper: append a new stacking progress line
+      function _addLine(label, state = 'active') {
+        if (!linesEl) return;
+        // Mark any previously-active line as done
+        linesEl.querySelectorAll('.rw-ing-progress-line--active').forEach(el => {
+          el.classList.remove('rw-ing-progress-line--active');
+          el.classList.add('rw-ing-progress-line--done');
+        });
+        const div = document.createElement('div');
+        div.className = `rw-ing-progress-line rw-ing-progress-line--${state}`;
+        div.textContent = label;
+        linesEl.appendChild(div);
+      }
+
+      // Helper: mark the last active line as done
+      function _completeLine() {
+        if (!linesEl) return;
+        linesEl.querySelectorAll('.rw-ing-progress-line--active').forEach(el => {
+          el.classList.remove('rw-ing-progress-line--active');
+          el.classList.add('rw-ing-progress-line--done');
+        });
+      }
+
+      // Staggered progress lines (cosmetic — mirrors analysis timing)
+      _addLine(_ANALYSIS_STAGES[0]);
+      const _lineTimers = _ANALYSIS_TIMINGS.map((t, i) => setTimeout(() => {
+        if (overlay._ingDone) return;
+        _addLine(_ANALYSIS_STAGES[i + 1] || '');
+      }, t));
+
+      // Track whether user is engaged with optional context questions
+      let _userFocusedContext = false;
+      let _userIsTypingContext = false;
+      let _contextInactiveTimer = null;
+      let _readyToTransition = false;
+      let _contextDoneCallback = null;
+
+      qEls.forEach(q => {
+        if (!q) return;
+        q.addEventListener('focus', () => { _userFocusedContext = true; _userIsTypingContext = true; });
+        q.addEventListener('input', () => {
+          _userIsTypingContext = true;
+          clearTimeout(_contextInactiveTimer);
+          _contextInactiveTimer = setTimeout(() => {
+            _userIsTypingContext = false;
+            // If analysis is already ready and user has paused typing, transition now
+            if (_readyToTransition && _contextDoneCallback) _contextDoneCallback();
+          }, 900);
+        });
+        q.addEventListener('blur', () => {
+          _userIsTypingContext = false;
+          clearTimeout(_contextInactiveTimer);
+          // If analysis already ready, transition after brief grace
+          if (_readyToTransition && _contextDoneCallback) {
+            setTimeout(() => {
+              if (!_userIsTypingContext && _contextDoneCallback) _contextDoneCallback();
+            }, 300);
+          }
+        });
+      });
+
+      // ── Run the actual analysis ─────────────────────────────────────────────
+      const _pipeT0 = performance.now(); // pipeline start
+      let _tPass1Start = 0, _tPass1Done = 0, _tDbSaveMs = 0;
+      let analysis = null;
+      let savedRole = null;
+      let analysisError = null;
+
+      try {
+        // ── If a URL was provided, attempt to fetch the JD content first ──────
+        let _fetchedMeta = null; // { company, title, location } from LinkedIn fetch
+        if (url) {
+          _addLine('Fetching job description from URL…');
+          const _isLinkedIn = /linkedin\.com/i.test(url);
+          if (_isLinkedIn) {
+            // Use existing LinkedIn fetch edge function
+            const { data: profiles } = await db.from('profiles').select('id').limit(1);
+            const _userId = profiles?.[0]?.id || null;
+            const _fetchRes = await fetch(`${SUPABASE_URL}/functions/v1/fetch-linkedin-jd`, {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+              body:    JSON.stringify({ url, userId: _userId }),
+            });
+            const _payload = await _fetchRes.json();
+            if (_fetchRes.ok && _payload.success && _payload.job?.description && _payload.job.description.trim().length >= 50) {
+              text = (typeof cleanLinkedInJD === 'function') ? cleanLinkedInJD(_payload.job.description) : _payload.job.description;
+              _fetchedMeta = {
+                company:  _payload.job.company  || null,
+                title:    _payload.job.title    || null,
+                location: _payload.job.location || null,
+              };
+            } else {
+              const _e = _payload?.error;
+              if (_e === 'no_session' || _e === 'session_expired') {
+                throw new Error('LinkedIn session not set up \u2014 add it in Admin \u2192 LinkedIn. For now, copy the job description text from the listing and paste it here.');
+              }
+              throw new Error('Couldn\u2019t fetch that job listing. Copy the description text from the page and paste it here instead.');
+            }
+          } else {
+            // Non-LinkedIn URL — no scraper available
+            throw new Error('Auto-fetch only works for LinkedIn URLs. Copy the job description text from the page and paste it here.');
+          }
+          _completeLine();
+        }
+
+        const jd_raw = text;
+        const jd_clean = cleanJobDescription ? cleanJobDescription(jd_raw) : jd_raw;
+        const jd = jd_clean || jd_raw;
+
+        if (context === 'add') {
+          // ── New role: extract metadata, create DB record, analyse ─────────
+          const _meta    = (typeof extractJDMetadata === 'function') ? extractJDMetadata(jd_raw, jd_clean) : {};
+          const _company = (_fetchedMeta && _fetchedMeta.company) || _meta.company_name || null;
+          const _title   = (_fetchedMeta && _fetchedMeta.title)   || _meta.role_title   || null;
+          const _location= (_fetchedMeta && _fetchedMeta.location)|| _meta.location     || null;
+          const _jobUrl  = url || _meta.job_url || null;
+          const _workModelMap = { remote: 'remote', hybrid: 'hybrid', 'on-site': 'onsite', onsite: 'onsite' };
+          const _workModel = _meta.remote_model ? (_workModelMap[_meta.remote_model.toLowerCase()] || null) : null;
+          const _salary  = _meta.salary_annual || null;
+          const _engType = (typeof _detectEngagementType === 'function') ? _detectEngagementType(jd_raw || jd) : null;
+          const _ir35    = (typeof _detectIr35Status === 'function') ? _detectIr35Status(jd_raw || jd, _engType) : null;
+          const _dayRate = (typeof _detectDayRateText === 'function') ? _detectDayRateText(jd_raw || jd) : null;
+          const _contractLen = (typeof _detectContractLength === 'function') ? _detectContractLength(jd_raw || jd) : null;
+          const _startTl = (typeof _detectStartTimeline === 'function') ? _detectStartTimeline(jd_raw || jd) : null;
+
+          const { data: newRole, error: re } = await db.from('roles').insert({
+            company_name:        _company,
+            role_title:          _title,
+            location_text:       _location,
+            job_url:             _jobUrl,
+            job_description_raw: jd_raw || jd,
+            status:              'active',
+            work_model:          _workModel,
+            salary_text_raw:     _salary,
+            engagement_type:     _engType,
+            ir35_status:         _ir35,
+            day_rate_text:       _dayRate,
+            contract_length:     _contractLen,
+            start_timeline:      _startTl,
+          }).select().single();
+          if (re) throw re;
+
+          if (typeof insertEvent === 'function')
+            insertEvent(newRole.id, { event_type: 'role_created', title: 'Role created', detail: 'Added via ingestion overlay' });
+
+          await db.from('role_updates').insert({
+            role_id:       newRole.id,
+            event_type:    'stage',
+            status:        'in_progress',
+            stage_reached: 'JD Review',
+          });
+
+          savedRole = newRole;
+
+        } else if (context === 'unanalysed' && role) {
+          // ── Existing role: update JD if a new one was provided ────────────
+          savedRole = role;
+          if (text && text !== role.job_description_raw) {
+            const { error: upErr } = await db.from('roles').update({
+              job_description_raw: jd_raw,
+            }).eq('id', role.id);
+            if (!upErr) savedRole = { ...role, job_description_raw: jd_raw };
+          }
+        }
+
+        // ── Call analysis API ────────────────────────────────────────────────
+        _tPass1Start = performance.now();
+        analysis = await callAnalysisAPI(jd);
+        _tPass1Done = performance.now();
+        console.log('[perf] Local analysis ready in', Math.round(_tPass1Done - _tPass1Start) + 'ms (AI enrichment continues in background)');
+
+        // ── Company/title backfill from AI output (new roles) ───────────────
+        if (context === 'add' && savedRole) {
+          const _patch = {};
+          if (!savedRole.company_name) {
+            let _aiCompany = analysis._company || null;
+            if (!_aiCompany) {
+              const _summ = analysis.role_summary || '';
+              const _m = _summ.match(/\bat\s+([A-Z][a-zA-Z0-9&. '-]{1,40}?)(?:[,.]|\s+(?:is|you|the|a|as|where|that|for|in)\b)/);
+              if (_m?.[1]) _aiCompany = (typeof sanitiseCompanyName === 'function' ? sanitiseCompanyName(_m[1].trim().replace(/[.,]+$/, '')) : _m[1]) || null;
+            }
+            if (_aiCompany) { _patch.company_name = _aiCompany; savedRole = { ...savedRole, company_name: _aiCompany }; }
+          }
+          if (!savedRole.role_title) {
+            const _aiTitle = analysis._roleTitle || null;
+            if (_aiTitle) { _patch.role_title = _aiTitle; savedRole = { ...savedRole, role_title: _aiTitle }; }
+          }
+          if (Object.keys(_patch).length) db.from('roles').update(_patch).eq('id', savedRole.id).catch(() => {});
+        }
+
+        // ── Save jd_matches row ──────────────────────────────────────────────
+        const _tDbStart2 = performance.now();
+        const { data: insertedMatch, error: matchErr } = await db.from('jd_matches').insert({
+          role_id:             savedRole.id,
+          job_description_raw: jd_raw || jd,
+          jd_text_raw:         jd_raw || jd,
+          jd_text:             jd,
+          jd_text_clean:       jd_clean || null,
+          company_name:        savedRole.company_name,
+          role_title:          savedRole.role_title,
+          job_url:             savedRole.job_url || null,
+          selected_cv_ids:     [],
+          cv_version_ids:      [],
+          output_json:         analysis,
+        }).select('id').single();
+        if (matchErr) throw matchErr;
+        _tDbSaveMs = Math.round(performance.now() - _tDbStart2);
+        console.log('[perf] DB save in', _tDbSaveMs + 'ms');
+
+        // Background: patch narrative into DB when Pass 2 completes
+        if (insertedMatch?.id) _backgroundAIPatch(analysis, savedRole.id, insertedMatch.id);
+
+        if (typeof insertEvent === 'function')
+          insertEvent(savedRole.id, { event_type: 'analysis_saved', title: 'Analysis saved', detail: 'Source: ingestion overlay' });
+
+        const _dec = analysis.suggested_actions?.next_step || null;
+        if (typeof createSnapshot === 'function') {
+          createSnapshot(savedRole.id, 'initial_analysis', 'Analysis recorded', {
+            stage: 'JD Review', decision: _dec,
+            company_name:                     savedRole.company_name,
+            role_title:                       savedRole.role_title,
+            work_model:                       savedRole.work_model || null,
+            location_text:                    savedRole.location_text || null,
+            salary_text_raw:                  savedRole.salary_text_raw || null,
+            raw_jd:                           jd,
+            fit_reality_summary:              analysis.fit_reality_summary              || null,
+            what_they_are_really_looking_for: analysis.what_they_are_really_looking_for || null,
+            what_you_would_actually_do:       analysis.what_you_would_actually_do       || null,
+            risks_and_unknowns:               analysis.risks_and_unknowns               || null,
+          });
+          if (_dec && typeof _decisionSnapTitle === 'function')
+            createSnapshot(savedRole.id, 'decision_set', _decisionSnapTitle(_dec), { stage: 'JD Review', decision: _dec });
+        }
+
+        // Auto-detect recruiter (fire-and-forget)
+        if (typeof runRecruiterAutoDetection === 'function')
+          runRecruiterAutoDetection(savedRole, jd_raw || jd).catch(() => {});
+
+      } catch (err) {
+        // Analysis failed — show error, return to idle state
+        _lineTimers.forEach(clearTimeout);
+        _ingestionTimerStop(overlay);
+        overlay._ingDone = true;
+        // Reset the one-shot submission guard so user can retry
+        if (typeof overlay._ingSubmittedReset === 'function') overlay._ingSubmittedReset();
+        const _errorEl = document.getElementById('rw-ing-error');
+        const _idleEl  = document.getElementById('rw-ing-idle');
+        const _procEl  = document.getElementById('rw-ing-processing');
+        const _textarea = document.getElementById('rw-ing-textarea');
+        const _submitRow = document.getElementById('rw-ing-submit-row');
+        if (_procEl) _procEl.setAttribute('hidden', '');
+        if (_idleEl) _idleEl.removeAttribute('hidden');
+        // Clear textarea so user can paste fresh content (especially after URL fetch failures)
+        if (_textarea) { _textarea.value = ''; setTimeout(() => _textarea.focus(), 60); }
+        if (_submitRow) _submitRow.setAttribute('hidden', '');
+        if (_errorEl) {
+          _errorEl.textContent = err.message || 'Something went wrong. Please try again.';
+          _errorEl.removeAttribute('hidden');
+        }
+        return;
+      }
+
+      // ── Analysis ready: preload the role view behind the overlay ───────────
+      _lineTimers.forEach(clearTimeout);
+      _completeLine();
+      _ingestionTimerStop(overlay);
+      overlay._ingDone = true;
+
+      // Load data + pre-render the analysis view behind the overlay.
+      // We do this before starting the fade-out so there's no second loading
+      // state after the overlay disappears.
+      try {
+        selectedRoleId = null;
+        _setAppFilter('active');
+        switchNav('applications');
+        await refresh();
+        const _inboxEl = document.getElementById('role-inbox');
+        if (_inboxEl) _inboxEl.scrollTop = 0;
+        // Pre-render the role detail (behind overlay — invisible to user)
+        selectRole(savedRole.id, { scrollIntoView: true });
+      } catch (_) { /* non-fatal — transition anyway */ }
+
+      const _tFirstRender = performance.now();
+      const _totalMs = Math.round(_tFirstRender - _pipeT0);
+      const _p1Ms    = _tPass1Done ? Math.round(_tPass1Done - _tPass1Start) : '?';
+      console.log('[perf] First useful render at', _totalMs + 'ms (total from submit)');
+      console.log('[perf] Breakdown — local analysis:', _p1Ms + 'ms | DB save:', _tDbSaveMs + 'ms | render+refresh:', Math.round(_totalMs - (_tPass1Done ? _tPass1Done - _pipeT0 : 0) - _tDbSaveMs) + 'ms');
+      console.log('[perf] AI enrichment + narrative still loading in background…');
+
+      // Mark ready; decide when to fade out
+      _readyToTransition = true;
+
+      function _doFadeOut() {
+        if (!_doFadeOut._called) {
+          _doFadeOut._called = true;
+          _closeIngestionOverlay(overlay);
+        }
+      }
+
+      if (_userIsTypingContext) {
+        // User is mid-type — defer until they pause or blur
+        _contextDoneCallback = _doFadeOut;
+      } else if (_userFocusedContext) {
+        // User had focused a field but is no longer typing — short grace then go
+        setTimeout(_doFadeOut, 400);
+      } else {
+        // User never touched the context fields — fade out after a brief moment
+        // so the last progress line is visible for a beat
+        setTimeout(_doFadeOut, 500);
+      }
+    }
+
+    function _closeIngestionOverlay(overlayEl) {
+      const el = overlayEl || document.getElementById('rw-ingestion-overlay');
+      if (!el) return;
+      if (el._ingCleanup) { el._ingCleanup(); el._ingCleanup = null; }
+      el.classList.add('rw-ingestion-overlay--exit');
+      setTimeout(() => {
+        el.setAttribute('hidden', '');
+        el.classList.remove('rw-ingestion-overlay--exit');
+        el._ingDone = false;
+        // Remove the intake-mode class (legacy) if still present
+        document.querySelector('.app')?.classList.remove('intake-mode');
+      }, 320); // matches rw-ing-fadeout animation duration
+    }
+
     // ─── Open blank workspace (new Add Role path) ────────────────────────────
     // Does NOT create a DB record immediately.
     // A real role record is created only after the first successful JD analysis.
@@ -11959,8 +12751,9 @@
             }
             if (_aiCompany) { _patch.company_name = _aiCompany; role.company_name = _aiCompany; }
           }
-          if (!role.role_title && analysis._roleTitle) {
-            _patch.role_title = analysis._roleTitle; role.role_title = analysis._roleTitle;
+          if (!role.role_title) {
+            const _aiTitle = analysis._roleTitle || null;
+            if (_aiTitle) { _patch.role_title = _aiTitle; role.role_title = _aiTitle; }
           }
           if (Object.keys(_patch).length) {
             db.from('roles').update(_patch).eq('id', role.id).catch(() => {});
@@ -11969,7 +12762,7 @@
 
         // ── Step 3: Insert jd_matches row (non-fatal — role already saved) ───
         try {
-          const { error: me } = await db.from('jd_matches').insert({
+          const { data: _matchRow3, error: me } = await db.from('jd_matches').insert({
             role_id:             role.id,
             job_description_raw: jd_raw || jd,
             jd_text_raw:         jd_raw || jd,
@@ -11981,8 +12774,11 @@
             selected_cv_ids:     [],
             cv_version_ids:      [],
             output_json:         analysis,
-          });
+          }).select('id').single();
           if (me) throw me;
+
+          // Background: patch narrative into DB when Pass 2 completes
+          if (_matchRow3?.id) _backgroundAIPatch(analysis, role.id, _matchRow3.id);
 
           insertEvent(role.id, { event_type: 'analysis_saved', title: 'Analysis saved', detail: `Source: ${analysisSource}` });
           const _dec3 = analysis.suggested_actions?.next_step || null;
@@ -14124,11 +14920,12 @@
       }
 
       // ── Work model ──────────────────────────────────────────────────────
-      if (_wm === 'remote') {
+      // Use startsWith — DB values can include qualifiers e.g. "Hybrid (frequency not specified)"
+      if (_wm.startsWith('remote')) {
         _bullets.push('Remote role, no office requirement.');
-      } else if (_wm === 'hybrid') {
+      } else if (_wm.startsWith('hybrid')) {
         _watchouts.push('Hybrid arrangement. Worth confirming required office days.');
-      } else if (_wm === 'onsite') {
+      } else if (_wm.startsWith('onsite') || _wm.startsWith('on-site')) {
         _watchouts.push('On-site role. Confirm location viability before progressing.');
       }
 
@@ -14177,9 +14974,9 @@
       const _SKIP_PATTERNS = [/legacy engine/i, /re-run analysis/i, /record saved with/i];
       // Topics already covered by explicit watchouts — avoid repeating them from risks
       const _coveredTopics = [];
-      if (!_salaryStated)      _coveredTopics.push('salary', 'compensation', 'pay');
-      if (_wm === 'hybrid')    _coveredTopics.push('hybrid', 'office day');
-      if (_wm === 'onsite')    _coveredTopics.push('onsite', 'on-site', 'office', 'location');
+      if (!_salaryStated)              _coveredTopics.push('salary', 'compensation', 'pay');
+      if (_wm.startsWith('hybrid'))    _coveredTopics.push('hybrid', 'office day');
+      if (_wm.startsWith('onsite') || _wm.startsWith('on-site')) _coveredTopics.push('onsite', 'on-site', 'office', 'location');
       if (_hasFrontend)        _coveredTopics.push('coding', 'frontend', 'production code');
 
       const _addWatchout = (raw) => {
@@ -14199,7 +14996,7 @@
       // ── Verdict logic ────────────────────────────────────────────────────
       const _hardConflicts = [
         _hasFrontend,
-        _wm === 'onsite' && _userPrefWm === 'remote',
+        (_wm.startsWith('onsite') || _wm.startsWith('on-site')) && _userPrefWm === 'remote',
       ].filter(Boolean).length;
 
       const _positiveCount = _bullets.filter(b =>
@@ -14220,7 +15017,7 @@
       // One calm sentence reflecting the overall verdict direction.
       let _summary;
       if (_verdict === 'yes') {
-        if (_wm === 'remote' && _salaryStated) {
+        if (_wm.startsWith('remote') && _salaryStated) {
           _summary = 'This role matches your remote preference and has stated compensation.';
         } else if (_isSenior && _positiveCount >= 3) {
           _summary = 'This role broadly aligns with your seniority level and stated preferences.';
@@ -14273,15 +15070,15 @@
       if (_hasFrontend) {
         // Hard conflict — highest priority
         _mainReason = 'Production coding likely required.';
-      } else if (_wm === 'onsite' && _userPrefWm === 'remote') {
+      } else if ((_wm.startsWith('onsite') || _wm.startsWith('on-site')) && _userPrefWm === 'remote') {
         _mainReason = 'On-site requirement conflicts with your remote preference.';
       } else if (_verdict === 'yes') {
         // Strong positives — surface the most meaningful combination
-        if (_wm === 'remote' && _salaryStated) {
+        if (_wm.startsWith('remote') && _salaryStated) {
           _mainReason = 'Remote role with stated compensation.';
-        } else if (_wm === 'remote' && _isSenior) {
+        } else if (_wm.startsWith('remote') && _isSenior) {
           _mainReason = 'Remote role with senior scope aligned.';
-        } else if (_wm === 'remote') {
+        } else if (_wm.startsWith('remote')) {
           _mainReason = 'Remote role, no office requirement detected.';
         } else if (_salaryStated && _isSenior) {
           _mainReason = 'Compensation stated and senior scope aligned.';
@@ -14294,7 +15091,7 @@
         }
       } else if (_verdict === 'no') {
         // Hard conflict drove NO (hasFrontend/onsite already handled above)
-        if (_wm === 'onsite') {
+        if (_wm.startsWith('onsite') || _wm.startsWith('on-site')) {
           _mainReason = 'On-site role. Location viability needs confirming.';
         } else {
           _mainReason = 'Multiple conflicting signals detected across key role criteria.';
@@ -14303,9 +15100,9 @@
         // MAYBE — surface the primary uncertainty
         if (!_wm && !_salaryStated) {
           _mainReason = 'Key details are missing from the role description.';
-        } else if (_wm === 'hybrid' && !_salaryStated) {
+        } else if (_wm.startsWith('hybrid') && !_salaryStated) {
           _mainReason = 'Hybrid work expectation and unstated salary require clarification.';
-        } else if (_wm === 'hybrid') {
+        } else if (_wm.startsWith('hybrid')) {
           _mainReason = 'Hybrid work expectation. Confirm office days required.';
         } else if (!_salaryStated) {
           _mainReason = 'Salary not stated. Worth clarifying before committing time.';
@@ -14358,14 +15155,17 @@
         // Ensure CVs are loaded (uses cache if already populated)
         if (!_cachedCvVersions) await loadCvVersions();
         const _cv = _selectBestCv();
+        const _cvSvg = '<svg class="rw-cv-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>';
         if (_cv) {
-          _el.innerHTML = `
-            <div class="rw-fa-cv-label">Recommended CV</div>
-            <div class="rw-fa-cv-name">${esc(_cv.name)}</div>`;
+          _el.innerHTML = `<div class="rw-cv-row">${_cvSvg}<div class="rw-cv-text">
+            <div class="rw-decision-block-cv-label">Recommended CV</div>
+            <div class="rw-decision-block-cv-desc">Use your <strong>${esc(_cv.name)}</strong> CV for this role</div>
+          </div></div>`;
         } else {
-          _el.innerHTML = `
-            <div class="rw-fa-cv-label">Recommended CV</div>
-            <div class="rw-fa-cv-empty">Add a CV to enable tailored recommendations.</div>`;
+          _el.innerHTML = `<div class="rw-cv-row">${_cvSvg}<div class="rw-cv-text">
+            <div class="rw-decision-block-cv-label">Recommended CV</div>
+            <div class="rw-decision-block-cv-empty">Add a CV to enable tailored recommendations.</div>
+          </div></div>`;
         }
       } catch (_e) {
         // Silently ignore — CV recommendation is non-critical
@@ -14951,10 +15751,53 @@
 
           // ── Build section content (narrative path or template fallback) ──
 
+          // 0. Role summary — standalone one-liner overview of the role
+          let _roleSummaryHtml = '';
+          if (output.role_summary && output.role_summary !== 'Not stated' && output.role_summary !== 'Unknown') {
+            _roleSummaryHtml = `<p class="rw-doc-prose">${esc(output.role_summary)}</p>`;
+          }
+
+          // ── Viability detection (hoisted — needed by fit reality + decision block) ──
+          // Mirrors _renderDecisionBanner logic. Must be computed before section
+          // rendering so that fit text and one-liner can align with the final verdict.
+          const _dbIsHardNo = output.hard_no === true ||
+                              (Array.isArray(output.hardNoFlags) && output.hardNoFlags.length > 0);
+          const _dbPd = output.practical_details || {};
+          const _dbFs = Array.isArray(output.friction_signals) ? output.friction_signals : [];
+          const _DB_CODING = ['production code', 'write code', 'frontend code', 'hands-on code', 'design and code'];
+          const _dbHasCoding = _dbFs.some(f => {
+            const t = ((f.label || '') + ' ' + (f.text || '')).toLowerCase();
+            return _DB_CODING.some(p => t.includes(p));
+          });
+          const _dbWm = (_dbPd.remote_model || '').toLowerCase();
+          // Use startsWith/includes — DB values can be "Hybrid (frequency not specified)" etc.
+          const _dbIsHybrid = _dbWm.startsWith('hybrid') || _dbWm.startsWith('onsite') || _dbWm.startsWith('on-site') ||
+                              (_dbPd.location || '').toLowerCase().includes('hybrid') ||
+                              (_dbPd.location || '').toLowerCase().includes('on-site');
+          const _dbNotViable = _dbIsHardNo || _dbHasCoding || _dbIsHybrid;
+
           // 1. Fit reality
           // Hard blockers are woven into the prose by the AI, not rendered as a banner.
+          // When a local viability veto (_dbNotViable) overrides the decision,
+          // the narrative fit text may still reflect the pre-veto "maybe/worth exploring"
+          // assessment. Override it so it doesn't contradict the decision block.
           let _fitHtml = '';
-          if (_narr?.fit_reality?.paragraphs) {
+          if (_dbNotViable) {
+            // Align fit reality with the not-viable decision.
+            // Priority: explicit hard_no_reason > coding > hybrid > generic.
+            let _vetoText = '';
+            if (_dbIsHardNo && output.hard_no_reason) {
+              _vetoText = output.hard_no_reason;
+            } else {
+              const _vetoReasons = [];
+              if (_dbHasCoding) _vetoReasons.push('production coding requirement');
+              if (_dbIsHybrid) _vetoReasons.push('on-site/hybrid work model');
+              _vetoText = _vetoReasons.length
+                ? `This role is not viable due to ${_vetoReasons.join(' and ')}.`
+                : 'This role is not aligned with your current preferences.';
+            }
+            _fitHtml = `<p class="rw-doc-prose">${esc(_vetoText)}</p>`;
+          } else if (_narr?.fit_reality?.paragraphs) {
             _fitHtml = _paragraphs(_narr.fit_reality.paragraphs);
           } else if (_fa) {
             _fitHtml = `<p class="rw-doc-prose">${esc(_fa.summary)}</p>`;
@@ -15011,11 +15854,39 @@
           // The renderer owns placement — strip any AI-injected CV item,
           // then always append the controlled one from top-level fields.
           let _pdHtml = '';
+          const _liCtx = output._linkedinMeta || {};
+
+          // ── Helper: append LinkedIn context items to a practical details array ──
+          // Only adds items that improve decision quality. No raw field dumping.
+          const _appendPlatformItems = (items) => {
+            // Posted date — relative age
+            if (_liCtx.posted_date) {
+              const _postedMs = new Date(_liCtx.posted_date).getTime();
+              if (!isNaN(_postedMs)) {
+                const _daysAgo = Math.floor((Date.now() - _postedMs) / 86400000);
+                const _postedLabel = _daysAgo === 0 ? 'Today' : _daysAgo === 1 ? '1 day ago' : `${_daysAgo} days ago`;
+                items.push({ label: 'Posted', value: _postedLabel });
+              }
+            }
+            // Applicant count — only if meaningful
+            if (_liCtx.applicants_count != null && _liCtx.applicants_count > 0) {
+              const _appLabel = _liCtx.applicants_count >= 200 ? '200+' : String(_liCtx.applicants_count);
+              items.push({ label: 'Applicants', value: _appLabel });
+            }
+            // Easy Apply
+            if (_liCtx.easy_apply === true) {
+              items.push({ label: 'Easy Apply', value: 'Yes' });
+            }
+            return items;
+          };
+
           if (_narr?.practical_details?.items) {
             // Strip any CV item the AI may have injected despite the prompt
             let _pdItems = _narr.practical_details.items.filter(
               i => !(i.label && i.label.toLowerCase().includes('cv'))
             );
+            // Append platform context items
+            _appendPlatformItems(_pdItems);
             // Always append from the single source of truth: top-level fields
             if (_narr.recommended_cv) {
               const _cvVariants = (typeof ROLEWISE_CANDIDATE_CONTEXT !== 'undefined' && Array.isArray(ROLEWISE_CANDIDATE_CONTEXT.cv_variants))
@@ -15035,9 +15906,59 @@
               ['Salary', (_pd.salary_annual && _pd.salary_annual !== 'Not stated') ? _pd.salary_annual : 'Not stated'],
               (_pd.company_type   && _pd.company_type   !== 'Not stated') ? ['Company type',    _pd.company_type]    : null,
             ].filter(Boolean);
+            // Append platform context items (adapt tuple format)
+            if (_liCtx.posted_date) {
+              const _pm = new Date(_liCtx.posted_date).getTime();
+              if (!isNaN(_pm)) {
+                const _d = Math.floor((Date.now() - _pm) / 86400000);
+                _pdItems.push(['Posted', _d === 0 ? 'Today' : _d === 1 ? '1 day ago' : `${_d} days ago`]);
+              }
+            }
+            if (_liCtx.applicants_count != null && _liCtx.applicants_count > 0) {
+              _pdItems.push(['Applicants', _liCtx.applicants_count >= 200 ? '200+' : String(_liCtx.applicants_count)]);
+            }
+            if (_liCtx.easy_apply === true) {
+              _pdItems.push(['Easy Apply', 'Yes']);
+            }
             _pdHtml = _pdItems.length
               ? `<dl class="rw-doc-dl">${_pdItems.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`
               : '';
+          }
+
+          // 5b. Company mismatch warning (surfaces before company context)
+          let _mismatchHtml = '';
+          if (output._companyMismatch) {
+            const _mm = output._companyMismatch;
+            _mismatchHtml = `<div class="rw-doc-mismatch">Listing shows ${esc(_mm.listing)}, but the JD body refers to ${esc(_mm.jd)}. This may indicate a rebrand, parent company, or posting inconsistency. Worth verifying.</div>`;
+          }
+
+          // 5c. Company context — from LinkedIn structured metadata
+          let _companyCtxHtml = '';
+          {
+            const _cm = _liCtx.company_meta;
+            if (_cm && typeof _cm === 'object') {
+              const _ccItems = [];
+              if (_cm.industry)       _ccItems.push(['Industry',  _cm.industry]);
+              if (_cm.employee_count) _ccItems.push(['Size',      _cm.employee_count + ' employees']);
+              if (_cm.company_type)   _ccItems.push(['Type',      _cm.company_type]);
+              if (_cm.headquarters)   _ccItems.push(['HQ',        _cm.headquarters]);
+              if (_cm.founded)        _ccItems.push(['Founded',   String(_cm.founded)]);
+              if (_cm.website)        _ccItems.push(['Website',   _cm.website]);
+              if (_ccItems.length) {
+                _companyCtxHtml = `<dl class="rw-doc-dl">${_ccItems.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
+              }
+            }
+          }
+
+          // 5d. Job poster context — from LinkedIn structured metadata
+          let _posterHtml = '';
+          {
+            const _p = _liCtx.poster;
+            if (_p && _p.name) {
+              const _parts = [esc(_p.name)];
+              if (_p.title) _parts.push(esc(_p.title));
+              _posterHtml = `<p class="rw-doc-prose rw-doc-prose--muted" style="margin-top:4px;font-size:13px;">Posted by ${_parts.join(' · ')}</p>`;
+            }
           }
 
           // 6. Risks & unknowns
@@ -15050,7 +15971,7 @@
             const _stated = (Array.isArray(_sec.stated) && _sec.stated.length)
               ? _bullets(_sec.stated) : '';
             const _inferred = (Array.isArray(_sec.inferred) && _sec.inferred.length)
-              ? `<p class="rw-doc-prose" style="margin-top:8px;">Inferred:</p>` + _bullets(_sec.inferred) : '';
+              ? `<p class="rw-doc-prose">Inferred:</p>` + _bullets(_sec.inferred) : '';
             _risksHtml = _intro + _stated + _inferred;
           } else {
             _risksHtml = _fa && _fa.watchouts.length
@@ -15073,68 +15994,278 @@
               : '';
           }
 
-          // 9. Decision
-          let _decisionHtml = '';
-          if (_narr?.decision?.paragraphs) {
-            _decisionHtml = _paragraphs(_narr.decision.paragraphs);
-          } else {
-            const _rv = output.rolewise_verdict || null;
-            const _sa = output.suggested_actions || {};
-            const _hn = output.hard_no || false;
+          // ═══════════════════════════════════════════════════════════════════
+          // HYBRID DECISION + MATCH/BREAK STRUCTURE
+          // Top: Decision block → Match/Break → Deeper sections
+          // ═══════════════════════════════════════════════════════════════════
 
-            if (_hn) {
-              const _hnReason = output.hard_no_reason || 'This role does not meet your criteria.';
-              _decisionHtml = `<p class="rw-doc-prose">${esc(_hnReason)}</p>`;
-            } else if (_rv && _rv.reasoning) {
-              _decisionHtml = `<p class="rw-doc-prose">${esc(_rv.reasoning)}</p>`;
-            } else if (_fa && _fa.summary) {
-              const _next = _sa.next_step || 'Review';
-              _decisionHtml = `<p class="rw-doc-prose">Suggested next step: ${esc(_next.charAt(0).toUpperCase() + _next.slice(1))}.</p>`;
+          // Viability vars (_dbIsHardNo, _dbHasCoding, _dbIsHybrid, _dbNotViable,
+          // _dbPd, _dbFs, _dbWm, _DB_CODING) hoisted above fit reality section.
+
+          // ── Signal bullets (3–5, one idea per bullet, no paragraphs) ───
+          const _signals = [];
+          const _needsClarity = [];
+
+          if (_dbNotViable) {
+            // Blockers first, then facts
+            if (_dbHasCoding) _signals.push('Production coding required');
+            if (_dbIsHybrid) {
+              const _wmLabel = _dbPd.remote_model || _dbPd.location || 'On-site/hybrid';
+              _signals.push(`Work model: ${_wmLabel}`);
+            }
+            if (_dbIsHardNo && !_dbHasCoding && !_dbIsHybrid) _signals.push(output.hard_no_reason || 'Hard constraint detected');
+            // Add factual context even for not-viable
+            const _dbSen = (_dbPd.seniority || '').toLowerCase();
+            if (_dbSen && _dbSen !== 'not stated') _signals.push(`Seniority: ${_dbPd.seniority}`);
+            if (_dbPd.location && !_dbIsHybrid) _signals.push(`Location: ${_dbPd.location}`);
+          } else {
+            // Positive signals
+            if (_dbWm.startsWith('remote')) _signals.push('Remote role');
+            if (!_dbHasCoding) _signals.push('No production coding requirement');
+            // Salary
+            const _dbSal = (_dbPd.salary_annual || '').toLowerCase();
+            if (_dbPd.salary_annual && _dbSal !== 'not stated' && !_dbSal.includes('not stated') && !_dbSal.includes('competitive')) {
+              _signals.push(`Compensation: ${_dbPd.salary_annual}`);
+            }
+            // Seniority match
+            const _dbSen = (_dbPd.seniority || '').toLowerCase();
+            if (_dbSen && _dbSen !== 'not stated') _signals.push(`Seniority: ${_dbPd.seniority}`);
+            // Domain / scope from role_summary
+            const _rss = output.role_shape_signals || {};
+            if (_rss.product_mode === 'greenfield') _signals.push('Building new product');
+            else if (_rss.product_mode === 'iteration') _signals.push('Iterating on existing product');
+            // Pattern match
+            if (output.pattern_type === 'pursue_pattern') _signals.push('Matches roles you tend to pursue');
+          }
+
+          // ── Needs clarity (ambiguity signals, max 3) ───────────────────
+          const _dbSalClarity = (_dbPd.salary_annual || '').toLowerCase();
+          const _salUnclear = !_dbPd.salary_annual || _dbSalClarity === 'not stated'
+            || _dbSalClarity.includes('not stated') || _dbSalClarity.includes('competitive');
+          if (_salUnclear && !_dbNotViable) _needsClarity.push('Salary not disclosed');
+          if (_dbWm.startsWith('not stated') || (!_dbWm && !_dbIsHybrid)) _needsClarity.push('Work model not stated');
+          const _rssClarity = output.role_shape_signals || {};
+          if (_rssClarity.product_mode === 'mixed' || !_rssClarity.product_mode) {
+            // Only add if we have no other clarity about scope
+            if (_needsClarity.length < 2) _needsClarity.push('Product scope unclear');
+          }
+
+          // Cap bullets — max 4 signals, max 2 clarity
+          const _signalsCapped = _signals.slice(0, 4);
+          const _clarityCapped = _needsClarity.slice(0, 2);
+
+          // ── One-line summary (max 1 sentence, no paragraph) ────────────
+          // When a local veto (_dbNotViable) overrides the AI decision, the
+          // narrative summary may contradict the "Not viable" header. Use
+          // a locally generated reason instead of the AI prose in that case.
+          let _decOneLiner = '';
+          if (_dbNotViable) {
+            // Priority: explicit hard_no_reason > coding > hybrid > generic
+            if (_dbIsHardNo && output.hard_no_reason) _decOneLiner = output.hard_no_reason;
+            else if (_dbHasCoding) _decOneLiner = 'This role requires production-level coding.';
+            else if (_dbIsHybrid) _decOneLiner = 'This role requires on-site or hybrid attendance.';
+            else _decOneLiner = 'A hard constraint conflict was detected.';
+          } else if (_narr?.decision?.summary) {
+            // Take first sentence only
+            const _raw = _narr.decision.summary;
+            const _sentEnd = _raw.search(/[.!?]\s/);
+            _decOneLiner = _sentEnd > 0 ? _raw.slice(0, _sentEnd + 1) : (_raw.length <= 120 ? _raw : '');
+          } else if (output.hard_no && output.hard_no_reason) {
+            _decOneLiner = output.hard_no_reason;
+          }
+          // Strip "however"/"but" constructs — keep it clean
+          if (_decOneLiner && /\b(however|but)\b/i.test(_decOneLiner)) {
+            const _cutIdx = _decOneLiner.search(/[,;]\s*(however|but)\b/i);
+            if (_cutIdx > 20) _decOneLiner = _decOneLiner.slice(0, _cutIdx).trim();
+          }
+
+          const _dbIcon  = _dbNotViable ? '\u2715' : '\u2713';
+          const _dbTitle = _dbNotViable ? 'Not viable for you' : 'Worth exploring';
+          const _dbMod   = _dbNotViable ? 'rw-decision-block--not-viable' : 'rw-decision-block--worth';
+
+          const _cvPlaceholderHtml = _dbNotViable ? '' :
+            `<div class="rw-decision-block-cv" id="rw-fa-cv-placeholder">Loading recommendation\u2026</div>`;
+
+          const _decisionBlockHtml = `<div class="rw-decision-block ${_dbMod}">
+            <div class="rw-decision-block-header">
+              <span class="rw-decision-block-icon">${_dbIcon}</span>
+              <span class="rw-decision-block-title">${_dbTitle}</span>
+            </div>
+            ${_signalsCapped.length ? `<ul class="rw-decision-block-reasons">${_signalsCapped.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+            ${_clarityCapped.length ? `<div class="rw-decision-block-clarity"><span class="rw-decision-block-clarity-label">Needs clarity</span><ul class="rw-decision-block-reasons rw-decision-block-reasons--clarity">${_clarityCapped.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}
+            ${_cvPlaceholderHtml}
+            ${_decOneLiner ? `<p class="rw-decision-block-summary">${esc(_decOneLiner)}</p>` : ''}
+          </div>`;
+
+          // ── Match / Break bullets ────────────────────────────────────────
+          // Compact, scannable bullets directly below the decision block.
+          // "Where this role matches" = strongest positive signals (max 4)
+          // "Why this breaks"         = hard blockers + constraints (max 4)
+          // Sources: narrative fit_reality, risks, output signals, practical_details
+          // No duplication with banner reasons — these add detail.
+
+          const _matchBullets = [];
+          const _breakBullets = [];
+          const _dbReasonSet = new Set(_signalsCapped.map(r => r.toLowerCase()));
+
+          // ── Break bullets (hard blockers first) ──────────────────────────
+          if (_dbHasCoding) _breakBullets.push('This role requires production-level coding');
+          if (_dbIsHybrid) {
+            const _locDetail = _dbPd.location || _dbPd.remote_model || 'On-site/hybrid';
+            _breakBullets.push(`Work model: ${_locDetail}`);
+          }
+          // Salary missing
+          const _dbSalChk = (_dbPd.salary_annual || '').toLowerCase();
+          const _salMissing = !_dbPd.salary_annual || _dbSalChk === 'not stated'
+            || _dbSalChk.includes('not stated') || _dbSalChk.includes('competitive');
+          if (_salMissing) _breakBullets.push('Salary not disclosed');
+          // Narrative inferred risks (add top ones not already in break)
+          if (_narr?.risks_and_unknowns?.inferred) {
+            const _inf = Array.isArray(_narr.risks_and_unknowns.inferred) ? _narr.risks_and_unknowns.inferred : [];
+            for (const r of _inf) {
+              if (_breakBullets.length >= 4) break;
+              const _rLow = r.toLowerCase();
+              if (_breakBullets.some(b => _rLow.includes(b.toLowerCase().slice(0, 20)))) continue;
+              if (_rLow.includes('coding') || _rLow.includes('on-site') || _rLow.includes('salary')) continue;
+              _breakBullets.push(r.replace(/\s*\((Stated|Inferred)\)\s*$/i, ''));
             }
           }
 
+          // ── Match bullets (strongest positives) ──────────────────────────
+          // Remote work
+          if (_dbWm.startsWith('remote') && !_dbReasonSet.has('remote role')) {
+            _matchBullets.push('Fully remote, no office requirement');
+          } else if (_dbWm.startsWith('remote')) {
+            // Already in banner — skip to avoid duplication
+          }
+          // No coding
+          if (!_dbHasCoding && !_dbReasonSet.has('no production coding requirement')) {
+            _matchBullets.push('No production coding expected');
+          }
+          // Seniority match
+          const _senVal = (_dbPd.role_seniority || output.role_seniority || '').toLowerCase();
+          if (['senior', 'lead', 'principal', 'staff', 'head of', 'director'].some(t => _senVal.includes(t))) {
+            _matchBullets.push('Seniority aligns with your background');
+          }
+          // Salary stated
+          if (!_salMissing) {
+            _matchBullets.push(`Compensation stated: ${_dbPd.salary_annual}`);
+          }
+          // Pattern match
+          if (output.pattern_type === 'pursue_pattern') {
+            _matchBullets.push('Matches roles you tend to pursue');
+          }
+          // Narrative fit_reality: extract first paragraph as potential match signal
+          if (_narr?.fit_reality?.paragraphs) {
+            const _fp = _narr.fit_reality.paragraphs[0] || '';
+            // Only use if it reads like a positive match (starts with "Strong match", etc.)
+            if (/^(Strong|Good|Close|Direct|Clear)\s/i.test(_fp) && _matchBullets.length < 4) {
+              _matchBullets.push(_fp);
+            }
+          }
+          // Company stage
+          const _cs = output.company_stage || (output.role_shape_signals || {}).company_stage_signal || null;
+          if (_cs === 'startup' && _matchBullets.length < 4) {
+            _matchBullets.push('Early-stage startup');
+          } else if (_cs === 'scaleup' && _matchBullets.length < 4) {
+            _matchBullets.push('Scale-up stage company');
+          }
+
+          // Cap at 4
+          const _matchCapped = _matchBullets.slice(0, 4);
+          const _breakCapped = _breakBullets.slice(0, 4);
+
+          const _matchBreakHtml = (_matchCapped.length || _breakCapped.length) ? `
+            <div class="rw-match-break" id="section-match-break">
+              ${_matchCapped.length ? `
+                <div class="rw-mb-col rw-mb-col--match">
+                  <h3 class="rw-mb-heading rw-mb-heading--match">Where this role matches</h3>
+                  <ul class="rw-mb-list">${_matchCapped.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
+                </div>` : ''}
+              ${_breakCapped.length ? `
+                <div class="rw-mb-col rw-mb-col--break">
+                  <h3 class="rw-mb-heading rw-mb-heading--break">Why this breaks</h3>
+                  <ul class="rw-mb-list">${_breakCapped.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
+                </div>` : ''}
+            </div>` : '';
+
+          // ── Assemble HTML: all 13 structural sections ─────────────────
+          // 1. Decision block  2. Recommended CV  3. Role summary (Match/Break)
+          // 4. Fit reality  5. What this role actually is
+          // 6. What they really need from you  7. What you would actually do
+          // 8. Practical details  9. Company context  10. Risks & unknowns
+          // 11. Questions worth asking  12–13. Decision Lens + Pattern vs this role (below, in card grid)
+
+          // Per-section enriching indicator — shown in every section when this is
+          // a local analysis awaiting AI enrichment. When AI patches the section,
+          // the new content won't include this, so it naturally disappears.
+          const _secEnriching = output._source !== 'ai'
+            ? '<div class="rw-section-enriching"><span class="rw-enriching-dots"><span></span><span></span><span></span></span> Enriching with AI\u2026</div>'
+            : '';
+
           html += `<div class="rw-doc-view" id="section-decision-summary">
 
-            <div class="rw-doc-section" id="section-fit-assessment" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'fit-assessment', component: 'FitAssessmentCard', slot: 'overview-card', label: 'Fit Assessment Card' }) : ''}>
+            <div class="rw-doc-section" id="section-decision-line">
+              ${_decisionBlockHtml}
+            </div>
+
+            ${_matchBreakHtml}
+
+            ${_roleSummaryHtml ? `<div class="rw-doc-section" id="section-role-summary">
+              <h2 class="rw-doc-h2">Role summary</h2>
+              ${_roleSummaryHtml}
+              ${_secEnriching}
+            </div>` : ''}
+
+            ${_fitHtml ? `<div class="rw-doc-section" id="section-fit-reality">
               <h2 class="rw-doc-h2">Fit reality</h2>
               ${_fitHtml}
-            </div>
+              ${_secEnriching}
+            </div>` : ''}
 
-            ${_whatIsItHtml ? `<div class="rw-doc-section">
+            ${_whatIsItHtml ? `<div class="rw-doc-section" id="section-what-role-is">
               <h2 class="rw-doc-h2">What this role actually is</h2>
               ${_whatIsItHtml}
+              ${_secEnriching}
             </div>` : ''}
 
-            ${_wtrlfHtml ? `<div class="rw-doc-section">
+            ${_wtrlfHtml ? `<div class="rw-doc-section" id="section-what-they-need">
               <h2 class="rw-doc-h2">What they really need from you</h2>
               ${_wtrlfHtml}
+              ${_secEnriching}
             </div>` : ''}
 
-            ${_wtadoHtml ? `<div class="rw-doc-section">
+            ${_wtadoHtml ? `<div class="rw-doc-section" id="section-what-you-do">
               <h2 class="rw-doc-h2">What you would actually do</h2>
               ${_wtadoHtml}
+              ${_secEnriching}
             </div>` : ''}
 
-            ${_pdHtml ? `<div class="rw-doc-section">
+            ${_pdHtml ? `<div class="rw-doc-section" id="section-practical-details">
               <h2 class="rw-doc-h2">Practical details</h2>
               ${_pdHtml}
+              ${_posterHtml}
+              ${_secEnriching}
             </div>` : ''}
 
-            <div class="rw-doc-section">
-              <h2 class="rw-doc-h2">Risks & unknowns</h2>
-              ${_risksHtml || '<p class="rw-doc-prose rw-doc-prose--muted">None identified.</p>'}
-            </div>
+            ${(_companyCtxHtml || _mismatchHtml) ? `<div class="rw-doc-section" id="section-company-context">
+              <h2 class="rw-doc-h2">Company context</h2>
+              ${_mismatchHtml}
+              ${_companyCtxHtml}
+              ${_secEnriching}
+            </div>` : ''}
 
-            ${_qwaHtml ? `<div class="rw-doc-section">
+            ${_risksHtml ? `<div class="rw-doc-section" id="section-risks-unknowns">
+              <h2 class="rw-doc-h2">Risks &amp; unknowns</h2>
+              ${_risksHtml}
+              ${_secEnriching}
+            </div>` : ''}
+
+            ${_qwaHtml ? `<div class="rw-doc-section" id="section-questions">
               <h2 class="rw-doc-h2">Questions worth asking</h2>
               ${_qwaHtml}
+              ${_secEnriching}
             </div>` : ''}
-
-            <div class="rw-doc-section">
-              <h2 class="rw-doc-h2">Decision</h2>
-              ${_decisionHtml || '<p class="rw-doc-prose rw-doc-prose--muted">Not enough information to form a recommendation.</p>'}
-              <div id="rw-fa-cv-placeholder" class="rw-doc-cv-value" style="margin-top:8px;">Loading recommendation…</div>
-            </div>
 
             <p class="rw-doc-prose rw-doc-prose--muted" style="margin-top:16px;font-style:italic;">Use this as context, not a verdict.</p>
 
@@ -15226,8 +16357,9 @@
               _primaryRows.push(['Craft vs strategy', _balanceLabels[rss.craft_strategy_balance] || _cap(rss.craft_strategy_balance), _ev.craft_strategy_balance]);
             }
 
-            if (rss.product_mode) {
-              const _modeLabels = { greenfield: 'Greenfield', mixed: 'Mixed', iteration: 'Iteration' };
+            if (rss.product_mode && rss.product_mode !== 'mixed') {
+              // 'mixed' is too vague to display — only show when signal is clear
+              const _modeLabels = { greenfield: 'Building new product', iteration: 'Iterating on existing product' };
               _primaryRows.push(['Product mode', _modeLabels[rss.product_mode] || _cap(rss.product_mode), _ev.product_mode]);
             }
 
@@ -15239,7 +16371,12 @@
               _secondaryRows.push(['Design system ownership', 'Yes', _ev.design_system_ownership]);
 
             const _hp = rss.hiring_philosophy || rss.hiring_philosophy_signal || null;
-            if (_hp) _secondaryRows.push(['Hiring philosophy', _cap(_hp), _ev.hiring_philosophy]);
+            // Only show hiring philosophy when it carries a clear signal (strong/neutral)
+            // 'weak' is too vague — suppress rather than confuse
+            if (_hp && _hp !== 'weak') {
+              const _hpLabels = { strong: 'Clear expectations stated', neutral: 'Standard hiring approach' };
+              _secondaryRows.push(['Hiring philosophy', _hpLabels[_hp] || _cap(_hp), _ev.hiring_philosophy]);
+            }
 
             // office_culture_signal, decision_culture, ai_tooling_signal removed
             // from display — redundant or low-value (data unchanged)
@@ -15255,7 +16392,7 @@
               let _structHtml = `${_renderRows(_primaryRows, false)}${_renderRows(_secondaryRows, true)}`;
 
               sidebarHtml += `<div class="rw-rail-section" id="section-role-shape" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'role-shape-signals', component: 'RoleShapeSignals', slot: 'signals', label: 'Structural Signals' }) : ''}>
-                <h3 class="rw-rail-h3">Structural Signals</h3>${_structHtml}
+                <h3 class="rw-rail-h3">Structural signals</h3>${_structHtml}
               </div>`;
               _roleSignalsHas = true;
             }
@@ -15277,13 +16414,13 @@
             seniority_authenticity:   'Seniority',
           };
           const _v2ValueLabels = {
-            clear:   'Clear',  mixed:  'Mixed',   vague: 'Vague',
+            clear:   'Well-defined',  mixed:  'Partially defined',   vague: 'Loosely defined',
             company_level: 'Company-wide', platform: 'Platform', product_area: 'Product area',
             feature: 'Feature', unclear: 'Unclear',
             low: 'Low', medium: 'Medium', high: 'High',
             sustainable: 'Sustainable', fast: 'Fast', intense: 'Intense',
-            strong: 'Strong', moderate: 'Moderate', weak: 'Weak',
-            authentic: 'Authentic', inflated: 'Inflated', understated: 'Understated',
+            strong: 'Clear expectations', moderate: 'Some clarity', weak: 'Loosely defined',
+            authentic: 'Matches scope', inflated: 'May be inflated', understated: 'Likely understated',
           };
           const _v2Accents = {
             inflated:    'color:var(--red,#c0392b)',
@@ -15329,7 +16466,7 @@
             const _opTable = `${_renderOpRows(_opPrimary, false)}${_renderOpRows(_opSecondary, true)}`;
 
             sidebarHtml += `<div class="rw-rail-section" id="section-role-reality-signals" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'role-reality-signals', component: 'RoleRealitySignals', slot: 'signals', label: 'Operational Signals' }) : ''}>
-              <h3 class="rw-rail-h3">Operational Signals</h3>${_opTable}
+              <h3 class="rw-rail-h3">Operational signals</h3>${_opTable}
             </div>`;
             _roleSignalsHas = true;
           }
@@ -15386,7 +16523,7 @@
                 <div class="rw-rail-row-value">${esc(v)}</div>
               </div>`).join('')}${_pdVerifyHtml}`;
             sidebarHtml += `<div class="rw-rail-section" id="section-practical">
-              <h3 class="rw-rail-h3">Practical Details</h3>${_pdTable}
+              <h3 class="rw-rail-h3">Practical details</h3>${_pdTable}
             </div>`;
             _roleSignalsHas = true;
           }
@@ -15591,7 +16728,7 @@
 
       // ── Your Decision Context heading removed (RW-REMOVE-SECTION-HEADERS) ──
 
-      // ── Decision Lens — rendered inline in card grid (RW-ROLEPAGE-LAYOUT-01) ──
+      // ── Decision Lens — History / Pattern insight (RW-ROLEPAGE-LAYOUT-01) ──
       {
         const _dlHtml = _renderDecisionLens(output);
         if (_dlHtml) html += _dlHtml;
@@ -15837,7 +16974,7 @@
         const _hiringHtml = _rcHiringRealityHtml(allRoles, selectedRoleId);
         if (_hiringHtml !== null) {
           sidebarHtml += `<div class="rw-rail-section" id="section-hiring-reality">
-            <h3 class="rw-rail-h3">Hiring Reality</h3>
+            <h3 class="rw-rail-h3">Hiring reality</h3>
             <div class="rw-rail-hiring">${_hiringHtml}</div>
           </div>`;
         }
@@ -16624,6 +17761,23 @@
       if (!raw) return '';
       let text = raw;
 
+      // ── LinkedIn header block removal ───────────────────────────────────────
+      // When users copy-paste from LinkedIn, the text starts with UI chrome:
+      //   "Company logo\nCompany\nTitle\nLocation · Reposted X ago · N people clicked apply\n
+      //    $100/hr\nRemote\nMatches your job preferences…\nFull-time\nSave Title at Company\n
+      //    Title\nCompany · Location (Remote)\nSave Title at Company\nAbout the job\n…"
+      // The real JD starts AFTER "About the job". Strip everything before it.
+      {
+        const _aboutIdx = text.search(/^about the job\s*$/im);
+        if (_aboutIdx !== -1) {
+          // Find the newline after "About the job" and take everything after it
+          const _afterAbout = text.indexOf('\n', _aboutIdx);
+          if (_afterAbout !== -1) {
+            text = text.slice(_afterAbout + 1);
+          }
+        }
+      }
+
       // Remove known job board / LinkedIn / Indeed UI chrome lines ONLY.
       // Each pattern must match a complete line — we never remove blocks of text.
       const noiseLinePatterns = [
@@ -16679,6 +17833,12 @@
         /^share$/i,
         /^show\s+more\s+options$/i,
         /^clicked\s+apply\b/i,
+        /^matches\s+your\s+job\s+preferences/i,
+        /\bpeople\s+clicked\s+apply\b/i,
+        /^\d+\s+people\s+clicked\s+apply\s*$/i,
+        /^save\s+.{10,}\s+at\s+/i,                          // "Save Title at Company"
+        /\blogo$/i,                                          // "Company logo"
+        /^reposted\b/i,
         // ── LinkedIn job metadata label lines (bare labels — NOT the values) ───
         // Values like "Full-time", "Mid-Senior level" are KEPT — they are useful for
         // employment type extraction and should not be stripped.
@@ -16703,7 +17863,7 @@
 
       text = lines.join('\n');
 
-      // ── Remove duplicate LinkedIn header block ────────────────────────────────
+      // ── Remove duplicate LinkedIn header block (fallback if no "About the job") ─
       // LinkedIn pastes often begin: "Title\nCompany\nApply\nSave\nTitle\nCompany\n…"
       // After noise-line removal, the duplicate appears as the first meaningful line
       // repeating within the first ~50 lines. Start from the second occurrence.
@@ -18299,6 +19459,24 @@
       const dRate = pd.daily_rate  != null ? Number(pd.daily_rate)  : null;
       const period = (pd.period || 'annual').toLowerCase();
 
+      // ── Hourly rate path ─────────────────────────────────────────────────
+      // Hourly → monthly: rate × 40 hrs/wk × 52 wks / 12 months ≈ rate × 173.3
+      const HOURLY_TO_MONTHLY = (40 * 52) / 12;
+      if (period === 'hourly') {
+        const rate = sMin || sMax;
+        if (rate != null) {
+          if (sMin != null && sMax != null) {
+            const mMin = Math.round(sMin * HOURLY_TO_MONTHLY);
+            const mMax = Math.round(sMax * HOURLY_TO_MONTHLY);
+            pd.salary_monthly = `${_fmtMonth(mMin)}-${_fmtMonth(mMax)}/month`;
+          } else {
+            const monthly = Math.round(rate * HOURLY_TO_MONTHLY);
+            pd.salary_monthly = `${_fmtMonth(monthly)}/month`;
+          }
+          return pd;
+        }
+      }
+
       // ── Daily rate path ──────────────────────────────────────────────────
       if (period === 'daily' || dRate != null) {
         if (sMin != null && sMax != null && dRate == null) {
@@ -19123,6 +20301,106 @@
       };
     };
 
+    // ─── Coding requirement resolver ────────────────────────────────────────
+    // Deterministic 3-level classification from JD text.
+    // Returns { classification: 'production'|'prototype'|'unclear', evidence: string }
+    //
+    // "production" = designer must write/ship production code → hard_no
+    // "prototype"  = coding is for prototypes / design-to-code tools only → acceptable
+    // "unclear"    = JD mentions coding but intent is ambiguous → needs verification
+    function _resolveCodingRequirement(jdText) {
+      const t = (jdText || '').toLowerCase();
+
+      // ── Production signals: designer explicitly ships production code ──
+      // ONLY phrases where the designer unambiguously owns production output.
+      // Phrases like "code-ready outputs" or "convert designs into code" are
+      // ambiguous (could mean prototype tooling) and belong in the ambiguous list.
+      const _prodPhrases = [
+        'production react', 'production code', 'hands-on coding',
+        'build production features', 'own front-end implementation',
+        'shipping production javascript', 'write production code',
+        'writing production code', 'ship production code',
+        'production javascript', 'write and ship code',
+        'own the front-end', 'front-end implementation ownership',
+        'deliver production-ready frontend', 'production-ready code',
+        'write react', 'write typescript', 'write frontend code',
+        'build production ui',
+      ];
+      // Context check: skip if the phrase is about someone else (engineers, team)
+      const _prodContextExclusions = [
+        /engineers?\s+(?:who\s+)?(?:deploy|write|ship|own)\s+production/i,
+        /engineering\s+team\s+(?:deploys?|writes?|ships?|owns?)\s+production/i,
+      ];
+      let _prodMatch = null;
+      for (const p of _prodPhrases) {
+        if (t.includes(p)) {
+          const idx = t.indexOf(p);
+          const surrounding = t.slice(Math.max(0, idx - 60), idx + p.length + 60);
+          const excluded = _prodContextExclusions.some(re => re.test(surrounding));
+          if (!excluded) { _prodMatch = p; break; }
+        }
+      }
+
+      // ── Prototype signals: coding is for prototyping / experimentation ─
+      const _protoPhrases = [
+        'prototyping', 'rapid prototyping',
+        'framer', 'v0', 'cursor', 'webflow', 'bubble',
+        'design-to-code', 'design to code tool',
+        'proof of concept', 'experimentation only',
+        'clickable prototype', 'interactive prototype',
+        'no production coding', 'no coding required',
+        'not expected to code', 'not a coding role',
+      ];
+      // Note: bare "prototype" removed — too common in ambiguous context
+      // ("functional prototypes" is ambiguous, not a clear prototype-only signal)
+      let _protoMatch = null;
+      for (const p of _protoPhrases) {
+        if (t.includes(p)) { _protoMatch = p; break; }
+      }
+
+      // ── Ambiguous coding signals: mentions code but unclear scope ──────
+      // These could be prototype tooling OR production responsibility.
+      // Only trigger "production" if paired with an explicit production phrase.
+      const _ambiguousPhrases = [
+        'code-ready outputs', 'deliver code-ready',
+        'convert designs into code', 'translate designs into code',
+        'implement designs in code', 'implement your designs in code',
+        'comfortable with code', 'ability to code',
+        'design and code', 'code alongside',
+        'coding skills', 'html/css', 'html and css',
+        'basic coding', 'some coding', 'light coding',
+        'using ai tools', 'ai-assisted', 'ai-native workflow',
+        'ai tools and contemporary frameworks',
+        'functional prototype', 'functional prototypes',
+        'design in native framework', 'native ui framework',
+        'ship features',
+      ];
+      let _ambiguousMatch = null;
+      for (const p of _ambiguousPhrases) {
+        if (t.includes(p)) { _ambiguousMatch = p; break; }
+      }
+
+      // ── Resolution logic ──────────────────────────────────────────────
+      // Production: only explicit production phrases (context-checked)
+      if (_prodMatch) {
+        return { classification: 'production', evidence: _prodMatch };
+      }
+      // Prototype: clear prototype-only signals with no ambiguity
+      if (_protoMatch && !_ambiguousMatch) {
+        return { classification: 'prototype', evidence: _protoMatch };
+      }
+      // Ambiguous: coding mentioned but strongest signal is not explicit production
+      if (_ambiguousMatch) {
+        return { classification: 'unclear', evidence: _ambiguousMatch };
+      }
+      // Prototype signal present but alongside ambiguity — still unclear
+      if (_protoMatch) {
+        return { classification: 'unclear', evidence: _protoMatch };
+      }
+      // No coding signals at all
+      return { classification: 'none', evidence: null };
+    }
+
     // ─── Analysis normaliser ──────────────────────────────────────────────────
     // Maps any AI response shape (or legacy shape) to the canonical 9-key format.
     // Guarantees every key exists, applies personal rules, and never throws.
@@ -19164,23 +20442,53 @@
       if (pdRaw.salary_min != null || pdRaw.salary_max != null) {
         // ── Structured path ──────────────────────────────────────────────────
         const currency  = (pdRaw.currency  || 'GBP').toUpperCase().trim();
-        const period    = (pdRaw.period    || 'annual').toLowerCase().trim();
+        let   period    = (pdRaw.period    || 'annual').toLowerCase().trim();
         const geo       = (pdRaw.geography || '').trim();
-        const sMin      = pdRaw.salary_min != null ? _fmt(pdRaw.salary_min) : null;
-        const sMax      = pdRaw.salary_max != null ? _fmt(pdRaw.salary_max) : null;
         const symbol    = currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : currency === 'USD' ? '$' : '';
+
+        // ── Salary sanity check: period ↔ value mismatch ──────────────────
+        // AI sometimes returns hourly rate in salary_min with period "annual"
+        // or annual figure with period "hourly". Detect and correct.
+        let _sMinNum = pdRaw.salary_min != null ? Number(pdRaw.salary_min) : null;
+        let _sMaxNum = pdRaw.salary_max != null ? Number(pdRaw.salary_max) : null;
+        const _hrPattern = /\$\s*\d{1,4}\s*(?:\/\s*hr|\/\s*hour|per\s+hour|USD\s*\/\s*hour)/i;
+        if (period === 'hourly' && _sMinNum != null && _sMinNum >= 1000) {
+          // AI put annual figure but said "hourly" — reclassify to annual
+          period = 'annual';
+          console.log('[normaliseAnalysis] salary sanity: reclassified hourly→annual', _sMinNum);
+        } else if (period === 'annual' && _sMinNum != null && _sMinNum > 0 && _sMinNum < 1000
+                   && _hrPattern.test(jdText || '')) {
+          // AI put hourly rate but said "annual" — reclassify to hourly
+          period = 'hourly';
+          console.log('[normaliseAnalysis] salary sanity: reclassified annual→hourly', _sMinNum);
+        }
+        // Propagate corrected period so _computeSalaryReality picks it up
+        pdRaw.period = period;
+
+        const sMin      = _sMinNum != null ? _fmt(_sMinNum) : null;
+        const sMax      = _sMaxNum != null ? _fmt(_sMaxNum) : null;
         const figStr    = sMin && sMax ? `${symbol}${sMin}–${symbol}${sMax}`
                         : sMin        ? `${symbol}${sMin}+`
                         : sMax        ? `Up to ${symbol}${sMax}`
                         : null;
         if (figStr) {
-          // For non-GBP: append currency code if no symbol, add period label
           const currLabel = symbol ? '' : ` ${currency}`;
-          const periodLabel = period === 'monthly' ? ' / month' : ' annually';
           const geoNote   = geo ? ` (${geo})` : '';
-          salaryAnnual = `${figStr}${currLabel}${periodLabel}${geoNote}`;
+
+          if (period === 'hourly') {
+            // ── Hourly display: show rate + annual equivalent ──────────────
+            const annualEquiv = _sMinNum != null ? _sMinNum * 2000 : (_sMaxNum != null ? _sMaxNum * 2000 : null);
+            const annualStr = annualEquiv != null ? ` (${symbol}${_fmt(annualEquiv)}${currLabel}/yr)` : '';
+            const hrFig = sMin && sMax ? `${symbol}${sMin}–${symbol}${sMax}`
+                        : sMin ? `${symbol}${sMin}` : `Up to ${symbol}${sMax}`;
+            salaryAnnual = `${hrFig}${currLabel}/hr${annualStr}${geoNote}`;
+          } else {
+            // ── Monthly / Annual display (existing logic) ─────────────────
+            const periodLabel = period === 'monthly' ? ' / month' : ' annually';
+            salaryAnnual = `${figStr}${currLabel}${periodLabel}${geoNote}`;
+          }
+
           if (currency !== 'GBP') {
-            // Append note that UK salary is not specified
             salaryAnnual += '\nUK salary not specified';
           }
         }
@@ -19281,6 +20589,51 @@
       // ── Compute salary monthly equivalents ─────────────────────────────────
       _computeSalaryReality(practical_details);
       _computeCommuteReality(practical_details);
+
+      // ── Location deterministic fallback ──────────────────────────────────
+      // If location is still "Not stated" but we have remote/geo signals in
+      // the JD text or remote_model, derive a location deterministically.
+      // Never invents a city — only uses clearly stated facts.
+      if (!practical_details.location || practical_details.location === 'Not stated') {
+        const _rm = (practical_details.remote_model || '').toLowerCase();
+        const _isRemote = /\bremote\b/.test(_rm);
+        // Scan JD text for country/region — only well-known patterns
+        const _ukRe   = /\bunited\s+kingdom\b|\buk\b(?!\s*salary)|\bengland\b|\bscotland\b|\bwales\b/i;
+        const _usRe   = /\bunited\s+states\b|\busa\b/i;
+        const _euRe   = /\beurope\b|\beu\b(?:\s+based|\s+only|\s+time)/i;
+        const _globalRe = /\bglobal(?:ly)?\b.*\bhir/i;
+        const _jdLower = (jdText || '').toLowerCase();
+        // Also check for "Remote" directly in JD text (not just remote_model)
+        const _jdHasRemote = /\bremote\b/.test(_jdLower);
+
+        let _locFallback = null;
+        const _isGlobalHiring = _globalRe.test(jdText || '');
+        if (_isRemote || _jdHasRemote) {
+          // Remote is confirmed — enrich with geo context
+          // Global hiring check FIRST: if role "hires globally", country mentions
+          // are about markets/operations, not the role's location constraint.
+          if (_isGlobalHiring) {
+            _locFallback = 'Remote (Global)';
+          } else if (_ukRe.test(jdText || '')) {
+            _locFallback = 'Remote (UK)';
+          } else if (_usRe.test(jdText || '')) {
+            _locFallback = 'Remote (US)';
+          } else if (_euRe.test(jdText || '')) {
+            _locFallback = 'Remote (Europe)';
+          } else {
+            _locFallback = 'Remote';
+          }
+        } else if (_ukRe.test(jdText || '')) {
+          _locFallback = 'United Kingdom';
+        } else if (_usRe.test(jdText || '')) {
+          _locFallback = 'United States';
+        }
+        // Only apply if we found something — never invent
+        if (_locFallback) {
+          practical_details.location = _locFallback;
+          console.log('[normaliseAnalysis] location fallback applied:', _locFallback);
+        }
+      }
 
       // Suggested actions — accept old primary or new next_step
       const saRaw = (raw.suggested_actions && typeof raw.suggested_actions === 'object')
@@ -19420,24 +20773,123 @@
         ];
       }
 
-      // ── Personal rule: production-coding Hard No ──────────────────────────
-      const prodCodingPhrases = [
-        'production react', 'production code', 'hands-on coding',
-        'build production features', 'own front-end implementation',
-        'shipping production javascript', 'write production code',
-        'writing production code', 'ship production code',
-        'production javascript', 'write and ship code',
-      ];
-      if (!analysis.hard_no && prodCodingPhrases.some(p => t.includes(p))) {
+      // ── Coding requirement resolver ──────────────────────────────────────
+      // Single resolved classification → enforced across all bullet sections.
+      const _codingReq = _resolveCodingRequirement(jdText);
+      analysis.coding_requirement = _codingReq.classification;
+
+      if (_codingReq.classification === 'production') {
+        // Hard No — production coding required
         analysis.hard_no        = true;
         analysis.hard_no_reason = 'Role requires production-level coding by the designer.';
         analysis.suggested_actions.next_step = 'Skip';
-        if (!analysis.fit_reality_summary.some(s => /production.cod/i.test(s))) {
+        // Ensure the top-level message is present
+        if (!analysis.fit_reality_summary.some(s => {
+          const txt = (s && typeof s === 'object') ? (s.text || '') : String(s || '');
+          return /production.cod/i.test(txt);
+        })) {
           analysis.fit_reality_summary.unshift(
             'Production coding requirement detected. This role is a Hard No per your personal rules.'
           );
         }
+      } else if (_codingReq.classification === 'prototype') {
+        // Prototype only — NOT a hard no, even if AI flagged it
+        if (analysis.hard_no && /production.+cod/i.test(analysis.hard_no_reason || '')) {
+          analysis.hard_no        = false;
+          analysis.hard_no_reason = null;
+          // Restore suggested action if it was set to Skip for coding
+          if (analysis.suggested_actions.next_step === 'Skip') {
+            analysis.suggested_actions.next_step = 'Review';
+          }
+        }
+      } else if (_codingReq.classification === 'unclear') {
+        // Ambiguous — do NOT guess. Clean middle state:
+        // hard_no = false, one risk flag, one verification question, no coding assertions.
+        if (analysis.hard_no && /production.+cod/i.test(analysis.hard_no_reason || '')) {
+          analysis.hard_no        = false;
+          analysis.hard_no_reason = null;
+          if (analysis.suggested_actions.next_step === 'Skip') {
+            analysis.suggested_actions.next_step = 'Review';
+          }
+        }
+        // Single risk flag — deduplicated
+        const _codingRiskText = 'Coding expectation unclear';
+        const _hasRisk = analysis.risks_and_unknowns.some(r => {
+          const txt = (r && typeof r === 'object') ? (r.text || '') : String(r || '');
+          return /coding\s+expectation\s+unclear/i.test(txt);
+        });
+        if (!_hasRisk) {
+          analysis.risks_and_unknowns.push({ text: _codingRiskText, tag: 'Verification' });
+        }
+        // Single verification question — deduplicated
+        const _codingVerifyText = 'Coding expectation needs clarification: prototype vs production responsibility is unclear';
+        const _hasVerify = analysis.questions_worth_asking.some(q => {
+          const txt = (q && typeof q === 'object') ? (q.text || '') : String(q || '');
+          return /coding.+clarif|prototype.+production/i.test(txt);
+        });
+        if (!_hasVerify) {
+          analysis.questions_worth_asking.push(_codingVerifyText);
+        }
       }
+      // classification === 'none': no coding signals → leave AI output as-is
+
+      // ── Contradiction cleanup: strip bullets that conflict with resolved coding signal ──
+      // production → strip "no coding" / "prototype only" language
+      // prototype  → strip "production coding required" language
+      // unclear    → strip ALL assertive coding claims in both directions
+      const _noCodingRe    = /no\s+(?:production\s+)?coding\s+(?:expected|required|needed)|prototype[\s-]+only|not\s+a\s+coding\s+role|no\s+coding\s+required|won'?t\s+be\s+(?:writing|shipping)\s+code/i;
+      const _prodCodingRe  = /production[\s-]+(?:level\s+)?coding\s+(?:required|expected|detected|responsibility|requirement)|requires?\s+production[\s-]+(?:level\s+)?coding|signals?\s+production[\s-](?:level\s+)?cod|hard\s+(?:no|blocker).*production|trigger.*hard\s+(?:no|blocker)/i;
+
+      // For "unclear": broad semantic filter — catches any sentence that asserts
+      // production or prototype certainty, even if phrased creatively by the AI.
+      // A bullet is assertive if it contains a production/coding keyword AND an
+      // assertion verb, implying the coding expectation is settled fact.
+      const _unclearAssertionFilter = (() => {
+        if (_codingReq.classification !== 'unclear') return null;
+        const _codingNouns = /production[\s-]+(?:level\s+)?cod|production[\s-]+(?:ready\s+)?(?:code|frontend|front-end|ui)|write\s+production|ship(?:ping)?\s+(?:production\s+)?code|coding\s+(?:responsibility|requirement|obligation)|expected\s+to\s+(?:write|code|ship|build)\s+(?:production)?/i;
+        const _assertionVerbs = /\b(?:requires?|expected|signals?|implies?|indicates?|means?\s+(?:the|you)|confirms?|triggers?|directly\s+triggers?|this\s+is\s+(?:not\s+)?(?:pure|hands-on)|the\s+designer\s+is\s+expected)\b/i;
+        // Prototype certainty assertions
+        const _protoCertainty = /prototype[\s-]+only|purely?\s+prototype|no\s+production|not\s+(?:a\s+)?production|only\s+(?:for\s+)?prototyp/i;
+        // Preserve our own "Coding expectation unclear" risk — never strip it
+        const _ownRisk = /^coding\s+expectation\s+unclear$/i;
+        return (txt) => {
+          if (_ownRisk.test(txt.trim())) return false; // keep
+          if (_protoCertainty.test(txt)) return true;   // strip
+          // Strip if both a coding-production noun AND an assertion verb appear
+          return _codingNouns.test(txt) && _assertionVerbs.test(txt);
+        };
+      })();
+
+      const _codingContradictionRe = _codingReq.classification === 'production'
+        ? _noCodingRe
+        : _codingReq.classification === 'prototype'
+        ? _prodCodingRe
+        : null; // "unclear" uses _unclearAssertionFilter instead
+
+      const _shouldStripCoding = (txt) => {
+        if (_codingContradictionRe && _codingContradictionRe.test(txt)) return true;
+        if (_unclearAssertionFilter && _unclearAssertionFilter(txt)) return true;
+        return false;
+      };
+
+      if (_codingContradictionRe || _unclearAssertionFilter) {
+        const _stripContradictions = items => items.filter(s => {
+          const txt = (s && typeof s === 'object') ? (s.text || '') : String(s || '');
+          return !_shouldStripCoding(txt);
+        });
+        analysis.fit_reality_summary         = _stripContradictions(analysis.fit_reality_summary);
+        analysis.risks_and_unknowns          = _stripContradictions(analysis.risks_and_unknowns);
+        analysis.what_you_would_actually_do  = _stripContradictions(analysis.what_you_would_actually_do);
+        analysis.what_they_are_really_looking_for = _stripContradictions(analysis.what_they_are_really_looking_for);
+
+        // Ensure arrays are never empty after filtering
+        if (!analysis.fit_reality_summary.length) analysis.fit_reality_summary = ['No summary available.'];
+        if (!analysis.risks_and_unknowns.length) analysis.risks_and_unknowns = [{ text: 'Not stated', tag: 'Inferred' }];
+        if (!analysis.what_you_would_actually_do.length) analysis.what_you_would_actually_do = ['Not stated'];
+        if (!analysis.what_they_are_really_looking_for.length) analysis.what_they_are_really_looking_for = ['Not stated'];
+      }
+
+      console.log('[normaliseAnalysis] coding resolved:', _codingReq.classification, _codingReq.evidence, 'hard_no:', analysis.hard_no);
 
       // ── V2 signal population ────────────────────────────────────────────────
       // _detectV2Signals uses phrase-matching only — never inferred without text evidence.
@@ -19825,6 +21277,78 @@
       const t     = text.toLowerCase();
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
+      // ── LinkedIn header pre-pass ────────────────────────────────────────────
+      // When raw text contains "About the job", the lines above it are LinkedIn
+      // UI chrome that contains structured metadata: company name, job title,
+      // location. Extract these BEFORE the header is stripped by cleanJobDescription.
+      let _liCompany = null, _liTitle = null, _liLocation = null;
+      {
+        const _rawLower = raw.toLowerCase();
+        const _aboutIdx = _rawLower.indexOf('\nabout the job');
+        if (_aboutIdx !== -1) {
+          // Get header lines (everything before "About the job")
+          const _headerText = raw.slice(0, _aboutIdx);
+          const _hLines = _headerText.split('\n').map(l => l.trim()).filter(Boolean);
+
+          // Title: look for lines containing role keywords (Designer, Engineer, etc.)
+          const _titleKw = /(?:manager|director|lead|designer|engineer|analyst|head of|specialist|officer|coordinator|consultant|developer|architect|product|senior|principal|associate|junior|vp|vice\s+president|chief|strategist)/i;
+          for (const hl of _hLines) {
+            if (hl.length >= 10 && hl.length <= 120 && _titleKw.test(hl) &&
+                !/^save\b/i.test(hl) && !/\blogo$/i.test(hl)) {
+              // Strip salary/rate suffix: "Title - $200,000/year USD" → "Title"
+              _liTitle = hl.replace(/\s*[-–—]\s*\$[\d,./]+.*$/i, '').trim();
+              break;
+            }
+          }
+
+          // Company: walk backward from the title line, skipping LinkedIn UI noise
+          if (_liTitle) {
+            const _titleIdx = _hLines.findIndex(hl =>
+              hl.includes(_liTitle) || (_liTitle.length > 15 && hl.includes(_liTitle.slice(0, 15))));
+            if (_titleIdx > 0) {
+              const _liNoise = /^(share|show\s+more|save|follow|connect|apply|easy\s+apply|message|promoted|report|not\s+interested|show\s+match)/i;
+              for (let _ci = _titleIdx - 1; _ci >= Math.max(0, _titleIdx - 5); _ci--) {
+                const _cand = _hLines[_ci];
+                if (!_cand || _cand.length < 2 || _cand.length > 40) continue;
+                if (_liNoise.test(_cand)) continue;
+                if (/logo$/i.test(_cand)) {
+                  // "Crossover logo" → extract "Crossover"
+                  const _stripped = _cand.replace(/\s*logo$/i, '').trim();
+                  if (_stripped.length >= 2) { _liCompany = _stripped; break; }
+                  continue;
+                }
+                if (_cand.split(/\s+/).length > 5) continue;
+                if (/\b(is|a|an|the|and|or|of)\b/i.test(_cand)) continue;
+                if (/[;:!?@]/.test(_cand)) continue;
+                _liCompany = _cand;
+                break;
+              }
+            }
+          }
+
+          // Location: look for "Company · Location (Remote)" or "Location · Reposted..."
+          for (const hl of _hLines) {
+            if (!/\s·\s/.test(hl)) continue;
+            const _parts = hl.split('·').map(p => p.trim());
+            // Try each part — pick the first one that looks geographic
+            for (const _p of _parts) {
+              if (!_p || _p.length < 2 || _p.length > 60) continue;
+              if (/^\$/.test(_p) || /^save\b/i.test(_p)) continue;
+              if (/reposted|clicked|ago\s*$/i.test(_p)) continue;
+              // Skip if it matches the company name we already found
+              if (_liCompany && _p.toLowerCase() === _liCompany.toLowerCase()) continue;
+              // Accept if it contains geographic signals or "(Remote)"
+              if (/\(remote\)|\(hybrid\)|kingdom|states|europe|canada|australia|ireland|germany|france|india|singapore|worldwide|global/i.test(_p) ||
+                  /^[A-Z][a-z]+(?:\s[A-Z][a-z]+)*(?:\s*\(.*\))?$/.test(_p)) {
+                _liLocation = _p;
+                break;
+              }
+            }
+            if (_liLocation) break;
+          }
+        }
+      }
+
       // ── Job URL ──────────────────────────────────────────────────────────────
       let job_url = null;
       const _allUrls = [...raw.matchAll(/https?:\/\/[^\s"'<>)\]]+/g)]
@@ -19836,34 +21360,101 @@
       }
 
       // ── Role title ───────────────────────────────────────────────────────────
+      // Extraction priority: (1) explicit label → (2) title-like top line →
+      // (3) heading-based pattern → (4) "Role:" prefix → only fallback if ALL fail.
       let role_title = null;
-      // Explicit label first
+      let _titleSource = null;  // tracks extraction source for debugging
+
+      // ── Shared guardrail ─────────────────────────────────────────────────
+      const _titleBlacklist = ['about the job', 'overview', 'role overview', 'job description',
+        'about you', 'about us', 'description', 'responsibilities', 'requirements',
+        'qualifications', 'benefits', 'introduction', 'summary', 'the role',
+        'the position', 'apply now', 'apply here'];
+      const _titleLocWords  = ['remote', 'hybrid', 'on-site', 'united kingdom', 'london'];
+      const _isValidTitle = (s) => {
+        if (!s || s.length < 4) return false;
+        const sl = s.toLowerCase();
+        if (_titleBlacklist.includes(sl)) return false;
+        if (_titleLocWords.some(w => sl.includes(w))) return false;
+        // Reject pure numbers or URLs
+        if (/^\d+$/.test(s) || /https?:\/\//.test(s) || s.includes('@')) return false;
+        return true;
+      };
+
+      // (1) Explicit label: "Job Title: ...", "Role: ...", "Position: ..."
       const titleLabelRe = /^(?:job\s+title|role|position|title|vacancy)[:\s]+(.{3,80})/im;
       const tlMatch = text.match(titleLabelRe);
-      if (tlMatch?.[1]?.trim()) role_title = tlMatch[1].trim().replace(/\s+/g, ' ');
-      // Fallback: first short top line that reads like a job title
+      if (tlMatch?.[1]?.trim() && _isValidTitle(tlMatch[1].trim())) {
+        role_title = tlMatch[1].trim().replace(/\s+/g, ' ');
+        _titleSource = 'jd_label';
+      }
+
+      // (2) First short top line that reads like a job title
       if (!role_title) {
+        const _titleKeywords = /(?:manager|director|lead|designer|engineer|analyst|head of|specialist|officer|coordinator|consultant|developer|architect|product|senior|principal|associate|junior|vp|vice\s+president|chief|strategist|planner|advisor|researcher|scientist|writer|editor|recruiter|marketing|sales|operations|founder|partner|intern)/i;
         for (const line of lines.slice(0, 8)) {
-          if (line.length >= 4 && line.length <= 60 &&
-              !line.includes('@') && !line.match(/https?:\/\//) &&
-              !/^(about|at |the |we |our |join|apply|hello|hi )/i.test(line) &&
-              /(?:manager|director|lead|designer|engineer|analyst|head of|specialist|officer|coordinator|consultant|developer|architect|product|senior|principal|associate|junior)/i.test(line)) {
+          if (line.length >= 4 && line.length <= 80 &&
+              !/^(about|at |the |we |our |join|apply|hello|hi |view|save|share|easy|follow)/i.test(line) &&
+              _titleKeywords.test(line) && _isValidTitle(line)) {
             role_title = line.replace(/[.,:]+$/, '').trim();
+            _titleSource = 'jd_top_line';
             break;
           }
         }
       }
-      // Guardrail: reject section headings and location-contaminated strings
-      if (role_title) {
-        const _rtl = role_title.toLowerCase();
-        const _titleBlacklist = ['about the job', 'overview', 'role overview', 'job description', 'about you', 'about us'];
-        const _titleLocWords  = ['remote', 'hybrid', 'on-site', 'united kingdom', 'london'];
-        if (role_title.length < 4 ||
-            _titleBlacklist.includes(_rtl) ||
-            _titleLocWords.some(w => _rtl.includes(w))) {
-          role_title = null;
+
+      // (3) Heading-based pattern: "## Senior Designer", "# Role Title", HTML h1/h2
+      if (!role_title) {
+        // Markdown headings
+        const _mdHeadingRe = /^#{1,3}\s+(.{4,80})\s*$/m;
+        const _mdMatch = text.match(_mdHeadingRe);
+        if (_mdMatch?.[1] && _isValidTitle(_mdMatch[1].trim())) {
+          const _cand = _mdMatch[1].trim().replace(/[.,:]+$/, '');
+          // Only accept if it looks like a title (has a role keyword)
+          if (/(?:manager|director|lead|designer|engineer|analyst|head of|specialist|officer|coordinator|consultant|developer|architect|product|senior|principal|associate|junior)/i.test(_cand)) {
+            role_title = _cand;
+            _titleSource = 'jd_heading';
+          }
+        }
+        // HTML headings
+        if (!role_title) {
+          const _htmlHRe = /<h[12][^>]*>\s*(.{4,80}?)\s*<\/h[12]>/i;
+          const _hMatch = raw.match(_htmlHRe);
+          if (_hMatch?.[1]) {
+            const _cand = _hMatch[1].replace(/<[^>]+>/g, '').trim();
+            if (_isValidTitle(_cand)) {
+              role_title = _cand;
+              _titleSource = 'jd_html_heading';
+            }
+          }
         }
       }
+
+      // (4) "About the Role" or "About the Position" — extract from following line
+      if (!role_title) {
+        const _aboutRoleRe = /(?:about\s+the\s+(?:role|position))[:\s]*\n+\s*(.{4,80})/im;
+        const _arMatch = text.match(_aboutRoleRe);
+        if (_arMatch?.[1]) {
+          const _cand = _arMatch[1].trim().replace(/[.,:]+$/, '');
+          if (_isValidTitle(_cand) && _cand.split(/\s+/).length <= 10) {
+            role_title = _cand;
+            _titleSource = 'jd_about_section';
+          }
+        }
+      }
+
+      // ── Guardrail: retry if title looks like a stub (single word that's generic) ──
+      if (role_title) {
+        const _words = role_title.trim().split(/\s+/);
+        const _genericSingles = ['manager', 'director', 'lead', 'engineer', 'designer',
+          'analyst', 'consultant', 'specialist', 'coordinator', 'developer'];
+        if (_words.length === 1 && _genericSingles.includes(_words[0].toLowerCase())) {
+          // Single generic word — demote; keep searching in later fallbacks
+          role_title = null;
+          _titleSource = null;
+        }
+      }
+
       // Normalise ALL-CAPS titles to Title Case, preserving known acronyms
       if (role_title && role_title === role_title.toUpperCase() && role_title.includes(' ') && role_title.length <= 80) {
         const _acronyms = new Set(['AI', 'UX', 'UI', 'VP', 'SAAS', 'B2B', 'B2C', 'CTO', 'CEO', 'CPO', 'CFO', 'COO', 'HR', 'PR', 'IT', 'QA', 'ML', 'NLP', 'API', 'SDK', 'SEO', 'SEM', 'CRM', 'ERP']);
@@ -20042,7 +21633,12 @@
         }
       }
 
-      return { company_name, role_title, job_url, location, remote_model, contract_type, working_pattern, salary_annual, salary_monthly };
+      // ── Apply LinkedIn header fallbacks ──────────────────────────────────────
+      if (!company_name && _liCompany) company_name = _liCompany;
+      if (!role_title   && _liTitle)   { role_title = _liTitle; _titleSource = 'linkedin_header'; }
+      if (!location     && _liLocation) location = _liLocation;
+
+      return { company_name, role_title, job_url, location, remote_model, contract_type, working_pattern, salary_annual, salary_monthly, title_source: _titleSource };
     }
 
     // ─── Local rule-based analysis engine ────────────────────────────────────
@@ -20076,11 +21672,25 @@
       }
 
       // ── First meaningful paragraph ─────────────────────────────────────────
+      // Extracts the first content paragraph from the JD and truncates at a
+      // sentence boundary (never mid-word). maxLen is a soft cap — the text is
+      // cut at the last sentence-ending punctuation before maxLen, or at the
+      // last word boundary if no sentence end is found.
       function firstParagraph(maxLen) {
+        const _max = maxLen || 500;
         const paras = raw.split(/\n\n+/)
           .map(p => p.trim().replace(/\n/g, ' '))
           .filter(p => p.length > 60 && !/^(about|requirements|responsibilities|benefits|what|who|how|apply)/i.test(p));
-        return (paras[0] || lines.slice(0, 3).join(' ')).slice(0, maxLen || 400);
+        const _full = paras[0] || lines.slice(0, 3).join(' ');
+        if (_full.length <= _max) return _full;
+        // Try to cut at last sentence end (. ! ?) before the limit
+        const _chunk = _full.slice(0, _max);
+        const _sentEnd = _chunk.search(/[.!?]\s+[^.!?]*$/);
+        if (_sentEnd > 80) return _chunk.slice(0, _sentEnd + 1).trim();
+        // Fall back to last word boundary
+        const _wordEnd = _chunk.lastIndexOf(' ');
+        if (_wordEnd > 80) return _chunk.slice(0, _wordEnd).trim() + '\u2026';
+        return _chunk.trim() + '\u2026';
       }
 
       // ── Practical details ──────────────────────────────────────────────────
@@ -20252,29 +21862,27 @@
         why_this_role_exists = 'Not explicitly stated. Review the company background in the JD for context.';
       }
 
-      // ── Personal rule: production-coding Hard No ──────────────────────────
-      const prodCodingPhrases = [
-        'production react', 'production code', 'hands-on coding',
-        'build production features', 'own front-end implementation',
-        'shipping production javascript', 'write production code',
-        'writing production code', 'ship production code',
-        'production javascript', 'write and ship code', 'coding in production',
-      ];
-      const isHardNo = prodCodingPhrases.some(p => t.includes(p));
+      // ── Coding requirement — use shared resolver ──────────────────────────
+      const _codingReq = _resolveCodingRequirement(jdText);
+      const isHardNo = _codingReq.classification === 'production';
 
       // Blend signal (design + engineering, not necessarily Hard No)
       const blendPhrases = ['design and implement', 'design and build', 'ui engineer', 'prototype and ship', 'frontend engineer who'];
-      const isBlend = !isHardNo && blendPhrases.some(p => t.includes(p));
+      const isBlend = !isHardNo && _codingReq.classification !== 'prototype' && blendPhrases.some(p => t.includes(p));
 
       // ── Fit Reality Summary ───────────────────────────────────────────────
       const fitPoints = [];
       if (isHardNo) {
         fitPoints.push('Production coding requirement detected. This role is a Hard No per your personal rules.');
+      } else if (_codingReq.classification === 'prototype') {
+        fitPoints.push('Coding expectation is prototype-level only. No production coding required.');
+      } else if (_codingReq.classification === 'unclear') {
+        fitPoints.push('Coding expectation needs clarification: prototype vs production responsibility is unclear.');
       }
       if (isBlend) {
         fitPoints.push('Role blends design and engineering. Clarify what proportion is production code before applying.');
       }
-      if (!isHardNo && !isBlend) {
+      if (!isHardNo && !isBlend && _codingReq.classification === 'none') {
         if (responsibilities.length > 0) {
           fitPoints.push('No production coding requirement detected in this read. Confirm by reviewing responsibilities below.');
         } else {
@@ -20418,6 +22026,7 @@
         },
         hard_no:            isHardNo,
         hard_no_reason:     isHardNo ? 'Role requires production-level coding by the designer.' : null,
+        coding_requirement: _codingReq.classification,
         _degraded:          false,
         _source:            'local',
         role_shape_signals: _detectRoleShapeSignals(raw),
@@ -20614,7 +22223,12 @@
         return localResult;
       }
 
-      // ── Usage tracking ───────────────────────────────────────────────────────
+      // ── Non-blocking AI enrichment ─────────────────────────────────────────
+      // Return localResult IMMEDIATELY so the UI renders in <1s.
+      // Fire analyse-jd + generate-narrative in the background.
+      // When AI result arrives, _backgroundAIPatch() merges it into the
+      // stored jd_matches row and re-renders the analysis card.
+      // ──────────────────────────────────────────────────────────────────────
       const _t0          = performance.now();
       const _inputChars  = (jdText || '').length;
       const _baseLog     = {
@@ -20625,118 +22239,368 @@
         request_type: 'edge_function',
         input_chars:  _inputChars,
       };
-      let _logged = false; // sentinel — prevents double-log when inner catch also runs
-      // ─────────────────────────────────────────────────────────────────────────
 
-      try {
-        // Edge function reads body.jd_text + body.candidate_context
-        // candidate_context is the full structured profile from rolewise-prompts.js
-        const _candidateCtx = _getCandidateContext();
-        const { data, error } = await db.functions.invoke('analyse-jd', {
-          body: {
-            jd_text: jdText,
-            candidate_context: _candidateCtx,
-          },
-        });
-        if (error) {
-          console.error('[AI invoke error]', error);
-          _logUsageEvent({
-            ..._baseLog,
-            status:     'error',
-            latency_ms: Math.round(performance.now() - _t0),
-            metadata:   { error_message: error.message || String(error) },
-          });
-          _logged = true;
-          throw error;
-        }
-        if (!data?.analysis) {
-          console.error('[AI invoke returned no data]', data);
-          _logUsageEvent({
-            ..._baseLog,
-            status:     'error',
-            latency_ms: Math.round(performance.now() - _t0),
-            metadata:   { error_message: 'No analysis returned from analyse-jd' },
-          });
-          _logged = true;
-          throw new Error('No analysis returned from analyse-jd');
-        }
-        // Function returns { analysis: {...}, usage: { model, input_tokens, output_tokens } }
-        const aiResult     = normaliseAnalysis(data.analysis, jdText);
-        aiResult._source   = 'ai';
-        const _outputChars = JSON.stringify(aiResult).length;
+      const _candidateCtx = _getCandidateContext();
 
-        // ── Token extraction ────────────────────────────────────────────────
-        const _usage        = data.usage || {};
-        const _model        = _usage.model        || null;
-        const _inputTokens  = typeof _usage.input_tokens  === 'number' ? _usage.input_tokens  : null;
-        const _outputTokens = typeof _usage.output_tokens === 'number' ? _usage.output_tokens : null;
-
-        // ── Cost calculation ────────────────────────────────────────────────
-        // Per-model pricing table (USD per 1 M tokens).
-        // Haiku is the actual model used by the analyse-jd edge function.
-        // Sonnet rates kept for forward-compatibility if the model is ever switched.
-        const _PRICING = {
-          'claude-haiku':   { input: 0.80,  output: 4.00  },   // claude-haiku-4-5-*
-          'claude-sonnet':  { input: 3.00,  output: 15.00 },   // claude-sonnet-*
-          'claude-opus':    { input: 15.00, output: 75.00 },   // claude-opus-*
-        };
-        const _modelFamily = Object.keys(_PRICING).find(k => (_model || '').startsWith(k)) || null;
-        const _rates        = _modelFamily ? _PRICING[_modelFamily] : null;
-        let   _estimatedCost = null;
-        if (_rates && _inputTokens !== null && _outputTokens !== null) {
-          _estimatedCost = parseFloat(
-            ((_inputTokens * _rates.input + _outputTokens * _rates.output) / 1_000_000).toFixed(8)
-          );
-        }
-
-        // ── Confirm fields before DB write (visible in console for verification) ──
-        const _logPayload = {
-          ..._baseLog,
-          status:         'success',
-          latency_ms:     Math.round(performance.now() - _t0),
-          model:          _model,
-          input_tokens:   _inputTokens,
-          output_tokens:  _outputTokens,
-          estimated_cost: _estimatedCost,
-          output_chars:   _outputChars,
-          metadata: {
-            analysis_source: 'ai',
-            usage_raw:       _usage,          // echo raw usage for verification
-            pricing_applied: _rates || null,
-          },
-        };
-        console.log('[_logUsageEvent payload]', _logPayload);
-        _logUsageEvent(_logPayload);
-
-        console.log('[AI invoke success]', aiResult);
-
-        // ── Pass 2: Narrative generation ──────────────────────────────────
-        // Takes the structured extraction and generates the 8-section
-        // decision narrative. Non-blocking: if it fails, the renderer
-        // falls back to template rendering from the structured JSON.
+      localResult._aiPromise = (async () => {
         try {
-          const narrative = await callNarrativeAPI(aiResult);
-          if (narrative) {
-            aiResult._narrative = narrative;
-            console.log('[Pass 2] narrative attached', Object.keys(narrative));
+          const { data, error } = await db.functions.invoke('analyse-jd', {
+            body: {
+              jd_text: jdText,
+              candidate_context: _candidateCtx,
+            },
+          });
+          if (error) {
+            console.error('[AI invoke error]', error);
+            _logUsageEvent({
+              ..._baseLog,
+              status:     'error',
+              latency_ms: Math.round(performance.now() - _t0),
+              metadata:   { error_message: error.message || String(error) },
+            });
+            return null;
           }
-        } catch (_p2Err) {
-          console.warn('[Pass 2] narrative generation failed, using template rendering', _p2Err);
-        }
+          if (!data?.analysis) {
+            console.error('[AI invoke returned no data]', data);
+            _logUsageEvent({
+              ..._baseLog,
+              status:     'error',
+              latency_ms: Math.round(performance.now() - _t0),
+              metadata:   { error_message: 'No analysis returned from analyse-jd' },
+            });
+            return null;
+          }
+          const aiResult     = normaliseAnalysis(data.analysis, jdText);
+          aiResult._source   = 'ai';
+          const _outputChars = JSON.stringify(aiResult).length;
 
-        return aiResult;
-      } catch (err) {
-        console.warn('[AI fallback] using local analysis', err);
-        if (!_logged) {
-          // Unexpected throw (network issue, JSON parse error, etc.) — log it once
+          // ── Token extraction ────────────────────────────────────────────
+          const _usage        = data.usage || {};
+          const _model        = _usage.model        || null;
+          const _inputTokens  = typeof _usage.input_tokens  === 'number' ? _usage.input_tokens  : null;
+          const _outputTokens = typeof _usage.output_tokens === 'number' ? _usage.output_tokens : null;
+
+          // ── Cost calculation ─────────────────────────────────────────────
+          const _PRICING = {
+            'claude-haiku':   { input: 0.80,  output: 4.00  },
+            'claude-sonnet':  { input: 3.00,  output: 15.00 },
+            'claude-opus':    { input: 15.00, output: 75.00 },
+          };
+          const _modelFamily = Object.keys(_PRICING).find(k => (_model || '').startsWith(k)) || null;
+          const _rates        = _modelFamily ? _PRICING[_modelFamily] : null;
+          let   _estimatedCost = null;
+          if (_rates && _inputTokens !== null && _outputTokens !== null) {
+            _estimatedCost = parseFloat(
+              ((_inputTokens * _rates.input + _outputTokens * _rates.output) / 1_000_000).toFixed(8)
+            );
+          }
+
+          const _logPayload = {
+            ..._baseLog,
+            status:         'success',
+            latency_ms:     Math.round(performance.now() - _t0),
+            model:          _model,
+            input_tokens:   _inputTokens,
+            output_tokens:  _outputTokens,
+            estimated_cost: _estimatedCost,
+            output_chars:   _outputChars,
+            metadata: {
+              analysis_source: 'ai',
+              usage_raw:       _usage,
+              pricing_applied: _rates || null,
+            },
+          };
+          console.log('[perf] Pass 1 (analyse-jd) completed in', Math.round(performance.now() - _t0) + 'ms');
+          _logUsageEvent(_logPayload);
+
+          // Fire narrative in background (non-blocking within the non-blocking AI call)
+          aiResult._narrativePromise = callNarrativeAPI(aiResult).then(narrative => {
+            if (narrative) {
+              aiResult._narrative = narrative;
+              console.log('[perf] Pass 2 (narrative) attached (background)', Object.keys(narrative));
+            }
+            return narrative;
+          }).catch(_p2Err => {
+            console.warn('[Pass 2] narrative generation failed, using template rendering', _p2Err);
+            return null;
+          });
+
+          return aiResult;
+        } catch (err) {
+          console.warn('[AI background] analyse-jd failed', err);
           _logUsageEvent({
             ..._baseLog,
             status:     'error',
             latency_ms: Math.round(performance.now() - _t0),
             metadata:   { error_message: err.message || String(err), fallback: true },
           });
+          return null;
         }
-        return localResult; // already has _source: 'local'
+      })();
+
+      console.log('[perf] callAnalysisAPI returning local result immediately (AI enrichment in background)');
+      return localResult;
+    }
+
+    // ─── Re-render analysis in place ─────────────────────────────────────────
+    // ─── Surgical per-section updater ──────────────────────────────────────
+    // Instead of replacing the entire .rw-overview-wrap (which destroys the
+    // header, resets scroll, and causes a visible content jump), this renders
+    // the new analysis into a detached temp div and then patches only the
+    // individual sections whose content actually changed. Each updated section
+    // gets a smooth fade transition. Header, scroll position, decision capture,
+    // blockers, rail — all left untouched.
+    //
+    // Section IDs targeted (set in renderMatchOutput):
+    //   section-decision-line, section-match-break, section-role-summary,
+    //   section-fit-reality, section-what-role-is, section-what-they-need,
+    //   section-what-you-do, section-practical-details, section-company-context,
+    //   section-risks-unknowns, section-questions
+    // Sidebar: section-role-shape, section-role-reality-signals, section-practical,
+    //          section-commute, section-comp-snapshot
+    const _PATCHABLE_SECTIONS = [
+      'section-decision-line', 'section-match-break', 'section-role-summary',
+      'section-fit-reality', 'section-what-role-is', 'section-what-they-need',
+      'section-what-you-do', 'section-practical-details', 'section-company-context',
+      'section-risks-unknowns', 'section-questions',
+      'section-role-shape', 'section-role-reality-signals', 'section-practical',
+      'section-commute', 'section-comp-snapshot',
+    ];
+
+    function _surgicalUpdateSections(analysis, roleId) {
+      if (selectedRoleId !== roleId) return;
+      const _ovCards = document.getElementById('col-overview-cards');
+      if (!_ovCards) return;
+
+      // Render new content into a detached container
+      const _tempDiv = document.createElement('div');
+      _tempDiv.innerHTML = renderMatchOutput(analysis);
+
+      let _updatedCount = 0;
+      const _STAGGER_MS = 120; // delay between each section update
+
+      for (const _secId of _PATCHABLE_SECTIONS) {
+        const _liveEl = document.getElementById(_secId);
+        const _newEl = _tempDiv.querySelector('#' + _secId);
+
+        if (_newEl && _liveEl) {
+          // Compare innerHTML — only patch if content actually changed
+          if (_liveEl.innerHTML.trim() !== _newEl.innerHTML.trim()) {
+            // Remove any enriching indicator inside this section
+            const _ind = _liveEl.querySelector('.rw-section-enriching');
+            if (_ind) _ind.remove();
+
+            // Stagger: each changed section fades out → replaces → fades in
+            // with increasing delay so they cascade down the page
+            const _delay = _updatedCount * _STAGGER_MS;
+            ((el, newEl, delay) => {
+              setTimeout(() => {
+                el.classList.add('rw-section-updating');
+                setTimeout(() => {
+                  el.innerHTML = newEl.innerHTML;
+                  if (newEl.className !== el.className) {
+                    el.className = newEl.className;
+                    el.classList.add('rw-section-updating');
+                  }
+                  requestAnimationFrame(() => {
+                    el.classList.remove('rw-section-updating');
+                  });
+                }, 200); // fade-out duration
+              }, delay);
+            })(_liveEl, _newEl, _delay);
+            _updatedCount++;
+          } else {
+            // Content unchanged — just remove enriching indicator
+            const _ind = _liveEl.querySelector('.rw-section-enriching');
+            if (_ind) _ind.remove();
+          }
+        } else if (_newEl && !_liveEl) {
+          // Section exists in new content but not in live DOM — insert it
+          // Find the parent container and append
+          const _summary = document.getElementById('section-decision-summary');
+          if (_summary) {
+            const _clone = _newEl.cloneNode(true);
+            _clone.classList.add('rw-section-updating');
+            _summary.appendChild(_clone);
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => { _clone.classList.remove('rw-section-updating'); });
+            });
+            _updatedCount++;
+          }
+        }
+      }
+
+      // Hide the enriching indicator as the cascade starts
+      if (_updatedCount > 0) _hideEnrichingIndicator();
+
+      // Re-init comp snapshot after the last section finishes updating
+      const _totalCascadeTime = (_updatedCount * _STAGGER_MS) + 250;
+      if (_updatedCount > 0) {
+        setTimeout(() => {
+          if (typeof _initCompSnapshot === 'function') _initCompSnapshot(_ovCards);
+          if (typeof _fillFitAssessmentCV === 'function') _fillFitAssessmentCV();
+        }, _totalCascadeTime);
+      } else {
+        if (typeof _fillFitAssessmentCV === 'function') _fillFitAssessmentCV();
+      }
+
+      console.log(`[perf] Surgical update: ${_updatedCount} section(s) patched (staggered ${_STAGGER_MS}ms apart)`);
+    }
+
+    // ─── AI enrichment indicator ──────────────────────────────────────────
+    // Single small indicator placed just after the decision block so the user
+    // knows AI enrichment is running in the background. Shows bouncing dots +
+    // "Enriching with AI…". Fades out when AI result arrives.
+    function _showEnrichingIndicator() {
+      if (document.getElementById('rw-enriching-indicator')) return; // already showing
+
+      // Find insertion point: prefer inside section-decision-summary (the main
+      // doc view container), right after the match-break or decision-line section.
+      const _summary = document.getElementById('section-decision-summary');
+      const _matchBreak = document.getElementById('section-match-break');
+      const _decLine = document.getElementById('section-decision-line');
+      const _ovCards = document.getElementById('col-overview-cards');
+
+      const _el = document.createElement('div');
+      _el.id = 'rw-enriching-indicator';
+      _el.className = 'rw-enriching-indicator';
+      _el.innerHTML = '<span class="rw-enriching-dots"><span></span><span></span><span></span></span> Enriching with AI\u2026';
+
+      if (_matchBreak && _matchBreak.nextSibling) {
+        // Best: after match/break section, before the narrative sections
+        _matchBreak.parentNode.insertBefore(_el, _matchBreak.nextSibling);
+      } else if (_decLine && _decLine.nextSibling) {
+        // After decision line
+        _decLine.parentNode.insertBefore(_el, _decLine.nextSibling);
+      } else if (_summary) {
+        // Append to the doc view container
+        _summary.appendChild(_el);
+      } else if (_ovCards) {
+        // Last resort
+        _ovCards.appendChild(_el);
+      } else {
+        console.log('[enriching] no target found for indicator');
+        return;
+      }
+      console.log('[enriching] indicator shown, parent:', _el.parentNode?.id || _el.parentNode?.className);
+    }
+
+    // Fade out and remove all enrichment indicators (global + per-section)
+    function _hideEnrichingIndicator() {
+      // Legacy global indicator
+      const _el = document.getElementById('rw-enriching-indicator');
+      if (_el) {
+        _el.style.opacity = '0';
+        setTimeout(() => { if (_el.isConnected) _el.remove(); }, 300);
+      }
+      // Per-section indicators (in case some sections weren't patched)
+      document.querySelectorAll('.rw-section-enriching').forEach(ind => {
+        ind.style.opacity = '0';
+        setTimeout(() => { if (ind.isConnected) ind.remove(); }, 300);
+      });
+    }
+
+    // ─── Background AI + narrative patch ─────────────────────────────────────
+    // After the local analysis renders instantly, this function:
+    //   1. Shows "Enriching with AI…" indicator below the decision block
+    //   2. Waits for the background AI result
+    //   3. Merges AI fields into the live analysis object
+    //   4. Persists to DB
+    //   5. Surgically updates only the sections whose content changed (no
+    //      full-page replacement, no scroll reset, no header destruction)
+    //   6. Then waits for narrative and does the same again
+    function _backgroundAIPatch(analysis, roleId, matchId) {
+      if (!analysis._aiPromise) return;
+      const _patchT0 = performance.now();
+
+      // Indicator is now baked into renderMatchOutput HTML when _source !== 'ai'.
+      // No JS injection needed — it's already in the DOM from first render.
+
+      analysis._aiPromise.then(aiResult => {
+        if (!aiResult || !matchId) {
+          console.log('[perf] AI enrichment: no result returned');
+          _hideEnrichingIndicator();
+          return;
+        }
+        console.log('[perf] AI enrichment arrived in', Math.round(performance.now() - _patchT0) + 'ms');
+
+        // Merge AI result into the live analysis object (preserves object reference)
+        const _keepKeys = ['_aiPromise'];
+        const _saved = {};
+        _keepKeys.forEach(k => { if (analysis[k] !== undefined) _saved[k] = analysis[k]; });
+        Object.keys(analysis).forEach(k => { if (!_keepKeys.includes(k)) delete analysis[k]; });
+        Object.assign(analysis, aiResult, _saved);
+
+        // Persist to DB (strip non-serialisable keys)
+        const _cleanForDb = Object.assign({}, analysis);
+        delete _cleanForDb._aiPromise;
+        delete _cleanForDb._narrativePromise;
+        db.from('jd_matches').update({ output_json: _cleanForDb })
+          .eq('id', matchId)
+          .then(({ error }) => {
+            if (error) console.warn('[AI patch] DB update failed', error);
+            else console.log('[perf] AI patch saved to jd_matches', matchId);
+          });
+
+        // Surgical DOM update — only changed sections get patched
+        if (selectedRoleId === roleId) {
+          _surgicalUpdateSections(analysis, roleId);
+        }
+
+        // ── Now wait for narrative (Pass 2) ────────────────────────────────
+        if (aiResult._narrativePromise) {
+          aiResult._narrativePromise.then(narrative => {
+            if (!narrative) {
+              console.log('[perf] Pass 2 (narrative): no result');
+              _hideEnrichingIndicator();
+              return;
+            }
+            console.log('[perf] Pass 2 (narrative) arrived in', Math.round(performance.now() - _patchT0) + 'ms (total from first render)');
+
+            // Persist again with narrative included
+            const _cleanWithNarr = Object.assign({}, analysis);
+            delete _cleanWithNarr._aiPromise;
+            delete _cleanWithNarr._narrativePromise;
+            db.from('jd_matches').update({ output_json: _cleanWithNarr })
+              .eq('id', matchId)
+              .then(({ error }) => {
+                if (error) console.warn('[narrative patch] DB update failed', error);
+                else console.log('[perf] narrative patch saved to jd_matches', matchId);
+              });
+
+            // Surgical update again with narrative content
+            if (selectedRoleId === roleId) {
+              _surgicalUpdateSections(analysis, roleId);
+            }
+            _hideEnrichingIndicator();
+          });
+        } else {
+          _hideEnrichingIndicator();
+        }
+      });
+    }
+
+    // ─── Refining indicator ─────────────────────────────────────────────────
+    // Subtle indicator shown while AI enrichment + narrative loads in background.
+    // Appears at the top of the analysis card; fades away when all enrichment completes.
+    function _showRefiningIndicator(show) {
+      const _ovCards = document.getElementById('col-overview-cards');
+      if (!_ovCards) return;
+      const _existingId = 'rw-refining-indicator';
+      let _el = document.getElementById(_existingId);
+      if (show) {
+        if (_el) return; // already showing
+        _el = document.createElement('div');
+        _el.id = _existingId;
+        _el.className = 'rw-refining-indicator';
+        _el.innerHTML = '<span class="rw-refining-dot"></span> Refining analysis…';
+        _ovCards.prepend(_el);
+        // Animate in
+        requestAnimationFrame(() => { _el.style.opacity = '1'; });
+      } else {
+        if (!_el) return;
+        _el.style.opacity = '0';
+        setTimeout(() => { if (_el.isConnected) _el.remove(); }, 300);
       }
     }
 
@@ -20812,9 +22676,9 @@
       if (!_nonEmptyArr(n.questions_worth_asking, 1))
         reasons.push('questions_worth_asking missing or empty');
 
-      // decision: { paragraphs: string[] }  (min 1)
-      if (!n.decision?.paragraphs || !_nonEmptyArr(n.decision.paragraphs, 1))
-        reasons.push('decision.paragraphs missing or empty');
+      // decision: { summary: string } (new) or { paragraphs: string[] } (legacy)
+      if (!_nonEmptyStr(n.decision?.summary) && !_nonEmptyArr(n.decision?.paragraphs, 1))
+        reasons.push('decision.summary or decision.paragraphs missing or empty');
 
       // recommended_cv: string or null (null = skip decision / no CV variants)
       if (n.recommended_cv !== null && n.recommended_cv !== undefined && !_nonEmptyStr(n.recommended_cv))
@@ -26374,7 +28238,8 @@ If a field cannot be determined from the message, return null for that field.`,
       btn.addEventListener('click', () => switchNav(btn.dataset.nav));
     });
     document.getElementById('btn-nav-profile').addEventListener('click', () => switchNav('profile'));
-    document.getElementById('btn-open-add').addEventListener('click', openBlankWorkspace);
+    // ── "Add JD" button → unified ingestion overlay ──────────────────────────
+    document.getElementById('btn-open-add').addEventListener('click', () => openIngestionOverlay({ context: 'add' }));
     // [REMOVED] btn-backfill listener — legacy backfill migrated to one-time SQL (9 Mar 2026).
     document.getElementById('btn-close-add').addEventListener('click', closeAddModal);
     document.getElementById('btn-save-add').addEventListener('click', saveRole);
@@ -26541,6 +28406,16 @@ If a field cannot be determined from the message, return null for that field.`,
       t = t.replace(/^[ \t]+|[ \t]+$/gm, '');                 // trim each line
       // Remove duplicate consecutive lines (same line appearing twice in a row)
       t = t.replace(/^(.{20,})\n\1$/gm, '$1');
+
+      // ── Split concatenated bullet items ─────────────────────────────────────
+      // LinkedIn's API sometimes returns list items with no separator:
+      //   "Investigate users…Create and sustain design systems…Develop prototypes…"
+      // Detect sentence boundaries where a standalone lowercase word runs directly
+      // into an uppercase word-start with no space. The lookbehind ensures the
+      // lowercase run is preceded by a space (i.e. a complete word), which avoids
+      // breaking camelCase brand names like "LearnWith".
+      t = t.replace(/((?<=\s)[a-z]{3,}|(?<=\s)[a-z]+[a-z)])([A-Z][a-z])/g, '$1\n$2');
+
       return t.trim();
     }
 

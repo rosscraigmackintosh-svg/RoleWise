@@ -140,23 +140,50 @@
     }
 
     .logo-btn {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
       background: none;
       border: none;
       padding: 0;
       cursor: pointer;
+      color: var(--text);
+      line-height: 1;
+      transition: opacity 120ms ease;
+    }
+
+    .logo-btn:hover {
+      opacity: 0.85;
+    }
+
+    .logo-btn:active {
+      opacity: 0.75;
+    }
+
+    .logo-btn .logo-svg {
+      height: 22px;
+      width: auto;
+      display: block;
+      color: inherit;
+    }
+
+    /* Fallback text — hidden when SVG renders */
+    .logo-btn .logo-fallback {
+      display: none;
       font-size: 20px;
       font-weight: 600;
       font-family: var(--font-head);
-      color: var(--text);
-      line-height: 1;
       white-space: nowrap;
       letter-spacing: 0;
     }
 
+    /* Show fallback if SVG is missing or broken */
+    .logo-btn:not(:has(.logo-svg)) .logo-fallback {
+      display: inline;
+    }
+
     .col-left-nav {
       flex-shrink: 0;
-      padding: 8px 10px 12px 8px;
+      padding: var(--space-tight, 8px) 10px 12px var(--space-tight, 8px);
     }
 
     /* Tailwind handles: display, width, bg, border, border-radius, padding, */
@@ -208,7 +235,7 @@
     /* ─── Nav section labels ───────────────────────────────────── */
     .nav-section-label {
       display: block;
-      padding: 14px 8px 4px;
+      padding: var(--space-block, 16px) var(--space-tight, 8px) 4px;
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.07em;
@@ -444,7 +471,7 @@
     }
 
     /* Content sections */
-    .ov-section { margin-bottom: 32px; }
+    .ov-section { margin-bottom: var(--space-section, 32px); }
     .ov-section-label {
       font-size: 11px;
       font-weight: 600;
@@ -3173,36 +3200,46 @@
 
     .rw-doc-view {
       max-width: 720px;
-      margin-bottom: 32px;
+      margin-bottom: var(--space-section, 32px);
     }
 
-    /* Sections: 48px gap between major sections */
+    /* Sections: consistent top spacing between major sections */
     .rw-doc-section {
-      margin-bottom: 48px;
+      margin-top: var(--space-section, 32px);
     }
 
-    .rw-doc-section:last-child {
-      margin-bottom: 0;
+    .rw-doc-section:first-child {
+      margin-top: 0;
     }
 
     /* H2 headings: slightly larger than existing, strong contrast */
     .rw-doc-h2 {
       font-family: var(--font-head, 'Inter Tight', 'Inter', sans-serif);
       font-size: 15px;   /* +2px over base */
-      font-weight: 700;
-      color: var(--text);
-      letter-spacing: -0.01em;
-      margin: 0 0 12px 0; /* RW-SPACING: normal heading gap */
+      font-weight: 600;
+      color: #1f2937;
+      letter-spacing: 0.2px;
+      margin: 0 0 12px 0;
       line-height: var(--leading-tight, 1.3);
     }
 
     /* Body prose */
     .rw-doc-prose {
       font-size: 14px;
-      color: var(--text);
+      color: #374151;
       line-height: var(--leading-relaxed, 1.6);
       margin: 0;
     }
+
+    /* ── Prose rhythm: breathing space between paragraphs, lists, sections ── */
+    /* Same-type adjacency: --space-tight * 1.5 (12px) for flow continuity */
+    /* Cross-type adjacency: --space-block (16px) for visual separation    */
+    .rw-doc-section .rw-doc-prose + .rw-doc-prose     { margin-top: 12px; }
+    .rw-doc-section .rw-doc-prose + .rw-doc-bullets    { margin-top: 12px; }
+    .rw-doc-section .rw-doc-bullets + .rw-doc-prose    { margin-top: var(--space-block, 16px); }
+    .rw-doc-section .rw-doc-bullets + .rw-doc-bullets  { margin-top: 12px; }
+    .rw-doc-section .rw-doc-dl + .rw-doc-prose         { margin-top: var(--space-block, 16px); }
+    .rw-doc-section .rw-doc-prose + .rw-doc-dl         { margin-top: 12px; }
 
     .rw-doc-prose--muted {
       color: var(--text-secondary);
@@ -3218,9 +3255,9 @@
 
     .rw-doc-bullets li {
       font-size: 14px;
-      color: var(--text);
+      color: #374151;
       line-height: 1.5;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       white-space: normal;
       overflow: visible;
       text-overflow: unset;
@@ -3267,28 +3304,202 @@
       margin: 0;
     }
 
-    /* Recommended CV value */
-    .rw-doc-cv-value {
-      font-size: 14px;
+    /* rw-doc-cv-value, rw-fa-cv-label/desc/name/empty styles removed —
+       CV section now lives inside decision block (RW-CV-INTEGRATION-01) */
+
+    /* ── Decision Banner ────────────────────────────────────────────── */
+    #rw-decision-banner {
+      margin: 12px 0 4px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-card, var(--bg));
+      font-size: 13px;
       color: var(--text);
+    }
+    .rw-db-header {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-weight: 600;
+      font-size: 13.5px;
+      line-height: 1.3;
+    }
+    .rw-db-icon {
+      flex-shrink: 0;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .rw-db-reasons {
+      margin-top: 6px;
+      padding-left: 24px;
+      list-style: none;
+    }
+    .rw-db-reasons li {
+      position: relative;
+      padding-left: 12px;
+      margin-top: 3px;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+    .rw-db-reasons li::before {
+      content: '·';
+      position: absolute;
+      left: 0;
+      font-weight: 700;
+    }
+    #rw-decision-banner.rw-db--not-viable {
+      border-color: var(--error-border, rgba(220,38,38,0.25));
+      background: var(--error-bg-alt, rgba(220,38,38,0.04));
+    }
+    #rw-decision-banner.rw-db--worth-exploring {
+      border-color: var(--success-border, rgba(34,139,34,0.25));
+      background: var(--success-bg-alt, rgba(34,139,34,0.04));
+    }
+
+    /* Decision block — visual decision inside narrative card */
+    .rw-decision-block {
+      padding: 24px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-card, var(--bg));
+    }
+    .rw-decision-block-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .rw-decision-block-icon { font-size: 14px; line-height: 1; }
+    .rw-decision-block-reasons {
+      margin: 8px 0 0 26px;
+      padding: 0;
+      list-style: disc;
+    }
+    .rw-decision-block-reasons li {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      margin-bottom: 2px;
+    }
+    .rw-decision-block-clarity {
+      margin-top: 24px;
+    }
+    .rw-decision-block-clarity-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text, #1f2937);
+      display: block;
+      margin-bottom: 4px;
+    }
+    .rw-decision-block-reasons--clarity {
+      margin-top: 0;
+    }
+    .rw-decision-block-reasons--clarity li {
+      color: var(--text-muted);
+    }
+    .rw-decision-block-summary {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      font-style: italic;
+    }
+    .rw-decision-block--not-viable {
+      border-color: var(--danger-border, rgba(220,38,38,0.25));
+      background: var(--danger-bg-alt, rgba(220,38,38,0.04));
+    }
+    .rw-decision-block--not-viable .rw-decision-block-icon { color: var(--danger, rgb(220,38,38)); }
+    .rw-decision-block--worth {
+      border-color: var(--success-border, rgba(34,139,34,0.25));
+      background: var(--success-bg-alt, rgba(34,139,34,0.04));
+    }
+    .rw-decision-block--worth .rw-decision-block-icon { color: var(--success, rgb(34,139,34)); }
+
+    /* ── CV recommendation inside decision block (RW-CV-INTEGRATION-01) ── */
+    .rw-decision-block-cv {
+      margin: 24px -24px 0;
+      padding: 24px 24px 0;
+      border-top: 1px solid var(--border-light, rgba(0,0,0,0.06));
+      font-size: 14px;
+      color: var(--text-secondary, #374151);
       line-height: 1.5;
     }
-
-    /* Hide the injected CV label — heading provided by static H2 */
-    .rw-doc-view .rw-fa-cv-label {
-      display: none;
+    .rw-cv-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
     }
-
-    .rw-doc-view .rw-fa-cv-name {
+    .rw-cv-icon {
+      flex-shrink: 0;
+      color: var(--text-muted, #6b7280);
+      margin-top: 1px;
+    }
+    .rw-cv-text { min-width: 0; }
+    .rw-decision-block-cv-label {
       font-size: 14px;
-      font-weight: 500;
-      color: var(--text);
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 2px;
     }
-
-    .rw-doc-view .rw-fa-cv-empty {
+    .rw-decision-block-cv-desc {
+      font-size: 14px;
+      color: var(--text-secondary, #374151);
+      line-height: 1.5;
+    }
+    .rw-decision-block-cv-desc strong {
+      font-weight: 600;
+      color: var(--text, #1f2937);
+    }
+    .rw-decision-block-cv-empty {
       font-size: 14px;
       color: var(--text-light);
       font-style: italic;
+    }
+
+    /* ── Match / Break single-column section (RW-MATCH-BREAK-LAYOUT-02) ── */
+    .rw-match-break {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      margin-top: var(--space-block, 16px);
+    }
+    .rw-mb-col { min-width: 0; }
+    .rw-mb-heading {
+      font-family: var(--font-head, 'Inter Tight', 'Inter', sans-serif);
+      font-size: 15px;
+      font-weight: 600;
+      color: #1f2937;
+      letter-spacing: 0.2px;
+      margin: 0 0 10px 0;
+      line-height: 1.3;
+    }
+    .rw-mb-list {
+      margin: 0;
+      padding: 0 0 0 16px;
+      list-style: disc;
+    }
+    .rw-mb-list li {
+      font-size: 14px;
+      color: #374151;
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .rw-mb-list li:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Company mismatch warning — calm but visible verification prompt */
+    .rw-doc-mismatch {
+      font-size: 13px;
+      color: var(--text);
+      background: var(--warning-bg-alt, rgba(245,166,35,0.08));
+      border: 1px solid var(--warning-border, rgba(245,166,35,0.25));
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin-bottom: 12px;
+      line-height: 1.5;
     }
 
     /* ── Post-analysis decision capture (Apply / Skip / Not sure) ───────────── */
@@ -3298,138 +3509,7 @@
       border-top: 1px solid var(--border);
     }
 
-    .rw-dc-question {
-      font-size: 13px;
-      color: var(--text-secondary);
-      margin: 0 0 12px 0;
-    }
-
-    .rw-dc-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .rw-dc-btn {
-      font-size: 13px;
-      font-family: inherit;
-      padding: 6px 14px;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--text);
-      cursor: pointer;
-      line-height: 1.4;
-      transition: background 0.1s, border-color 0.1s, color 0.1s;
-    }
-    .rw-dc-btn:hover {
-      background: var(--bg-hover, rgba(0,0,0,0.04));
-      border-color: var(--text-muted);
-    }
-    .rw-dc-btn--chosen {
-      border-color: var(--text-muted);
-      background: var(--bg-hover, rgba(0,0,0,0.05));
-      color: var(--text);
-    }
-
-    .rw-dc-save-btn {
-      font-size: 13px;
-      font-family: inherit;
-      padding: 5px 12px;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--text);
-      cursor: pointer;
-      transition: background 0.1s;
-    }
-    .rw-dc-save-btn:hover { background: var(--bg-hover, rgba(0,0,0,0.04)); }
-
-    .rw-dc-reasons {
-      margin-top: 14px;
-      animation: ws-settle 160ms ease-out both;
-    }
-
-    .rw-dc-reasons-label {
-      font-size: 13px;
-      color: var(--text-secondary);
-      margin: 0 0 10px 0;
-    }
-
-    .rw-dc-reasons-hint {
-      font-size: 12px;
-      color: var(--text-light);
-    }
-
-    .rw-dc-reason-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .rw-dc-reason-chip {
-      font-size: 12.5px;
-      font-family: inherit;
-      padding: 4px 10px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--text-secondary);
-      cursor: pointer;
-      line-height: 1.4;
-      transition: background 0.1s, border-color 0.1s, color 0.1s;
-    }
-    .rw-dc-reason-chip:hover {
-      background: var(--bg-hover, rgba(0,0,0,0.04));
-      border-color: var(--text-muted);
-      color: var(--text);
-    }
-
-    .rw-dc-other-row {
-      display: flex;
-      gap: 8px;
-      margin-top: 10px;
-      align-items: center;
-    }
-
-    .rw-dc-other-input {
-      font-size: 13px;
-      font-family: inherit;
-      flex: 1;
-      padding: 5px 10px;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-      background: var(--bg);
-      color: var(--text);
-      outline: none;
-    }
-    .rw-dc-other-input:focus { border-color: var(--text-muted); }
-
-    .rw-dc-confirm {
-      margin-top: 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      animation: ws-settle 160ms ease-out both;
-    }
-
-    .rw-dc-confirm-text {
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-
-    .rw-dc-undo-btn {
-      font-size: 12px;
-      font-family: inherit;
-      padding: 3px 8px;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--text-secondary);
-      cursor: pointer;
-      transition: color 0.1s;
-    }
-    .rw-dc-undo-btn:hover { color: var(--text); border-color: var(--text-muted); }
+    /* rw-dc-* styles removed — bottom decision capture block removed (RW-ACTION-DUPLICATION-01) */
 
     /* Your decision — action buttons */
     .rw-doc-action-row {
@@ -3545,6 +3625,18 @@
       color: var(--text-muted);
       margin-bottom: 4px;
     }
+    .rh-company-mismatch,
+    .rh-company-unverified {
+      display: block;
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0;
+      text-transform: none;
+      margin-top: 2px;
+      line-height: 1.35;
+    }
+    .rh-company-mismatch { color: var(--amber, #d68910); }
+    .rh-company-unverified { color: var(--text-muted); }
     .rh-title {
       font-size: 20px;
       font-weight: 600;
@@ -3562,6 +3654,37 @@
     .rh-added {
       font-size: 12px;
       color: var(--text-light);
+    }
+    .rh-analysis-id {
+      font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+      font-size: 11px;
+      color: var(--text-light);
+      opacity: 0.7;
+      cursor: default;
+      user-select: all;
+    }
+    .rh-copy-id {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: none;
+      padding: 2px;
+      margin-left: 4px;
+      cursor: pointer;
+      color: var(--text-light);
+      opacity: 0.5;
+      border-radius: 3px;
+      vertical-align: middle;
+      transition: opacity 120ms, color 120ms;
+    }
+    .rh-copy-id:hover {
+      opacity: 1;
+      color: var(--text-muted);
+    }
+    .rh-copy-id--done {
+      opacity: 1;
+      color: var(--success, rgb(34,139,34));
     }
     .rh-actions {
       display: flex;
@@ -4017,8 +4140,24 @@
       font-weight: 500;
     }
 
+    /* Decision markers — small inline icons on role list rows */
+    .rw-dm {
+      display: inline-block;
+      width: 14px;
+      font-size: 10px;
+      line-height: 1;
+      text-align: center;
+      margin-right: 5px;
+      vertical-align: baseline;
+      flex-shrink: 0;
+    }
+    .rw-dm--skip  { color: var(--danger, rgb(220,38,38)); }
+    .rw-dm--apply { color: var(--success, rgb(34,139,34)); }
+    .rw-dm--save  { color: var(--success, rgb(34,139,34)); opacity: 0.6; }
+    .rw-dm--none  { color: var(--text-muted, #aaa); font-size: 9px; }
+
     .inbox-role {
-      padding: var(--spacing-lg, 12px) 14px 13px;
+      padding: 14px 14px 13px;
       border-bottom: 1px solid var(--color-border-secondary, #e9eaeb);
       border-left: 3px solid transparent;
       cursor: pointer;
@@ -4033,12 +4172,10 @@
     }
     /* Company is the primary visual anchor; active row gets full-weight treatment */
     .inbox-role.active .inbox-company { font-weight: 700; }
-    /* Decision colour indicator — left border tint based on analysis outcome.
-       The selected-row border (accent) always wins via specificity. */
-    .inbox-role[data-decision="green"] { border-left-color: var(--success-500, #17b26a); }
-    .inbox-role[data-decision="amber"] { border-left-color: var(--utility-warning-400, #fdb022); }
-    .inbox-role[data-decision="red"]   { border-left-color: var(--utility-error-400, #f97066); }
-    .inbox-role.active { border-left-color: var(--color-fg-brand-primary, var(--accent)); } /* keep selected override last */
+    /* Decision colour bars removed (Step 7) — decision markers (✕/✓/○) now
+       surface decision state inline. Left border kept transparent for alignment.
+       Selected-row border still uses accent. */
+    .inbox-role.active { border-left-color: var(--color-fg-brand-primary, var(--accent)); }
 
     .inbox-company-unknown { color: var(--color-text-disabled, #a4a7ae); }
 
@@ -4261,6 +4398,368 @@
       transition: opacity 0.4s ease;
     }
 
+    /* ═══════════════════════════════════════════════════════════
+       ─── Unified JD Ingestion Overlay ───────────────────────────
+       Full-screen state that covers the entire app during JD input
+       and analysis processing. Shared by "Add JD" and "Unanalysed
+       Role" entry points.
+       ═══════════════════════════════════════════════════════════ */
+
+    /* Base overlay — fixed, full-screen, above everything */
+    .rw-ingestion-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9000;
+      background: var(--bg, #f8f9fb);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 32px 48px 48px;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+    .rw-ingestion-overlay[hidden] { display: none; }
+
+    /* Fade-in on show */
+    @keyframes rw-ing-fadein {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    /* Fade-out on dismiss */
+    @keyframes rw-ing-fadeout {
+      from { opacity: 1; }
+      to   { opacity: 0; }
+    }
+    .rw-ingestion-overlay:not([hidden]) {
+      animation: rw-ing-fadein 0.22s ease forwards;
+    }
+    .rw-ingestion-overlay--exit {
+      animation: rw-ing-fadeout 0.3s ease forwards;
+      pointer-events: none;
+    }
+
+    /* Logo — top-left, matches existing logo button style */
+    .rw-ing-logo {
+      position: absolute;
+      top: 24px;
+      left: 32px;
+      user-select: none;
+    }
+    .rw-ing-logo-svg {
+      height: 22px;
+      width: auto;
+      display: block;
+      color: var(--text, #181d27);
+    }
+    .rw-ing-tagline {
+      font-size: 11px;
+      color: var(--text-light, #9aa0ab);
+      letter-spacing: 0.01em;
+      margin-top: 3px;
+    }
+
+    /* ── Idle state layout ─────────────────────────────────── */
+    .rw-ing-idle {
+      width: 100%;
+      max-width: 580px;
+      margin: auto; /* vertical + horizontal centering within flex parent */
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .rw-ing-idle[hidden] { display: none; }
+
+    .rw-ing-intro {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .rw-ing-headline {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text, #181d27);
+      margin: 0;
+      line-height: 1.3;
+      letter-spacing: -0.025em;
+    }
+
+    .rw-ing-sub {
+      font-size: 14px;
+      color: var(--text-muted, var(--text-light));
+      margin: 0;
+      line-height: 1.5;
+    }
+
+    .rw-ing-input-area {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .rw-ing-textarea {
+      width: 100%;
+      min-height: 200px;
+      max-height: 360px;
+      resize: none;
+      border: 1px solid var(--border, #d5d9e0);
+      border-radius: var(--radius-md, 8px);
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text, #181d27);
+      background: var(--surface, #fff);
+      font-family: inherit;
+      outline: none;
+      box-sizing: border-box;
+      display: block;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 1px 3px rgba(10,13,18,0.06);
+    }
+    .rw-ing-textarea:focus {
+      border-color: var(--accent, #7f56d9);
+      box-shadow: 0 0 0 3px rgba(127,86,217,0.12);
+    }
+    .rw-ing-textarea::placeholder {
+      color: var(--text-light, #9aa0ab);
+    }
+
+    /* URL row — shown when user clicks "Add a URL" */
+    /* URL row, action buttons removed — single unified input (RW-INGESTION-SIMPLIFY) */
+
+    /* Cancel button */
+    .rw-ing-cancel-btn {
+      background: none;
+      border: none;
+      padding: 6px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted, #6b7280);
+      cursor: pointer;
+      font-family: inherit;
+      transition: color 0.15s ease;
+      margin-top: 4px;
+    }
+    .rw-ing-cancel-btn:hover {
+      color: var(--text, #181d27);
+    }
+
+    /* Submit row — revealed when textarea has content */
+    .rw-ing-submit-row {
+      display: flex;
+      align-items: center;
+      margin-top: 4px;
+    }
+    .rw-ing-submit-row[hidden] { display: none; }
+
+    .rw-ing-submit-btn {
+      padding: 10px 28px;
+      background: var(--text, #181d27);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md, 8px);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      letter-spacing: 0.01em;
+      transition: opacity 0.15s ease;
+    }
+    .rw-ing-submit-btn:hover { opacity: 0.8; }
+
+    /* Error line */
+    .rw-ing-error {
+      font-size: 13px;
+      color: var(--error, #b42318);
+      margin-top: -8px;
+    }
+    .rw-ing-error[hidden] { display: none; }
+
+    /* ── Processing state layout ───────────────────────────── */
+    /* The overlay is position:fixed, full-screen, flex column.
+       The processing div fills all remaining height after the logo
+       and splits into two equal halves:
+         top  → progress lines, pinned to the bottom of the top half (above screen centre)
+         bottom → context questions, pinned to the top of the bottom half (below screen centre) */
+    .rw-ing-processing {
+      width: 100%;
+      max-width: 580px;
+      flex: 1;        /* fill remaining overlay height */
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .rw-ing-processing[hidden] { display: none; }
+
+    /* Top half: progress lines anchor to the BOTTOM (just above screen centre) */
+    .rw-ing-progress-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding-bottom: 48px;
+    }
+
+    .rw-ing-progress-lines {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .rw-ing-timer {
+      margin-top: 16px;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-light, #9aa0ab);
+      letter-spacing: 0.02em;
+    }
+
+    /* ── Per-section AI enrichment indicator ─────────────────────────────── */
+    .rw-section-enriching {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 0 2px;
+      font-size: 11px;
+      color: var(--text-light, #9aa0ab);
+      opacity: 1;
+      transition: opacity 0.3s ease;
+    }
+
+    /* Legacy single indicator (kept for compat) */
+    .rw-enriching-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 0 6px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-light, #9aa0ab);
+      opacity: 1;
+      transition: opacity 0.3s ease;
+    }
+    .rw-enriching-dots {
+      display: inline-flex;
+      gap: 3px;
+      align-items: center;
+    }
+    .rw-enriching-dots span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent, #6c63ff);
+      opacity: 0.3;
+      animation: rw-enriching-bounce 1.2s ease-in-out infinite;
+    }
+    .rw-enriching-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .rw-enriching-dots span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes rw-enriching-bounce {
+      0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+      40% { opacity: 1; transform: translateY(-4px); }
+    }
+
+    /* ── Section update transition ────────────────────────────────────────── */
+    .rw-doc-section,
+    .rw-decision-block,
+    .rw-match-break {
+      transition: opacity 0.2s ease;
+    }
+    .rw-section-updating {
+      opacity: 0.15;
+    }
+
+    /* Legacy refining indicator (kept for compat) */
+    .rw-refining-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      font-size: 12px;
+      color: var(--text-light, #9aa0ab);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .rw-refining-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent, #6c63ff);
+      animation: rw-refining-pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes rw-refining-pulse {
+      0%, 100% { opacity: 0.3; transform: scale(0.85); }
+      50%      { opacity: 1;   transform: scale(1);    }
+    }
+
+    /* Each progress line — appended and stays, never replaced */
+    .rw-ing-progress-line {
+      font-size: 15px;
+      color: var(--text-light, #9aa0ab);
+      line-height: 1.45;
+      animation: rw-ing-line-appear 0.3s ease forwards;
+      opacity: 0;
+    }
+    .rw-ing-progress-line--active {
+      color: var(--text, #181d27);
+      font-weight: 500;
+    }
+    .rw-ing-progress-line--done {
+      color: var(--text-muted, var(--text-light));
+      font-weight: 400;
+    }
+
+    @keyframes rw-ing-line-appear {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Bottom half: context questions anchor to the TOP (just below screen centre) */
+    .rw-ing-context-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 16px;
+      padding-top: 40px;
+      border-top: 1px solid var(--border-light, #e8eaed);
+    }
+
+    .rw-ing-context-label {
+      font-size: 12px;
+      color: var(--text-light, #9aa0ab);
+      margin: 0;
+      letter-spacing: 0.01em;
+    }
+
+    .rw-ing-context-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .rw-ing-context-input {
+      width: 100%;
+      border: none;
+      border-bottom: 1px solid var(--border-light, #e2e4e9);
+      border-radius: 0;
+      padding: 8px 0;
+      font-size: 14px;
+      color: var(--text, #181d27);
+      background: transparent;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s ease;
+      box-sizing: border-box;
+    }
+    .rw-ing-context-input:focus {
+      border-bottom-color: var(--accent, #7f56d9);
+    }
+    .rw-ing-context-input::placeholder {
+      color: var(--text-light, #9aa0ab);
+      font-size: 13px;
+    }
+
     /* ─── Panel 3: Role overview body (scroll container) ─────── */
     #col-overview-body {
       flex: 1;
@@ -4301,6 +4800,15 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .rsh-company {
+      font-weight: 600;
+      color: var(--color-text-secondary, var(--text-muted));
+    }
+    .rsh-company + .rsh-details::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+    }
 
     /* ─── Panel 3a: Workflow rail — inline above cards ────────── */
     /* Sits flush with the overview background. Soft separator, not a panel edge.*/
@@ -4317,6 +4825,16 @@
       min-width: 0;
       min-height: 0;       /* allow flex child to shrink below content size */
       overflow: hidden;    /* prevent outer scroll — children scroll independently */
+    }
+    /* Legacy doc view: whole page scrolls (no independent card scrolling) */
+    #col-overview-cards.col-ov--legacy-doc {
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    /* In legacy doc mode the analysis wrap sits below col-center-inner in a
+       scrolling container — height: auto so it sizes to content, not viewport. */
+    #col-overview-cards.col-ov--legacy-doc > .rw-overview-wrap {
+      height: auto;
     }
 
     /* Padding wrapper for workspace-mode analysis card grid (no col-center-inner) */
@@ -4901,6 +5419,270 @@
     .doc-pa-btn--rejected {
       color: var(--text-muted);
     }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       APPLIED STATE  (RW-APPLIED-STATE-01)
+       Namespace: .as-*
+       Renders inside #doc-progressed-actions for roles past JD Review.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* ── Stage Timeline ───────────────────────────────────────────────────── */
+    .as-stage-timeline {
+      display: flex;
+      align-items: flex-start;
+      margin: 4px 0 20px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: none;
+    }
+    .as-stage-timeline::-webkit-scrollbar { display: none; }
+
+    .as-stage-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 0 0 auto;
+    }
+    .as-stage-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border);
+      background: var(--bg);
+      flex-shrink: 0;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .as-stage-node--done .as-stage-dot {
+      background: var(--text-muted);
+      border-color: var(--text-muted);
+    }
+    .as-stage-node--current .as-stage-dot {
+      background: var(--accent, #2563eb);
+      border-color: var(--accent, #2563eb);
+      width: 10px;
+      height: 10px;
+    }
+    .as-stage-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      white-space: nowrap;
+      text-align: center;
+    }
+    .as-stage-node--current .as-stage-label {
+      color: var(--text);
+      font-weight: 600;
+    }
+    /* Connector line between nodes; margin-top aligned with dot center */
+    .as-stage-connector {
+      flex: 1;
+      height: 1.5px;
+      background: var(--border);
+      margin: 3px 4px 0;
+      min-width: 8px;
+    }
+    .as-stage-connector--done {
+      background: var(--text-muted);
+    }
+
+    /* ── Action Block ─────────────────────────────────────────────────────── */
+    .as-action-block {
+      margin-bottom: 20px;
+    }
+    .as-action-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .as-action-btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .as-action-btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-weight: 500;
+      font-family: var(--font);
+      border-radius: var(--radius, 8px);
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text-light);
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+      white-space: nowrap;
+    }
+    .as-action-btn:hover {
+      background: var(--surface-raised, var(--surface));
+      border-color: var(--border-medium, var(--border));
+      color: var(--text);
+    }
+    .as-action-btn--rejected {
+      color: var(--text-muted);
+    }
+    .as-action-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    /* ── Prep Panel ───────────────────────────────────────────────────────── */
+    .as-prep-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md, 10px);
+      padding: 14px 16px;
+      margin-bottom: 20px;
+    }
+    .as-prep-heading {
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    .as-prep-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .as-prep-item {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.5;
+      padding-left: 14px;
+      position: relative;
+    }
+    .as-prep-item::before {
+      content: '·';
+      position: absolute;
+      left: 0;
+      color: var(--accent, #2563eb);
+      font-weight: 700;
+    }
+
+    /* ── Quick Context Row ────────────────────────────────────────────────── */
+    .as-quick-context {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 3px 0;
+      margin-bottom: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .as-quick-context a {
+      color: var(--text-muted);
+      text-decoration: underline;
+    }
+    .as-quick-context a:hover { color: var(--text); }
+    .as-qc-sep {
+      margin: 0 7px;
+      opacity: 0.4;
+    }
+
+    /* ── Rejection Flow ───────────────────────────────────────────────────── */
+    .as-rejection-flow {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md, 10px);
+      padding: 16px;
+      margin-bottom: 20px;
+      background: var(--surface);
+    }
+    .as-rejection-heading {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+    .as-rejection-sub {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+    .as-rejection-choice {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .as-rejection-btn {
+      padding: 5px 13px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: var(--radius, 8px);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      cursor: pointer;
+      color: var(--text-light);
+      font-family: var(--font);
+      transition: background 0.1s, color 0.1s;
+    }
+    .as-rejection-btn:hover {
+      background: var(--surface-raised, var(--surface));
+      color: var(--text);
+    }
+    .as-rejection-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .as-rejection-feedback-area {
+      margin-top: 12px;
+    }
+    .as-rejection-textarea {
+      display: block;
+      width: 100%;
+      min-height: 80px;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-family: var(--font);
+      border: 1px solid var(--border);
+      border-radius: var(--radius, 8px);
+      background: var(--bg);
+      color: var(--text);
+      resize: vertical;
+      margin-bottom: 8px;
+      box-sizing: border-box;
+    }
+    .as-rejection-textarea:focus {
+      outline: none;
+      border-color: var(--accent, #2563eb);
+    }
+    .as-rejection-textarea::placeholder { color: var(--text-muted); }
+    .as-rejection-submit {
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-weight: 500;
+      border-radius: var(--radius, 8px);
+      border: 1px solid var(--accent, #2563eb);
+      background: var(--accent, #2563eb);
+      color: #fff;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: opacity 0.1s;
+    }
+    .as-rejection-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .as-rejection-result {
+      margin-top: 12px;
+      padding: 12px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius, 8px);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .as-rejection-signal {
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 5px;
+    }
+    .as-rejection-takeaway { color: var(--text-muted); }
 
     /* ── Outcome form — rejection-specific extras ──────────────────────────── */
     /* Helper text below the "Role not selected" heading */
@@ -13924,7 +14706,7 @@
 .rw-rail-row {
   display: grid;
   grid-template-columns: 140px 1fr;
-  gap: 12px;
+  gap: var(--space-tight, 8px);
   align-items: start;
   padding: 6px 0;
 }
@@ -13964,7 +14746,7 @@
 
 /* ── Rail sections ────────────────────────────────────────────────────────── */
 .rw-rail-section {
-  margin-bottom: 48px;
+  margin-bottom: var(--space-section, 32px);
 }
 
 .rw-rail-section:last-child {
@@ -13972,14 +14754,13 @@
 }
 
 .rw-rail-h3 {
-  font-family: var(--font-head, var(--font));
-  font-size: 11px;
+  font-family: var(--font-head, 'Inter Tight', 'Inter', sans-serif);
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin: 0 0 8px 0; /* RW-SPACING: tight heading gap */
-  line-height: 1;
+  letter-spacing: 0.2px;
+  color: #1f2937;
+  margin: 0 0 var(--space-tight, 8px) 0;
+  line-height: 1.3;
 }
 
 /* ── Rail action buttons (Cover letter, CV Alignment) ─────────────────────── */

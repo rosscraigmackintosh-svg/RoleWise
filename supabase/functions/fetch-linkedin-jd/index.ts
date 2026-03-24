@@ -191,13 +191,46 @@ function parseVoyagerJob(
   // Apply URL
   const applyUrl = (data.jobPostingUrl as string) || `https://www.linkedin.com/jobs/view/${jobId}/`
 
-  // Company: from included items where $type contains "Company" and item has name
+  // ── Company: from included items ──────────────────────────────────────────
   let company: string | null = null
+  const companyMeta: Record<string, unknown> = {}
   for (const item of included) {
     const t = (item['$type'] as string) || ''
     if ((t.includes('Company') || t.includes('company')) && typeof item.name === 'string') {
       company = item.name
+      // Extract additional company context when available
+      companyMeta.website       = (item.websiteUrl as string) || (item.url as string) || null
+      companyMeta.industry      = (item.industryName as string) || null
+      companyMeta.employee_count = _staffRangeLabel(item.staffCountRange as Record<string, unknown> | undefined)
+      const cType = item.companyType as Record<string, unknown> | undefined
+      companyMeta.company_type  = (cType?.localizedName as string) || null
+      const foundedOn = item.foundedOn as Record<string, unknown> | undefined
+      companyMeta.founded       = foundedOn?.year ?? null
+      companyMeta.headquarters  = _formatHq(item.headquarter as Record<string, unknown> | undefined)
+      companyMeta.description   = (item.description as string) || null
+      const uName = item.universalName as string | undefined
+      companyMeta.linkedin_url  = uName ? `https://www.linkedin.com/company/${uName}/` : null
+      companyMeta.linkedin_id   = (item.entityUrn as string) || null
       break
+    }
+  }
+
+  // ── Job poster: from included MiniProfile entities ────────────────────────
+  let poster: Record<string, unknown> | null = null
+  for (const item of included) {
+    const t = (item['$type'] as string) || ''
+    if (t.includes('MiniProfile') && (item.firstName || item.lastName)) {
+      const fName = (item.firstName as string) || ''
+      const lName = (item.lastName  as string) || ''
+      if (fName || lName) {
+        const pubId = item.publicIdentifier as string | undefined
+        poster = {
+          name:        `${fName} ${lName}`.trim(),
+          title:       (item.occupation as string) || null,
+          profile_url: pubId ? `https://www.linkedin.com/in/${pubId}/` : null,
+        }
+        break
+      }
     }
   }
 
@@ -212,16 +245,87 @@ function parseVoyagerJob(
     salaryText = max ? `${min}–${max} ${curr}`.trim() : min ? `${min} ${curr}`.trim() : null
   }
 
+  // ── Additional structured fields ──────────────────────────────────────────
+  // Applicant count
+  const applicantsCount = typeof data.applies === 'number' ? data.applies : null
+
+  // Easy Apply detection
+  const applyMethod = data.applyMethod as Record<string, unknown> | undefined
+  const easyApply = !!(
+    applyMethod && (
+      ((applyMethod['$type'] as string) || '').includes('EasyApply') ||
+      applyMethod.easyApplyUrl != null
+    )
+  )
+
+  // Seniority level
+  const seniorityLevel = (data.formattedExperienceLevel as string) || null
+
+  // Job functions — may be on data or included
+  const rawJobFunctions = data.jobFunctions as Array<Record<string, unknown>> | undefined
+  const jobFunctions = Array.isArray(rawJobFunctions)
+    ? rawJobFunctions.map(f => (f.name as string) || (f.localizedName as string) || '').filter(Boolean)
+    : null
+
+  // Industries — from data.formattedIndustries or included
+  const rawIndustries = data.formattedIndustries as string[] | undefined
+  const industries = Array.isArray(rawIndustries) && rawIndustries.length ? rawIndustries : null
+
+  // Workplace type refinement (hybrid detection)
+  const workplaceTypes = data.workplaceTypes as string[] | undefined
+  let workModel = remote  // Start with simple boolean
+  if (!workModel && Array.isArray(workplaceTypes)) {
+    for (const wt of workplaceTypes) {
+      if (typeof wt === 'string') {
+        if (wt.includes('HYBRID')) { workModel = 'Hybrid'; break }
+        if (wt.includes('ON_SITE') || wt.includes('ONSITE')) { workModel = 'On-site'; break }
+      }
+    }
+  }
+
   return {
+    // ── Core fields (existing) ──────────────────────────────────────────────
     job_id:          jobId,
     linkedin_url:    applyUrl,
-    title:           rawTitle   || null,
-    company:         company    || null,
-    location:        location   || null,
-    description:     description || null,
-    salary_text:     salaryText || null,
-    employment_type: employmentType || null,
-    work_remote:     remote     || null,
-    posted_date:     postedDate || null,
+    title:           rawTitle        || null,
+    company:         company         || null,
+    location:        location        || null,
+    description:     description     || null,
+    salary_text:     salaryText      || null,
+    employment_type: employmentType  || null,
+    work_remote:     workModel       || null,
+    posted_date:     postedDate      || null,
+
+    // ── Expanded fields ─────────────────────────────────────────────────────
+    apply_url:         applyUrl,
+    applicants_count:  applicantsCount,
+    easy_apply:        easyApply,
+    seniority_level:   seniorityLevel,
+    posted_at_raw:     listedMs       || null,
+    job_functions:     jobFunctions,
+    industries:        industries,
+    company_meta:      Object.values(companyMeta).some(v => v != null) ? companyMeta : null,
+    poster:            poster,
   }
+}
+
+// ── Voyager included-object helpers ────────────────────────────────────────────
+
+function _staffRangeLabel(range: Record<string, unknown> | undefined): string | null {
+  if (!range) return null
+  const start = range.start as number | undefined
+  const end   = range.end   as number | undefined
+  if (start != null && end != null) return `${start.toLocaleString()}–${end.toLocaleString()}`
+  if (start != null) return `${start.toLocaleString()}+`
+  return null
+}
+
+function _formatHq(hq: Record<string, unknown> | undefined): string | null {
+  if (!hq) return null
+  const parts = [
+    hq.city as string,
+    hq.geographicArea as string,
+    hq.country as string,
+  ].filter(Boolean)
+  return parts.length ? parts.join(', ') : null
 }

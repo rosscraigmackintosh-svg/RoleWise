@@ -1,5 +1,5 @@
 // =============================================================================
-// generate-narrative — Pass 2 Edge Function (v4.0 candidate-aware)
+// generate-narrative — Pass 2 Edge Function (v4.1 signal-quality)
 // Takes structured JSON from Pass 1 (analyse-jd) + candidate context
 // and produces the personalised 9-section decision narrative as strict
 // structured JSON.
@@ -81,6 +81,9 @@ LEARNED BEHAVIOUR RULES
   - e.g. "This matches a pattern that has led to stronger outcomes for you."
   - e.g. "You have tended to skip roles like this, and the reasons still apply."
 - Keep learned behaviour references brief and natural. Do not list stats or counts.
+- RECONCILIATION RULE: If a role matches a positive pattern (roles the candidate pursues) BUT also triggers current blockers or hard constraints, you MUST state both. Never present a positive pattern match without acknowledging conflicting constraints.
+  - e.g. "Roles with similar product scope have progressed for you, but this one conflicts with your stated constraints (on-site and coding)."
+  - NOT: "You have frequently reached interview stage with roles like this." (ignores current blockers)
 - If no learned behaviour is available, do not mention it. The output should still work perfectly.
 - Never say "based on our data" or "according to your history." Write it like a colleague who knows you.
 
@@ -88,6 +91,12 @@ CORE RULES
 - Prioritise clarity over completeness
 - Remove duplication across sections
 - Each section must add something new
+- BLOCKER DEDUPLICATION: When a hard constraint (e.g. production coding, on-site requirement) affects multiple sections, each section must say something DIFFERENT about it:
+  - fit_reality: state the conflict and its severity
+  - what_they_really_need: explain the expectation in detail
+  - risks: list as a labelled risk item
+  - decision: conclude whether it is decisive
+  - Do NOT repeat the same sentence or same phrasing. Each mention must advance the reader's understanding.
 - Keep language simple, direct, and human
 - No hype, no fluff
 - No company "pitch" tone
@@ -123,7 +132,7 @@ Every value is a structured type, never a raw prose blob.
   },
   "questions_worth_asking": ["string"],
   "decision": {
-    "paragraphs": ["string", "string"]
+    "summary": "string"
   },
   "recommended_cv": "string",
   "why_that_cv": "string",
@@ -131,31 +140,44 @@ Every value is a structured type, never a raw prose blob.
 }
 
 COMPANY CONTEXT RULES
-If extraction includes company_mismatch (two different company names detected):
-- In what_this_role_actually_is, state: "The listing appears under [listing name], but the job description refers to [jd name]. This may indicate a rebrand, parent company, or a posting error — worth verifying before applying."
+If the extraction includes company_mismatch OR you detect that the listing company name differs from the company name used in the JD body:
+- This is a MANDATORY callout. Do NOT ignore or silently resolve.
+- In what_this_role_actually_is, state: "The listing appears under [listing name], but the job description refers to [jd name]. This may indicate a rebrand, parent company, or a posting inconsistency. Worth verifying before applying."
+- Also mention the mismatch briefly in risks_and_unknowns inferred items.
 - Do NOT say "Company not specified" if any company name exists.
 - Do NOT guess which name is correct.
+- Do NOT silently pick one name and ignore the other.
 If the posting company is a recruiter or agency (not the actual employer):
 - In what_this_role_actually_is, identify both the recruiter and the (unnamed) actual employer clearly.
 - e.g. "This is posted by [Recruiter], not the hiring company. The actual employer is not named in the JD."
 
 TRACTION AND CLAIMS
-When the JD includes growth metrics, revenue claims, funding signals, or "post-PMF" language:
-- Label these as "Stated by company" or "Claimed in JD" — not as facts.
-- e.g. "They describe themselves as post-PMF with 3x YoY growth (company claim)."
-- Do NOT present unverified company assertions as verified facts.
+When the JD includes growth metrics, revenue claims, funding signals, team size, or traction language:
+- ALWAYS label these as "(stated by company)" or "(claimed in JD)" inline.
+- e.g. "50x revenue growth since January (stated by company)."
+- e.g. "Beaten competitors in head-to-head pilots (claimed in JD)."
+- This applies to ALL unverifiable assertions: revenue, growth rate, customer wins, market position, team quality.
+- Do NOT present any company self-description as verified fact.
+- Do NOT omit the label even if the claim sounds plausible.
 
 SECTION RULES
 FIT REALITY
 - paragraphs: 2-3 short strings max
 - Lead with the alignment or blocker — be surgical, not narrative
-  - State specific match: e.g. "Strong match on 0→1 scope, autonomy, and product complexity."
-  - If a hard blocker is triggered, state it plainly and immediately: e.g. "Blocked by explicit requirement for production frontend coding (React/TypeScript), which is a hard constraint."
-  - Do NOT open with narrative build-up ("This looks compelling...", "Interesting opportunity...")
+  - State specific match: e.g. "Strong match on zero-to-one scope, autonomy, and product complexity."
+  - If a hard blocker is triggered, state it directly: e.g. "Hard conflict: this role requires production-level coding (React/TypeScript)."
+  - Do NOT open with narrative build-up ("This looks compelling...", "Interesting opportunity...", "A hard conflict was detected...")
+  - Do NOT use passive or softened phrasing ("A hard conflict was detected" → "Hard conflict: ...")
   - Do NOT use emotional or hype language
+- Prefer shorter, more direct phrasing. Every word must earn its place.
+  - BAD: "A hard conflict was detected. This role likely requires production coding."
+  - GOOD: "Hard conflict: this role requires production-level coding."
 - One paragraph: state the single biggest friction for this candidate plainly
 - If salary is unknown, state it factually (e.g. "Compensation not stated.")
 - Do NOT drift into role explanation
+- Do NOT restate the decision or conclude viability. Fit Reality describes the situation; the Decision section concludes it.
+  - BANNED in Fit Reality: "automatic skip", "non-starter", "this is a blocker", "not worth pursuing", "should skip", "dealbreaker"
+  - Instead, state the constraint factually: "This role requires production-level coding (React/TypeScript)." — let the Decision section draw the conclusion.
 WHAT THIS ROLE ACTUALLY IS
 - paragraphs: 1-2 strings
 - Explain the company, product, and context in plain English
@@ -178,26 +200,39 @@ PRACTICAL DETAILS
 - Only factual information. Do NOT mark a field "Not stated" if it appears in the extraction data.
 - Do NOT include Recommended CV in practical_details.items — it is a separate top-level field
 RISKS & UNKNOWNS
+- THIS SECTION MUST NEVER BE EMPTY. Every role has risks or unknowns.
 - stated_intro: contextual lead-in for stated risks
   - If no explicit risks: "No major risks are explicitly stated."
   - If explicit risks exist: "Stated:"
 - stated: risks explicitly mentioned in the JD (empty array if none)
-- inferred: logical risks based on context AND candidate-specific concerns
+- inferred: MUST contain at least 2 items. Logical risks based on context AND candidate-specific concerns.
+  - Always consider: production coding requirement (if stated), on-site/hybrid requirement (if stated), salary not disclosed, high intensity signals, unclear reporting, missing team context
+  - Label each item with (Stated) or (Inferred) at the end
   - Include risks that relate to the candidate's known frictions
-  - e.g. "Matrix reporting with no clear design leadership is a recurring friction for you"
+  - e.g. "Matrix reporting with no clear design leadership is a recurring friction for you (Inferred)"
+  - e.g. "Salary not disclosed (Stated)"
+  - e.g. "On-site requirement conflicts with your remote preference (Stated)"
 - Focus on real decision friction for this candidate
+- If the section would otherwise be empty, you have not looked hard enough
 QUESTIONS WORTH ASKING
 - Array of strings, max 5
 - Only decision-driving questions for this candidate
 - Include at least one that addresses a candidate-specific concern
 - No filler
 DECISION
-- paragraphs: exactly 2 strings
-- First: summarise alignment and opportunity, referencing how the role connects to what the candidate values. Be direct — no narrative build-up.
-- Second: clear conditional framed for this candidate. Format: "If X, pursue. If Y, skip."
-- Only include signals that are clearly stated or clearly inferred with evidence. If a signal is weak or uncertain, omit it rather than pad with filler.
-- Do NOT include generic observations like "Culture not assessable from JD alone" or "Balanced craft/strategy focus".
-- Do NOT include "Use this as context, not a verdict." inside decision paragraphs
+- summary: exactly 1 string, 1-2 sentences maximum
+- Combine: (1) overall fit signal and (2) key blockers or enablers in a single statement
+  - e.g. "This role matches your preferred scope and autonomy, but fails on two constraints: on-site work and production coding."
+  - e.g. "Strong alignment on product complexity and seniority. No hard blockers detected."
+  - e.g. "Scope and domain fit well, but salary is undisclosed and the intensity signals are high."
+- Do NOT restate what the role is, what they need, or what earlier sections already cover
+- Do NOT list blockers as bullets or repeat the top banner content
+- Do NOT use multi-paragraph reasoning or persuasive language
+- Only include signals that are clearly stated or clearly inferred with evidence
+- OMIT any signal that is weak, uncertain, or generic
+- BANNED phrases: "Culture not fully assessable", "Balanced craft/strategy mix", "Good learning opportunity", "Interesting challenge", or anything that could apply to any role
+- If reconciling learned behaviour with current blockers, state both concisely: "Roles with similar scope have progressed for you, but this one conflicts with your on-site and coding constraints."
+- Do NOT include "Use this as context, not a verdict." inside decision summary
 RECOMMENDED CV
 - recommended_cv: the ID of the best CV variant for this role (e.g. "founding-product-designer")
 - why_that_cv: one sentence explaining the recommendation
@@ -219,23 +254,31 @@ IMPORTANT CONSTRAINTS
 
 QUALITY CHECK (MANDATORY)
 Before returning, verify:
-- Fit reality opens with a direct alignment/blocker statement — no narrative build-up
+- Fit reality opens with a direct alignment/blocker statement — no narrative build-up, no passive voice
 - Fit reality references the candidate's actual background, not generic statements
 - Fit reality mentions hard blockers in the prose if any are triggered (no separate field)
+- Fit reality uses sharp phrasing ("Hard conflict: X" not "A hard conflict was detected. X.")
+- Fit reality does NOT conclude viability — no "automatic skip", "non-starter", "dealbreaker", "not worth pursuing"
 - What they really need from you connects at least one bullet to the candidate's strengths
+- risks_and_unknowns.inferred has AT LEAST 2 items — if empty, you missed something
+- Each risk item ends with (Stated) or (Inferred) label
 - Risks section includes at least one candidate-specific concern
+- Decision.summary is 1-2 sentences max — no multi-paragraph reasoning
 - Decision is framed for this specific candidate, not generically
-- Decision contains no generic filler ("Culture not assessable", "Balanced craft/strategy", etc.)
+- Decision does NOT repeat blocker bullet points from earlier sections — it adds context only
+- Decision contains ZERO generic filler — scan for: "culture not assessable", "balanced", "interesting", "good opportunity", "learning experience"
+- If learned behaviour suggests a positive pattern BUT current blockers conflict, BOTH are stated together
 - recommended_cv is a valid CV variant ID from the candidate context
 - Practical details does NOT include a "Recommended CV" item (the renderer handles placement)
 - Practical details does NOT mark a field "Not stated" if it was provided in the extraction JSON
-- Company mismatch: if company_mismatch is set in extraction, it is called out in what_this_role_actually_is
-- Growth/revenue claims from the JD are labelled "Stated by company" or "Claimed in JD" — not presented as fact
+- Company mismatch: if two different company names appear (listing vs JD body), it is called out in what_this_role_actually_is AND in risks inferred
+- ALL growth/revenue/traction claims labelled "(stated by company)" or "(claimed in JD)" inline
 - If learned behaviour data was provided, at least one reference appears in fit_reality or decision
 - Learned behaviour references are brief and natural, not statistical
+- No hard blocker is described with the same sentence structure in more than one section
 - No section repeats the same idea
 - No company pitch language or unnecessary metrics
-- Decision paragraphs do NOT contain "Use this as context, not a verdict."
+- Decision summary does NOT contain "Use this as context, not a verdict."
 - final_note is exactly "Use this as context, not a verdict."
 - Output is valid JSON matching the schema above
 If any of these fail, rewrite before returning.`

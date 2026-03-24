@@ -208,6 +208,11 @@
   --spacing-xl:  16px;    /* spacing-xl   */
   --spacing-2xl: 24px;    /* spacing-2xl  */
 
+  /* Semantic spacing — vertical rhythm across all panels */
+  --space-section: 32px;  /* Between major sections / cards */
+  --space-block:   16px;  /* Between content blocks within a section */
+  --space-tight:    8px;  /* Between tightly related elements */
+
   /* Legacy aliases (used throughout styles.css) */
 
 
