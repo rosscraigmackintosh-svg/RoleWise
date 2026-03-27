@@ -1,0 +1,88 @@
+/* =============================================================================
+   role-analysis.css — Role Analysis UI hierarchy refinement
+   Scope: overrides for .rw-doc-* and #section-* within the role analysis view
+   Reads from: app/styles.css (base), app/design-system/tokens.css (tokens)
+   Writes to: /design/role-analysis.css ONLY
+   ============================================================================= */
+
+/* ── 1. GLOBAL SECTION DENSITY ────────────────────────────────────────────────
+   Tighten the default 32px gap between all sections.
+   Base rule in styles.css: .rw-doc-section { margin-top: var(--space-section, 32px) }
+   ----------------------------------------------------------------------------- */
+.rw-doc-section {
+  margin-top: 24px;
+}
+
+.rw-doc-section:first-child {
+  margin-top: 0;
+}
+
+/* ── 2. GLOBAL BULLET DENSITY ─────────────────────────────────────────────────
+   Reduce default li gap from 6px → 4px across all sections.
+   Base rule in styles.css: .rw-doc-bullets li { margin-bottom: 6px }
+   ----------------------------------------------------------------------------- */
+.rw-doc-bullets li {
+  margin-bottom: 4px;
+}
+
+/* ── 3. LEVEL 1 — FIT REALITY SUMMARY ────────────────────────────────────────
+   Highest importance block. Pulled closer to the decision block above it,
+   larger heading, slightly larger prose, tightest bullet spacing.
+   ----------------------------------------------------------------------------- */
+
+/* Pull closer to whatever precedes it — it reads as part of the same answer */
+#section-fit-reality {
+  margin-top: 16px;
+}
+
+/* Heading: largest on the page, full weight */
+#section-fit-reality .rw-doc-h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 10px;
+}
+
+/* Prose: slightly larger than base 14px for primary reading comfort */
+#section-fit-reality .rw-doc-prose {
+  font-size: 14.5px;
+}
+
+/* Bullets: tightest spacing — dense, scannable */
+#section-fit-reality .rw-doc-bullets li {
+  font-size: 14.5px;
+  margin-bottom: 4px;
+}
+
+/* ── 4. LEVEL 1 — RISKS & UNKNOWNS ───────────────────────────────────────────
+   High importance, neutral tone. Slightly stronger heading than L2.
+   Tightest bullet gap on the page — built for fast vertical scanning.
+   ----------------------------------------------------------------------------- */
+
+#section-risks-unknowns .rw-doc-h2 {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 10px;
+}
+
+/* Tightest bullets — each item is a discrete signal, not flowing prose */
+#section-risks-unknowns .rw-doc-bullets li {
+  margin-bottom: 3px;
+}
+
+/* ── 5. LEVEL 3 — PRACTICAL DETAILS & QUESTIONS ──────────────────────────────
+   Supporting information. De-prioritised visually without hiding content.
+   Uppercase label style signals "metadata / reference" rather than "insight".
+   Base heading in styles.css: font-size 15px / font-weight 600 / color #1f2937
+   ----------------------------------------------------------------------------- */
+
+#section-practical-details .rw-doc-h2,
+#section-questions .rw-doc-h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
