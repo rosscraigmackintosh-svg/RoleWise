@@ -7513,6 +7513,69 @@
     }
     .pref-check input { cursor: pointer; accent-color: var(--text); margin-top: 3px; flex-shrink: 0; }
 
+    /* ─── Job preferences extended ─────────────────────────── */
+    .pref-checkbox-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px 16px;
+      margin-top: 6px;
+    }
+
+    /* Reveal fields: indented sub-options connected to the checkbox above */
+    .pref-reveal {
+      padding-left: 12px;
+      margin-top: 2px;
+      margin-bottom: 4px;
+      border-left: 2px solid var(--border-light);
+    }
+
+    .pref-deal-breaker-list { display: flex; flex-direction: column; gap: 6px; min-height: 4px; }
+    .pref-deal-breaker-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: var(--bg-subtle, #f9fafb);
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .pref-deal-breaker-text { flex: 1; }
+    .pref-deal-breaker-remove {
+      background: none; border: none; cursor: pointer;
+      font-size: 16px; line-height: 1; color: var(--text-light);
+      padding: 0 2px; flex-shrink: 0;
+    }
+    .pref-deal-breaker-remove:hover { color: var(--text); }
+
+    .pref-stage-list { display: flex; flex-direction: column; gap: 6px; }
+    .pref-stage-row {
+      display: flex; align-items: center;
+      justify-content: space-between; gap: 12px;
+      padding: 8px 0; border-bottom: 1px solid var(--border-light);
+    }
+    .pref-stage-row:last-child { border-bottom: none; }
+    .pref-stage-label { font-size: 13px; color: var(--text); flex: 1; }
+    .pref-strength-pills { display: flex; gap: 4px; }
+    .pref-strength-pill {
+      font-size: 12px; padding: 3px 0; border-radius: 20px;
+      border: 1px solid var(--border-light);
+      background: var(--bg-subtle, #f9fafb);
+      color: var(--text-light); cursor: pointer; white-space: nowrap;
+      min-width: 66px; text-align: center;
+    }
+    .pref-strength-pill:hover { border-color: var(--text-light); color: var(--text); }
+    .pref-strength-pill--active { font-weight: 600; }
+    .pref-strength-pill--ideal.pref-strength-pill--active  { background:#ecfdf5; border-color:#6ee7b7; color:#065f46; }
+    .pref-strength-pill--open.pref-strength-pill--active   { background:#eff6ff; border-color:#93c5fd; color:#1e40af; }
+    .pref-strength-pill--avoid.pref-strength-pill--active  { background:#fef2f2; border-color:#fca5a5; color:#991b1b; }
+
+    [data-theme="dark"] .pref-strength-pill--ideal.pref-strength-pill--active  { background:#064e3b; border-color:#34d399; color:#a7f3d0; }
+    [data-theme="dark"] .pref-strength-pill--open.pref-strength-pill--active   { background:#1e3a5f; border-color:#60a5fa; color:#bfdbfe; }
+    [data-theme="dark"] .pref-strength-pill--avoid.pref-strength-pill--active  { background:#7f1d1d; border-color:#f87171; color:#fecaca; }
+
     .cv-empty {
       font-size: 13px;
       color: var(--text-light);

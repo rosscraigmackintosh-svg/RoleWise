@@ -13085,6 +13085,79 @@
     }
 
     // ─── Profile preferences persistence ──────────────────────────────────────
+    // ─── Job Preferences shared state ─────────────────────────────────────────
+    var _dealBreakersArr  = [];
+    var _companyStagesMap = {};
+
+    var _COMPANY_STAGES = [
+      { value: 'early-startup', label: 'Early-stage startup' },
+      { value: 'growth',        label: 'Growth-stage' },
+      { value: 'scale-up',      label: 'Scale-up' },
+      { value: 'enterprise',    label: 'Enterprise / Corporate' },
+      { value: 'nfp',           label: 'Not-for-profit' },
+      { value: 'agency',        label: 'Consultancy / Agency' },
+    ];
+
+    function _syncWorkModelReveals() {
+      var _wms = Array.from(document.querySelectorAll('input[name="pref-wm"]:checked')).map(function(cb) { return cb.value; });
+      var _hybridReveal = document.getElementById('reveal-hybrid');
+      var _offLocReveal = document.getElementById('reveal-office-location');
+      if (_hybridReveal) _hybridReveal.style.display = _wms.includes('hybrid') ? '' : 'none';
+      if (_offLocReveal) _offLocReveal.style.display = (_wms.includes('hybrid') || _wms.includes('on-site')) ? '' : 'none';
+    }
+
+    function _renderDealBreakers() {
+      var listEl = document.getElementById('pref-deal-breaker-list');
+      if (!listEl) return;
+      if (_dealBreakersArr.length === 0) {
+        listEl.innerHTML = '<p style="font-size:12.5px;color:var(--text-muted);margin:0;">None added yet.</p>';
+        return;
+      }
+      listEl.innerHTML = _dealBreakersArr.map(function(item, idx) {
+        return '<div class="pref-deal-breaker-item">' +
+          '<span class="pref-deal-breaker-text">' + esc(item) + '</span>' +
+          '<button class="pref-deal-breaker-remove" data-idx="' + idx + '" type="button" aria-label="Remove">\xd7</button>' +
+        '</div>';
+      }).join('');
+      listEl.querySelectorAll('.pref-deal-breaker-remove').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          _dealBreakersArr.splice(parseInt(btn.dataset.idx, 10), 1);
+          _renderDealBreakers();
+        });
+      });
+    }
+
+    function _renderCompanyStages() {
+      var listEl = document.getElementById('pref-stage-list');
+      if (!listEl) return;
+      listEl.innerHTML = _COMPANY_STAGES.map(function(s) {
+        var cur = _companyStagesMap[s.value] || null;
+        return '<div class="pref-stage-row">' +
+          '<span class="pref-stage-label">' + esc(s.label) + '</span>' +
+          '<div class="pref-strength-pills">' +
+            ['ideal', 'open', 'avoid'].map(function(str) {
+              var isActive = cur === str;
+              var cls = 'pref-strength-pill' + (isActive ? ' pref-strength-pill--active pref-strength-pill--' + str : '');
+              var lbl = str === 'ideal' ? 'Ideal' : str === 'open' ? 'Open to' : 'Avoid';
+              return '<button class="' + cls + '" data-stage="' + s.value + '" data-strength="' + str + '" type="button">' + lbl + '</button>';
+            }).join('') +
+          '</div>' +
+        '</div>';
+      }).join('');
+      listEl.querySelectorAll('.pref-strength-pill').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var stage    = btn.dataset.stage;
+          var strength = btn.dataset.strength;
+          if (_companyStagesMap[stage] === strength) {
+            delete _companyStagesMap[stage];
+          } else {
+            _companyStagesMap[stage] = strength;
+          }
+          _renderCompanyStages();
+        });
+      });
+    }
+
     async function loadOrCreateProfile() {
       // Try to fetch the single existing profile row
       const { data, error } = await db
@@ -13097,10 +13170,24 @@
 
       // No profile yet — create one with default values
       const defaults = {
-        work_model:    'unsure',
-        location:      '',
-        contract_type: 'either',
-        hard_rules:    { production_coding_hard_no: false },
+        display_name:      '',
+        location:          '',
+        work_models:       [],
+        hybrid_max_days:   null,
+        office_location:   '',
+        employment_types:  [],
+        salary_min:        null,
+        day_rate:          null,
+        ir35_status:       'na',
+        days_per_month:    20,
+        deal_breakers:     [],
+        company_stages:    [],
+        seniority:         [],
+        domains:           [],
+        product_maturity:  [],
+        work_more:         '',
+        work_less:         '',
+        role_preference_note: '',
       };
       const { data: created, error: createErr } = await db
         .from('profiles')
@@ -13132,38 +13219,82 @@
         }
       }
 
-      // Work model radio
-      const wmVal = prefs.work_model || 'unsure';
-      const wmEl  = document.querySelector(`input[name="pref-work-model"][value="${wmVal}"]`);
-      if (wmEl) wmEl.checked = true;
-
       // Location text
       const locEl = document.getElementById('pref-location');
       if (locEl) locEl.value = prefs.location || '';
 
-      // Role preference free-text note
-      const noteEl = document.getElementById('pref-role-note');
-      if (noteEl) noteEl.value = prefs.role_preference_note || '';
+      // Work model — multi-select checkboxes; backward-compatible with old single value
+      const _wmVals = Array.isArray(prefs.work_models)
+        ? prefs.work_models
+        : (prefs.work_model && prefs.work_model !== 'unsure' ? [prefs.work_model] : []);
+      document.querySelectorAll('input[name="pref-wm"]').forEach(function(cb) {
+        cb.checked = _wmVals.includes(cb.value);
+      });
+      _syncWorkModelReveals();
 
-      // Contract type radio
-      const ctVal = prefs.contract_type || 'either';
-      const ctEl  = document.querySelector(`input[name="pref-contract"][value="${ctVal}"]`);
-      if (ctEl) ctEl.checked = true;
+      // Hybrid max days / office location
+      const _hybridDaysEl = document.getElementById('pref-hybrid-max-days');
+      if (_hybridDaysEl && prefs.hybrid_max_days) _hybridDaysEl.value = prefs.hybrid_max_days;
+      const _offLocEl = document.getElementById('pref-office-location');
+      if (_offLocEl) _offLocEl.value = prefs.office_location || '';
 
-      // Hard rule checkbox
-      const noCodingEl = document.querySelector('input[name="pref-rule-no-coding"]');
-      if (noCodingEl) noCodingEl.checked = !!(prefs.hard_rules?.production_coding_hard_no);
+      // Employment type — multi-select; backward-compatible with old contract_type
+      const _empVals = Array.isArray(prefs.employment_types)
+        ? prefs.employment_types
+        : (prefs.contract_type === 'contract' ? ['contract'] : prefs.contract_type === 'perm' ? ['permanent'] : []);
+      document.querySelectorAll('input[name="pref-emp-type"]').forEach(function(cb) {
+        cb.checked = _empVals.includes(cb.value);
+      });
 
-      // Contract baseline fields
+      // Compensation
+      const _salMinEl = document.getElementById('pref-salary-min');
+      if (_salMinEl && prefs.salary_min) _salMinEl.value = prefs.salary_min;
       const drEl = document.getElementById('pref-day-rate');
       if (drEl && prefs.day_rate) drEl.value = prefs.day_rate;
-
       const ir35Val = prefs.ir35_status || 'na';
       const ir35El  = document.querySelector(`input[name="pref-ir35"][value="${ir35Val}"]`);
       if (ir35El) ir35El.checked = true;
-
       const dpmEl = document.getElementById('pref-days-per-month');
       if (dpmEl && prefs.days_per_month) dpmEl.value = prefs.days_per_month;
+
+      // Deal-breakers
+      _dealBreakersArr = Array.isArray(prefs.deal_breakers) ? prefs.deal_breakers.slice() : [];
+      _renderDealBreakers();
+
+      // Company stage preferences
+      _companyStagesMap = {};
+      if (Array.isArray(prefs.company_stages)) {
+        prefs.company_stages.forEach(function(s) { if (s.stage && s.strength) _companyStagesMap[s.stage] = s.strength; });
+      }
+      _renderCompanyStages();
+
+      // Seniority multi-select
+      const _senVals = Array.isArray(prefs.seniority) ? prefs.seniority : [];
+      document.querySelectorAll('input[name="pref-seniority"]').forEach(function(cb) {
+        cb.checked = _senVals.includes(cb.value);
+      });
+
+      // Domain multi-select
+      const _domVals = Array.isArray(prefs.domains) ? prefs.domains : [];
+      document.querySelectorAll('input[name="pref-domain"]').forEach(function(cb) {
+        cb.checked = _domVals.includes(cb.value);
+      });
+
+      // Product maturity multi-select
+      const _matVals = Array.isArray(prefs.product_maturity) ? prefs.product_maturity : [];
+      document.querySelectorAll('input[name="pref-maturity"]').forEach(function(cb) {
+        cb.checked = _matVals.includes(cb.value);
+      });
+
+      // Work more / less
+      const _workMoreEl = document.getElementById('pref-work-more');
+      if (_workMoreEl) _workMoreEl.value = prefs.work_more || '';
+      const _workLessEl = document.getElementById('pref-work-less');
+      if (_workLessEl) _workLessEl.value = prefs.work_less || '';
+
+      // Personal context note
+      const noteEl = document.getElementById('pref-role-note');
+      if (noteEl) noteEl.value = prefs.role_preference_note || '';
     }
 
     async function savePreferences() {
@@ -13177,21 +13308,34 @@
 
       try {
         // Build the JSON object from current form state
-        const _rawDayRate  = parseFloat(document.getElementById('pref-day-rate')?.value);
-        const _rawDpm      = parseFloat(document.getElementById('pref-days-per-month')?.value);
+        const _rawDayRate    = parseFloat(document.getElementById('pref-day-rate')?.value);
+        const _rawDpm        = parseFloat(document.getElementById('pref-days-per-month')?.value);
+        const _rawSalMin     = parseFloat(document.getElementById('pref-salary-min')?.value);
+        const _hybridMaxDays = parseInt(document.getElementById('pref-hybrid-max-days')?.value) || null;
         const preferences_json = {
-          display_name:  document.getElementById('pref-display-name')?.value.trim() || '',
-          work_model:    document.querySelector('input[name="pref-work-model"]:checked')?.value || 'unsure',
-          location:      document.getElementById('pref-location')?.value.trim() || '',
-          contract_type: document.querySelector('input[name="pref-contract"]:checked')?.value || 'either',
-          hard_rules: {
-            production_coding_hard_no: !!(document.querySelector('input[name="pref-rule-no-coding"]')?.checked),
-          },
-          // Contract baseline
+          display_name:    document.getElementById('pref-display-name')?.value.trim() || '',
+          location:        document.getElementById('pref-location')?.value.trim() || '',
+          // Work preferences
+          work_models:      Array.from(document.querySelectorAll('input[name="pref-wm"]:checked')).map(function(cb) { return cb.value; }),
+          hybrid_max_days:  (_hybridMaxDays > 0) ? _hybridMaxDays : null,
+          office_location:  document.getElementById('pref-office-location')?.value.trim() || '',
+          employment_types: Array.from(document.querySelectorAll('input[name="pref-emp-type"]:checked')).map(function(cb) { return cb.value; }),
+          // Compensation
+          salary_min:     (_rawSalMin > 0) ? _rawSalMin : null,
           day_rate:       (_rawDayRate > 0) ? _rawDayRate : null,
           ir35_status:    document.querySelector('input[name="pref-ir35"]:checked')?.value || 'na',
           days_per_month: (_rawDpm > 0) ? _rawDpm : 20,
-          // Free-text role preference note
+          // Boundaries
+          deal_breakers: _dealBreakersArr.slice(),
+          // Company preferences
+          company_stages: Object.keys(_companyStagesMap).map(function(k) { return { stage: k, strength: _companyStagesMap[k] }; }),
+          // Role preferences
+          seniority:        Array.from(document.querySelectorAll('input[name="pref-seniority"]:checked')).map(function(cb) { return cb.value; }),
+          domains:          Array.from(document.querySelectorAll('input[name="pref-domain"]:checked')).map(function(cb) { return cb.value; }),
+          product_maturity: Array.from(document.querySelectorAll('input[name="pref-maturity"]:checked')).map(function(cb) { return cb.value; }),
+          work_more:        document.getElementById('pref-work-more')?.value.trim() || '',
+          work_less:        document.getElementById('pref-work-less')?.value.trim() || '',
+          // Personal context
           role_preference_note: document.getElementById('pref-role-note')?.value || '',
         };
 
@@ -13263,83 +13407,153 @@
             </div>
           </div>
 
-          <!-- B: Preferences ─────────────────────────────── -->
-          <div class="doc-section">
-            <div class="doc-section-heading">Preferences</div>
+          <!-- B: Work Preferences ─────────────────────────── -->
+          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+            <div class="doc-section-heading">Work Preferences</div>
 
             <div class="field-group" style="margin-bottom:18px;">
-              <div class="field-label">Work model</div>
-              <div class="pref-radio-group">
-                <label class="pref-radio"><input type="radio" name="pref-work-model" value="remote"> Remote</label>
-                <label class="pref-radio"><input type="radio" name="pref-work-model" value="hybrid"> Hybrid</label>
-                <label class="pref-radio"><input type="radio" name="pref-work-model" value="onsite"> On-site</label>
-                <label class="pref-radio"><input type="radio" name="pref-work-model" value="unsure" checked> Unsure</label>
+              <div class="field-label">Work model <span class="opt">(select all that apply)</span></div>
+              <div class="pref-check-group pref-checkbox-grid">
+                <label class="pref-check"><input type="checkbox" name="pref-wm" value="remote"> Remote</label>
+                <label class="pref-check"><input type="checkbox" name="pref-wm" value="hybrid"> Hybrid</label>
+                <label class="pref-check"><input type="checkbox" name="pref-wm" value="on-site"> On-site</label>
               </div>
             </div>
 
-            <div class="field-group" style="margin-bottom:18px;">
-              <label class="field-label" for="pref-location">Location</label>
-              <input class="field-input" id="pref-location" type="text" placeholder="e.g. London, UK or Remote">
+            <div class="pref-reveal" id="reveal-hybrid" style="display:none;">
+              <div class="field-group" style="margin-bottom:14px;">
+                <label class="field-label" for="pref-hybrid-max-days">Maximum office days per week</label>
+                <input class="field-input" id="pref-hybrid-max-days" type="number" min="1" max="5" placeholder="e.g. 2" style="max-width:100px;">
+              </div>
             </div>
 
-            <div class="field-group" style="margin-bottom:18px;">
-              <div class="field-label">Contract vs Perm</div>
-              <div class="pref-radio-group">
-                <label class="pref-radio"><input type="radio" name="pref-contract" value="contract"> Contract</label>
-                <label class="pref-radio"><input type="radio" name="pref-contract" value="perm"> Perm</label>
-                <label class="pref-radio"><input type="radio" name="pref-contract" value="either" checked> Either</label>
+            <div class="pref-reveal" id="reveal-office-location" style="display:none;">
+              <div class="field-group" style="margin-bottom:18px;">
+                <label class="field-label" for="pref-office-location">Preferred office location</label>
+                <input class="field-input" id="pref-office-location" type="text" placeholder="e.g. London, City or Canary Wharf">
               </div>
             </div>
 
             <div class="field-group">
-              <div class="field-label">Hard rules</div>
-              <div class="pref-check-group">
-                <label class="pref-check">
-                  <input type="checkbox" name="pref-rule-no-coding">
-                  <span>Production coding required = hard no</span>
-                </label>
+              <div class="field-label">Employment type <span class="opt">(select all that apply)</span></div>
+              <div class="pref-check-group pref-checkbox-grid">
+                <label class="pref-check"><input type="checkbox" name="pref-emp-type" value="permanent"> Permanent</label>
+                <label class="pref-check"><input type="checkbox" name="pref-emp-type" value="contract"> Contract</label>
               </div>
             </div>
-
-            <!-- Contract baseline sub-section -->
-            <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border-light);">
-              <div style="font-size:11px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:var(--text-muted);margin-bottom:14px;">Contract baseline</div>
-              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">Used to calculate compensation context when reviewing role analysis.</div>
-
-              <div class="field-group" style="margin-bottom:16px;">
-                <label class="field-label" for="pref-day-rate">Day rate <span class="opt">(£/day)</span></label>
-                <input class="field-input" id="pref-day-rate" type="number" placeholder="e.g. 550" min="0" style="max-width:160px;">
-              </div>
-
-              <div class="field-group" style="margin-bottom:16px;">
-                <div class="field-label">IR35 status</div>
-                <div class="pref-radio-group">
-                  <label class="pref-radio"><input type="radio" name="pref-ir35" value="outside"> Outside IR35</label>
-                  <label class="pref-radio"><input type="radio" name="pref-ir35" value="inside"> Inside IR35</label>
-                  <label class="pref-radio"><input type="radio" name="pref-ir35" value="na" checked> Not applicable</label>
-                </div>
-              </div>
-
-              <div class="field-group">
-                <label class="field-label" for="pref-days-per-month">Days per month <span class="opt">(default 20)</span></label>
-                <input class="field-input" id="pref-days-per-month" type="number" placeholder="20" min="1" max="31" style="max-width:120px;">
-              </div>
-            </div>
-
-            <div id="pref-save-error" class="inline-error hidden" style="margin-top:16px;"></div>
-            <div style="display:flex;align-items:center;gap:14px;margin-top:20px;">
-              <button class="btn-primary" id="btn-save-prefs">Save preferences</button>
-              <span id="pref-save-confirm" style="font-size:12.5px;color:var(--text-muted);"></span>
-            </div>
-            <span id="pref-profile-id" data-id="" style="display:none;"></span>
           </div>
 
-          <!-- C: What I want from a role ─────────────────── -->
-          <div class="doc-section" style="margin-top:32px; padding-top:28px; border-top:1px solid var(--border-light);">
-            <div class="doc-section-heading">What I want from a role</div>
-            <p class="pref-context-note" style="margin-bottom:12px;">Write a few lines about the kind of work, environment, constraints, and opportunities that matter to you. Rolewise can use this as personal context when reviewing roles.</p>
+          <!-- C: Compensation ─────────────────────────────── -->
+          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+            <div class="doc-section-heading">Compensation</div>
+
+            <div class="field-group" style="margin-bottom:16px;">
+              <label class="field-label" for="pref-salary-min">Minimum salary <span class="opt">(£/year, permanent)</span></label>
+              <input class="field-input" id="pref-salary-min" type="number" placeholder="e.g. 90000" min="0" style="max-width:160px;">
+            </div>
+
+            <div class="field-group" style="margin-bottom:16px;">
+              <label class="field-label" for="pref-day-rate">Day rate <span class="opt">(£/day, contract)</span></label>
+              <input class="field-input" id="pref-day-rate" type="number" placeholder="e.g. 550" min="0" style="max-width:160px;">
+            </div>
+
+            <div class="field-group" style="margin-bottom:16px;">
+              <div class="field-label">IR35 status</div>
+              <div class="pref-radio-group">
+                <label class="pref-radio"><input type="radio" name="pref-ir35" value="outside"> Outside IR35</label>
+                <label class="pref-radio"><input type="radio" name="pref-ir35" value="inside"> Inside IR35</label>
+                <label class="pref-radio"><input type="radio" name="pref-ir35" value="na" checked> Not applicable</label>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="pref-days-per-month">Days per month <span class="opt">(default 20, contract)</span></label>
+              <input class="field-input" id="pref-days-per-month" type="number" placeholder="20" min="1" max="31" style="max-width:160px;">
+            </div>
+          </div>
+
+          <!-- D: Boundaries and Deal-Breakers ──────────────── -->
+          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+            <div class="doc-section-heading">Boundaries and Deal-Breakers</div>
+            <p class="pref-context-note" style="margin-bottom:16px;">What would make a role an automatic no? Add anything here — requirements, conditions, or working styles you won&#39;t accept.</p>
+            <div id="pref-deal-breaker-list" class="pref-deal-breaker-list"></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+              <input class="field-input" id="pref-deal-breaker-input" type="text" placeholder="e.g. Requires production coding" style="flex:1;max-width:340px;" autocomplete="off">
+              <button class="btn-ghost" id="btn-add-deal-breaker" type="button" style="height:39px;padding-top:0;padding-bottom:0;align-self:center;">Add</button>
+            </div>
+          </div>
+
+          <!-- E: Company Preferences ──────────────────────── -->
+          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+            <div class="doc-section-heading">Company Preferences</div>
+            <p class="pref-context-note" style="margin-bottom:16px;">Mark each company stage as Ideal, Open to, or Avoid to help Rolewise understand where you fit best.</p>
+            <div id="pref-stage-list" class="pref-stage-list"></div>
+          </div>
+
+          <!-- F: Role Preferences ──────────────────────────── -->
+          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+            <div class="doc-section-heading">Role Preferences</div>
+
+            <div class="field-group" style="margin-bottom:18px;">
+              <div class="field-label">Seniority level <span class="opt">(select all that apply)</span></div>
+              <div class="pref-check-group pref-checkbox-grid">
+                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="lead"> Lead</label>
+                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="principal"> Principal</label>
+                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="head"> Head of</label>
+                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="director"> Director</label>
+                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="vp"> VP</label>
+                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="cxo"> C-suite</label>
+              </div>
+            </div>
+
+            <div class="field-group" style="margin-bottom:18px;">
+              <div class="field-label">Domains <span class="opt">(select all that apply)</span></div>
+              <div class="pref-check-group pref-checkbox-grid">
+                <label class="pref-check"><input type="checkbox" name="pref-domain" value="b2b-saas"> B2B SaaS</label>
+                <label class="pref-check"><input type="checkbox" name="pref-domain" value="consumer"> Consumer</label>
+                <label class="pref-check"><input type="checkbox" name="pref-domain" value="fintech"> Fintech</label>
+                <label class="pref-check"><input type="checkbox" name="pref-domain" value="healthtech"> HealthTech</label>
+                <label class="pref-check"><input type="checkbox" name="pref-domain" value="edtech"> EdTech</label>
+                <label class="pref-check"><input type="checkbox" name="pref-domain" value="ecommerce"> E-commerce</label>
+                <label class="pref-check"><input type="checkbox" name="pref-domain" value="enterprise"> Enterprise</label>
+                <label class="pref-check"><input type="checkbox" name="pref-domain" value="marketplace"> Marketplace</label>
+              </div>
+            </div>
+
+            <div class="field-group" style="margin-bottom:18px;">
+              <div class="field-label">Product maturity <span class="opt">(select all that apply)</span></div>
+              <div class="pref-check-group">
+                <label class="pref-check"><input type="checkbox" name="pref-maturity" value="building"> Building from scratch (0→1)</label>
+                <label class="pref-check"><input type="checkbox" name="pref-maturity" value="scaling"> Scaling an existing product</label>
+                <label class="pref-check"><input type="checkbox" name="pref-maturity" value="mature"> Mature / optimisation</label>
+              </div>
+            </div>
+
+            <div class="field-group" style="margin-bottom:14px;">
+              <label class="field-label" for="pref-work-more">Work I want more of</label>
+              <input class="field-input" id="pref-work-more" type="text" placeholder="e.g. Strategy, discovery, cross-functional alignment">
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="pref-work-less">Work I want less of</label>
+              <input class="field-input" id="pref-work-less" type="text" placeholder="e.g. Delivery management, status reporting">
+            </div>
+          </div>
+
+          <!-- G: Personal Context ──────────────────────────── -->
+          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+            <div class="doc-section-heading">Personal Context</div>
+            <p class="pref-context-note" style="margin-bottom:12px;">Write a few lines about the kind of work, environment, constraints, and opportunities that matter to you. Rolewise uses this as context when reviewing roles.</p>
             <textarea class="pref-role-note-textarea" id="pref-role-note" placeholder="e.g. I prefer complex B2B SaaS products. I want high ownership and strong product collaboration. Outside IR35 contract work is ideal, but I&#39;m open to strong permanent roles…" spellcheck="true"></textarea>
           </div>
+
+          <!-- Save row -->
+          <div id="pref-save-error" class="inline-error hidden" style="margin-top:20px;"></div>
+          <div style="display:flex;align-items:center;gap:14px;margin-top:20px;margin-bottom:8px;">
+            <button class="btn-primary" id="btn-save-prefs">Save preferences</button>
+            <span id="pref-save-confirm" style="font-size:12.5px;color:var(--text-muted);"></span>
+          </div>
+          <span id="pref-profile-id" data-id="" style="display:none;"></span>
 
           <!-- D: CV Library ──────────────────────────────── -->
           <div class="doc-section" style="margin-top:32px; padding-top:28px; border-top:1px solid var(--border-light);">
@@ -13419,6 +13633,30 @@
 
       // Wire up preferences save
       document.getElementById('btn-save-prefs').addEventListener('click', savePreferences);
+
+      // Work model conditional reveals
+      document.querySelectorAll('input[name="pref-wm"]').forEach(function(cb) {
+        cb.addEventListener('change', _syncWorkModelReveals);
+      });
+
+      // Deal-breaker add button + enter key
+      var _dbInput  = document.getElementById('pref-deal-breaker-input');
+      var _dbAddBtn = document.getElementById('btn-add-deal-breaker');
+      function _addDealBreaker() {
+        var val = (_dbInput ? _dbInput.value.trim() : '');
+        if (!val) return;
+        _dealBreakersArr.push(val);
+        _renderDealBreakers();
+        if (_dbInput) _dbInput.value = '';
+      }
+      if (_dbAddBtn) _dbAddBtn.addEventListener('click', _addDealBreaker);
+      if (_dbInput)  _dbInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); _addDealBreaker(); }
+      });
+
+      // Initial renders (populated by fillPreferencesForm after profile loads)
+      _renderDealBreakers();
+      _renderCompanyStages();
 
       // Live-update profile page avatar as name is typed
       const _nameInputEl = document.getElementById('pref-display-name');
