@@ -2119,6 +2119,246 @@
       return                      { status: 'waiting', label: 'Waiting', days: daysSince };
     }
 
+    // ── Pattern Observations ─────────────────────────────────────────────────
+    // Lightweight cross-role observations surfaced in applied/outcome views.
+    // Returns array of plain-text strings (max 2). Only fires when ≥5 applied roles exist.
+    // No causal claims, no advice — just neutral observations.
+    function _computePatternObservations(currentRole) {
+      const _MIN_ROLES = 5;
+      const _obs = [];
+
+      // Only consider roles the user applied to (past JD Review)
+      const _applied = allRoles.filter(r => r._appliedDate);
+      if (_applied.length < _MIN_ROLES) return _obs;
+
+      // ── Work model patterns ──────────────────────────────────────────────
+      const _wmBuckets = { remote: { applied: 0, responded: 0 }, hybrid: { applied: 0, responded: 0 }, onsite: { applied: 0, responded: 0 } };
+      _applied.forEach(r => {
+        const wm = (r.work_model || '').toLowerCase();
+        const bucket = wm.includes('remote') ? 'remote' : wm.includes('hybrid') ? 'hybrid' : (wm.includes('onsite') || wm.includes('on-site')) ? 'onsite' : null;
+        if (!bucket) return;
+        _wmBuckets[bucket].applied++;
+        if (r._firstResponseDate || (r.outcome_state && r.outcome_state !== 'no_response' && r.outcome_state !== 'ghosted')) {
+          _wmBuckets[bucket].responded++;
+        }
+      });
+
+      // Find if one work model clearly outperforms (≥3 applied, >50% response rate, others <30%)
+      const _wmEntries = Object.entries(_wmBuckets).filter(([, v]) => v.applied >= 3);
+      if (_wmEntries.length >= 2) {
+        const _best = _wmEntries.reduce((a, b) => (b[1].responded / b[1].applied) > (a[1].responded / a[1].applied) ? b : a);
+        const _bestRate = _best[1].responded / _best[1].applied;
+        const _others = _wmEntries.filter(([k]) => k !== _best[0]);
+        const _othersAvg = _others.reduce((s, [, v]) => s + v.responded / v.applied, 0) / _others.length;
+        if (_bestRate >= 0.5 && _othersAvg < 0.3) {
+          const _labels = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+          _obs.push(`${_labels[_best[0]]} roles have led to more responses so far`);
+        }
+      }
+
+      // ── Stalled trait pattern ────────────────────────────────────────────
+      // Check if roles sharing a trait with the current role tend to stall
+      if (currentRole) {
+        const _curWm = (currentRole.work_model || '').toLowerCase();
+        const _curBucket = _curWm.includes('remote') ? 'remote' : _curWm.includes('hybrid') ? 'hybrid' : (_curWm.includes('onsite') || _curWm.includes('on-site')) ? 'onsite' : null;
+        if (_curBucket) {
+          const _similar = _applied.filter(r => {
+            const wm = (r.work_model || '').toLowerCase();
+            const b = wm.includes('remote') ? 'remote' : wm.includes('hybrid') ? 'hybrid' : (wm.includes('onsite') || wm.includes('on-site')) ? 'onsite' : null;
+            return b === _curBucket && r.id !== currentRole.id;
+          });
+          if (_similar.length >= 3) {
+            const _stalled = _similar.filter(r =>
+              r.outcome_state === 'no_response' || r.outcome_state === 'ghosted' ||
+              (r.outcome_state === 'rejected' && !r._firstResponseDate)
+            );
+            if (_stalled.length >= Math.ceil(_similar.length * 0.7)) {
+              const _labels = { remote: 'remote', hybrid: 'hybrid', onsite: 'on-site' };
+              _obs.push(`${_stalled.length} of ${_similar.length} similar ${_labels[_curBucket]} roles have not progressed past application`);
+            }
+          }
+        }
+      }
+
+      // ── Engagement type pattern ──────────────────────────────────────────
+      if (currentRole && currentRole.engagement_type) {
+        const _curEt = currentRole.engagement_type.toLowerCase();
+        const _sameEt = _applied.filter(r => r.engagement_type && r.engagement_type.toLowerCase() === _curEt && r.id !== currentRole.id);
+        if (_sameEt.length >= 3) {
+          const _rejected = _sameEt.filter(r => r.outcome_state === 'rejected' || r.outcome_state === 'no_response');
+          if (_rejected.length >= Math.ceil(_sameEt.length * 0.7)) {
+            _obs.push(`${currentRole.engagement_type} roles have had a lower response rate in your search`);
+          }
+        }
+      }
+
+      return _obs.slice(0, 2);
+    }
+
+    // ── Pattern interpretation ─────────────────────────────────────────────────
+    // Returns a single short interpretation line for a pattern observation, or
+    // null if the signal isn't strong enough to warrant one. Max 1 per render.
+    // No advice, no "you should", no scoring — just neutral contextualisation.
+    function _interpretObservation(text) {
+      if (!text) return null;
+      var l = text.toLowerCase();
+
+      // Work model outperformance: "Remote roles have led to more responses so far"
+      if (/roles have led to more responses/.test(l)) {
+        var _wm = l.startsWith('remote') ? 'remote' : l.startsWith('hybrid') ? 'hybrid' : l.startsWith('on-site') ? 'on-site' : null;
+        if (_wm) {
+          var _up = (typeof userProfile !== 'undefined' && userProfile) ? userProfile : null;
+          var _prefWms = _up && Array.isArray(_up.work_models) ? _up.work_models.map(function(s) { return s.toLowerCase(); }) : [];
+          if (_prefWms.indexOf(_wm) >= 0) {
+            return 'This may reflect alignment with your preferred work model';
+          }
+          return 'This is based on a small sample \u2014 may not reflect your fit alone';
+        }
+      }
+
+      // Stalled trait: "X of Y similar remote roles have not progressed past application"
+      if (/have not progressed past application/.test(l)) {
+        return 'This is a small sample \u2014 many factors are outside your control';
+      }
+
+      // Engagement type: "Contract roles have had a lower response rate"
+      if (/lower response rate in your search/.test(l)) {
+        return 'Response rates vary widely \u2014 this may not reflect your fit alone';
+      }
+
+      // Monthly dominance: "Most applications this month were for remote roles"
+      if (/most applications this month/.test(l)) {
+        return null; // factual statement, no interpretation needed
+      }
+
+      // Outcome insight: "Closed roles have tended to end at Applied, no reply came back"
+      if (/tended to end at applied/.test(l)) {
+        return 'This is common across the market \u2014 most applications receive no reply';
+      }
+
+      // Outcome insight: "None of the X applications have had a reply yet"
+      if (/none of the .+ applications have had a reply/.test(l)) {
+        return 'Response timelines vary \u2014 some processes take several weeks';
+      }
+
+      return null;
+    }
+
+    // ── "While you were away" ─────────────────────────────────────────────────
+    // Tracks last active timestamp in localStorage. On return after ≥2 days,
+    // computes a short summary of status changes and shows a dismissible banner.
+    const _RW_LAST_ACTIVE_KEY = 'rw_last_active';
+    const _RW_AWAY_MIN_DAYS = 2;
+
+    function _checkAndShowAwaySummary() {
+      const nowMs = Date.now();
+      const lastStr = localStorage.getItem(_RW_LAST_ACTIVE_KEY);
+      // Always update last_active to now
+      localStorage.setItem(_RW_LAST_ACTIVE_KEY, nowMs.toString());
+
+      if (!lastStr) return; // first visit ever — nothing to compare
+      const lastMs = parseInt(lastStr, 10);
+      if (isNaN(lastMs)) return;
+
+      const daysAway = Math.floor((nowMs - lastMs) / 86400000);
+      if (daysAway < _RW_AWAY_MIN_DAYS) return;
+
+      // Compute what changed since last_active
+      const _lines = _computeAwayChanges(lastMs, daysAway);
+      if (!_lines.length) return;
+
+      // Store for rendering (Overview reads this on next render)
+      _pendingAwaySummary = { lines: _lines, daysAway: daysAway };
+    }
+
+    let _pendingAwaySummary = null;
+
+    function _computeAwayChanges(sinceMs, daysAway) {
+      const lines = [];
+
+      // 1. Roles with status changes (outcomes recorded since last visit)
+      const _newOutcomes = allRoles.filter(r =>
+        r.outcome_at && new Date(r.outcome_at).getTime() > sinceMs
+      );
+      const _rejectedCount = _newOutcomes.filter(r => r.outcome_state === 'rejected').length;
+      const _progressedCount = _newOutcomes.filter(r =>
+        r.outcome_state === 'offer_accepted' || r.outcome_state === 'interviewing'
+      ).length;
+
+      if (_rejectedCount > 0) {
+        lines.push(`${_rejectedCount} role${_rejectedCount !== 1 ? 's' : ''} marked as rejected`);
+      }
+      if (_progressedCount > 0) {
+        lines.push(`${_progressedCount} role${_progressedCount !== 1 ? 's' : ''} progressed`);
+      }
+
+      // 2. Stage changes since last visit
+      const _stageChanges = allRoles.filter(r => {
+        if (!r.role_updates || !r.role_updates.length) return false;
+        return r.role_updates.some(u =>
+          u.event_type === 'stage' && new Date(u.created_at).getTime() > sinceMs
+        );
+      }).length;
+      if (_stageChanges > 0 && !_progressedCount) {
+        lines.push(`${_stageChanges} role${_stageChanges !== 1 ? 's' : ''} moved to a new stage`);
+      }
+
+      // 3. Roles with no response that crossed the stale/ghosted threshold while away
+      const _newlyStale = allRoles.filter(r => {
+        if (!r._appliedDate || r.outcome_state || r._firstResponseDate) return false;
+        const daysSinceApplied = Math.floor((Date.now() - new Date(r._appliedDate).getTime()) / 86400000);
+        const daysAtLastVisit = daysSinceApplied - daysAway;
+        // Crossed the 14-day stale threshold while user was away
+        return daysAtLastVisit < 14 && daysSinceApplied >= 14;
+      });
+      if (_newlyStale.length > 0) {
+        lines.push(`${_newlyStale.length} application${_newlyStale.length !== 1 ? 's' : ''} with no response after 14+ days`);
+      }
+
+      // 4. One pattern observation if available
+      const _obs = _computePatternObservations(null);
+      if (_obs.length > 0 && lines.length < 4) {
+        lines.push(_obs[0]);
+      }
+
+      return lines.slice(0, 5);
+    }
+
+    // Renders the away banner into the Overview page (called by renderOverviewView)
+    function _renderAwaySummaryBanner(parentEl) {
+      if (!_pendingAwaySummary) return;
+      const { lines, daysAway } = _pendingAwaySummary;
+
+      const _banner = document.createElement('div');
+      _banner.className = 'rw-away-banner';
+      _banner.innerHTML = `
+        <div class="rw-away-banner__header">
+          <span class="rw-away-banner__title">While you were away</span>
+          <button class="rw-away-banner__dismiss" aria-label="Dismiss">\u2715</button>
+        </div>
+        <div class="rw-away-banner__sub">${daysAway} day${daysAway !== 1 ? 's' : ''} since your last visit</div>
+        <ul class="rw-away-banner__list">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`;
+
+      // Add one interpretation line if any observation is interpretable
+      let _awayInterp = null;
+      for (let _ai = 0; _ai < lines.length; _ai++) {
+        _awayInterp = _interpretObservation(lines[_ai]);
+        if (_awayInterp) break;
+      }
+      if (_awayInterp) {
+        _banner.innerHTML += `<div class="rw-obs-interp">${esc(_awayInterp)}</div>`
+      }
+
+      _banner.querySelector('.rw-away-banner__dismiss').addEventListener('click', () => {
+        _banner.remove();
+        _pendingAwaySummary = null;
+      });
+
+      // Insert at the top of the overview content
+      parentEl.prepend(_banner);
+      _pendingAwaySummary = null; // only show once per session
+    }
+
     function stageTagClass(label) {
       const map = {
         'JD Review':        'stage-jd-review',
@@ -3510,8 +3750,32 @@
           </div>`;
       }
 
+      // --- Contextual outcome line (e.g. "Rejected after Recruiter Screen") ---
+      let _outcomeContextHtml = '';
+      if (hasOutcome) {
+        const _stage = currentStageLabel(role);
+        const _stageForCopy = (_stage && _stage !== 'JD Review') ? _stage : null;
+        let _ctx = '';
+        if (currentVal === 'rejected') {
+          _ctx = _stageForCopy ? `Rejected after ${_stage}` : 'Rejected after review';
+          if (role._appliedDate) {
+            const _d = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
+            _ctx += ` \u2014 ${_d} day${_d !== 1 ? 's' : ''} after applying`;
+          }
+        } else if (currentVal === 'no_response' && role._appliedDate) {
+          const _d = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
+          _ctx = `No response after ${_d} day${_d !== 1 ? 's' : ''}`;
+        } else if (currentVal === 'ghosted') {
+          _ctx = _stageForCopy ? `Ghosted after ${_stage}` : 'Went silent after initial contact';
+        }
+        if (_ctx) {
+          _outcomeContextHtml = `<div class="outcome-context-line">${esc(_ctx)}</div>`;
+        }
+      }
+
       // --- Recorded outcome display (when an outcome exists) ---
       const recordedDisplay = hasOutcome ? `
+        ${_outcomeContextHtml}
         <div class="outcome-recorded-row">
           <span class="outcome-recorded-label">Outcome recorded:</span>
           <span class="outcome-recorded-val">${esc(outcomeLabel)}</span>
@@ -4311,7 +4575,9 @@
 
       async function _decide(decision) {
         barEl.remove();
-        overviewEl.style.display = 'none';
+        if (decision !== 'apply') {
+          overviewEl.style.display = 'none';
+        }
         if (role._isTemp) {
           _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">Still saving the role. Give it a moment, then use the decision buttons in the panel.</div>`);
           return;
@@ -4324,8 +4590,9 @@
         if (decision === 'apply') wsAppendDecision(role.id, 'apply', null).catch(() => {});
         if (decision === 'save')  wsAppendDecision(role.id, 'other', null, 'explore_further').catch(() => {});
         wsRefreshDecisionHistory(role.id).catch(() => {});
-        // Apply: ask which CV was used, then show confidence prompt
+        // Apply: switch to Applied tab, then show CV + confidence prompts
         if (decision === 'apply') {
+          _switchToAppliedTab();
           setTimeout(() => {
             _wsRenderCvUsedPrompt(role, timelineEl);
             setTimeout(() => _wsRenderDecisionConfidence(role, timelineEl), 120);
@@ -4337,7 +4604,7 @@
 
       async function _pass(reason) {
         barEl.remove();
-        overviewEl.style.display = 'none';
+        // Don't hide overview — show skip overlay instead
         if (role._isTemp) {
           _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">Still saving. Give it a moment, then use the decision buttons in the panel.</div>`);
           return;
@@ -4349,6 +4616,36 @@
           wsAppendDecision(role.id, 'skip', null).catch(() => {});
           wsRefreshDecisionHistory(role.id).catch(() => {});
           _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">Got it, archived.</div>`);
+        }
+        // Show skip overlay on the analysis panel
+        const _analysisPanel = document.querySelector('[data-rp-panel="analysis"]');
+        if (_analysisPanel && !document.getElementById('rp-skipped-overlay')) {
+          const _overlay = document.createElement('div');
+          _overlay.className = 'rp-skipped-section';
+          _overlay.id = 'rp-skipped-overlay';
+          // Find strongest signal to support the skip
+          let _dynSkipLine = '';
+          const _so = role.latest_match_output;
+          if (_so) {
+            if (_so.hard_no_reason) _dynSkipLine = _so.hard_no_reason;
+            else if (Array.isArray(_so.friction_signals) && _so.friction_signals.length) {
+              const _f = _so.friction_signals[0];
+              _dynSkipLine = typeof _f === 'string' ? _f : (_f.label || _f.text || '');
+            }
+            if (_dynSkipLine.length > 80) {
+              var _se = _dynSkipLine.search(/[.!?]\s/);
+              _dynSkipLine = (_se > 0 && _se <= 80) ? _dynSkipLine.slice(0, _se + 1) : _dynSkipLine.slice(0, 78) + '\u2026';
+            }
+          }
+          _overlay.innerHTML = `<div class="rp-skipped-msg">Skipped \u2014 that looks like the right call</div>
+            ${_dynSkipLine ? `<div class="rp-skipped-reason">${esc(_dynSkipLine)}</div>` : ''}
+            <button class="rw-btn rw-btn-sm" id="rp-btn-reconsider">Reconsider</button>`;
+          _analysisPanel.prepend(_overlay);
+          document.getElementById('rp-btn-reconsider')?.addEventListener('click', async function() {
+            await _setUserDecision(role, null);
+            const _upd = allRoles.find(r => r.id === role.id);
+            if (_upd) { renderRoleDoc(_upd); renderRail(_upd); }
+          });
         }
         // Decision Confidence — optional reflective prompt shown after the decision is confirmed.
         setTimeout(() => _wsRenderDecisionConfidence(role, timelineEl), 120);
@@ -6480,10 +6777,10 @@
               if (_liStatusEl.isConnected) _liStatusEl.remove();
               const _e = _liPayload?.error;
               const _errMsg = _e === 'no_session'
-                ? 'LinkedIn session not set — add your li_at cookie in Admin → LinkedIn.'
+                ? 'LinkedIn URL detected. To fetch job details automatically, add your LinkedIn session in Admin \u2192 LinkedIn. Or paste the job description text directly instead.'
                 : _e === 'session_expired'
-                ? 'LinkedIn session expired — update it in Admin → LinkedIn.'
-                : 'Could not fetch the job description. Try pasting it directly.';
+                ? 'LinkedIn URL detected, but your session has expired. Update it in Admin \u2192 LinkedIn, or paste the job description text directly.'
+                : 'Could not fetch the job description. Try pasting the text directly instead.';
               _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
               if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
               return;
@@ -8193,15 +8490,15 @@
           }
           if (_aJson) {
             try {
-              _ovBody.innerHTML = `<div class="rw-overview-wrap">${renderMatchOutput(_aJson)}</div>`;
+              _ovBody.innerHTML = _renderRolePageTabs(role, _aJson);
+              _wireRolePageTabs(role);
               _initCompSnapshot(_ovBody);
               _renderRoleHeader(role);
-              // Skip _renderDecisionBanner — renderMatchOutput already includes
-              // a detailed decision block (rw-decision-block) with fit assessment.
-              // Calling _renderDecisionBanner here would create a duplicate/conflicting card.
               _clearDecisionBanner();
-              _fillFitAssessmentCV(); // Resolve CV recommendation placeholder
+              _fillFitAssessmentCV();
               _refreshRoleContacts(role);
+              // Fill prep panel in Applied tab (async — needs analysis data)
+              _updateAsPrepPanel(_aJson, 'rp-prep-panel-slot');
             } catch (e) {
               _ovBody.innerHTML = '<div class="doc-empty">Could not load analysis</div>';
             }
@@ -8898,6 +9195,238 @@
     // _updateAsPrepPanel() once analysis data arrives.
     // ═══════════════════════════════════════════════════════════════════════════
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ROLE PAGE TABS — Analysis / Applied
+    // Wraps analysis content in a tabbed structure. Applied tab appears after
+    // user clicks Apply. Skip shows a lightweight overlay.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function _renderRolePageTabs(role, analysisOutput) {
+      const _parts = renderMatchOutput(analysisOutput, { partsOnly: true });
+      const _mainHtml = _parts && _parts.mainHtml != null ? _parts.mainHtml : '';
+      const _sidebarInner = _parts && _parts.sidebarInnerHtml != null ? _parts.sidebarInnerHtml : '';
+      const _jdModal = _parts && _parts.jdModal != null ? _parts.jdModal : '';
+
+      const _isApplied = role.user_decision === 'apply' || !!role._appliedDate;
+      const _isSkipped = role.user_decision === 'skip';
+      const _showAppliedTab = _isApplied || !!role.outcome_state;
+
+      // ── Applied tab content ──────────────────────────────────────────────
+      const _stageIdx = currentStageIndex(role);
+      const _nextIdx  = _stageIdx + 1;
+      const _nextStep = RAIL_STAGE_STEPS[_nextIdx] || null;
+
+      // Quick context row
+      const _ctxParts = [];
+      if (role.job_url) {
+        _ctxParts.push(`<a href="${esc(role.job_url)}" target="_blank" rel="noopener">Job posting \u2197</a>`);
+      }
+      if (role._appliedDate) {
+        const _days = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
+        const _agoStr = _days === 0 ? 'today' : _days === 1 ? 'yesterday' : `${_days} days ago`;
+        _ctxParts.push(`Applied ${_agoStr}`);
+      }
+      if (role.role_recruiters && role.role_recruiters.length) {
+        const _rec = role.role_recruiters[0];
+        if (_rec.recruiters?.name) {
+          const _r = _rec.recruiters;
+          const _recLabel = _r.email
+            ? `<a href="mailto:${esc(_r.email)}">${esc(_r.name)}</a>`
+            : esc(_r.name);
+          _ctxParts.push(`Recruiter: ${_recLabel}`);
+        }
+      }
+      const _qcSep = '<span class="as-qc-sep">\u00b7</span>';
+      const _qcHtml = _ctxParts.length
+        ? `<div class="as-quick-context">${_ctxParts.join(_qcSep)}</div>`
+        : '';
+
+      // Stage dropdown
+      const _stageOptions = RAIL_STAGE_STEPS.map((s, i) => {
+        const _sel = i === _stageIdx ? ' selected' : '';
+        return `<option value="${esc(s.stage)}"${_sel}>${esc(s.label)}</option>`;
+      }).join('');
+
+      // Notes from localStorage
+      const _notesKey = `rw_role_notes_${role.id}`;
+      const _savedNotes = localStorage.getItem(_notesKey) || '';
+
+      // Applied panel HTML — uses .doc-section pattern for consistency with Analysis
+      const _appliedHtml = `
+        <div class="rp-applied-content">
+          <div class="as-header">Applied \u2014 nice. Let\u2019s make this count.</div>
+          ${_qcHtml}
+
+          <div class="doc-section">
+            <div class="doc-section-heading">Current stage</div>
+            <select class="rp-stage-select field-select" id="rp-stage-select">${_stageOptions}</select>
+          </div>
+
+          <div id="rp-prep-panel-slot"></div>
+
+          <div class="doc-section">
+            <div class="doc-section-heading">Your notes</div>
+            <textarea class="rp-notes field-textarea" id="rp-notes" placeholder="Add notes about this role\u2026" spellcheck="true">${esc(_savedNotes)}</textarea>
+          </div>
+
+          <div class="doc-section">
+            <div class="doc-section-heading">Actions</div>
+            <div class="rp-actions">
+              ${_nextStep ? `<button class="rp-action-btn" id="rp-btn-next-stage">Moved to ${esc(_nextStep.label)}</button>` : ''}
+              <button class="rp-action-btn rp-action-btn--danger" id="rp-btn-rejected">Rejected</button>
+              <button class="rp-action-btn" id="rp-btn-withdrew">Withdraw</button>
+            </div>
+          </div>
+
+          <div id="rp-rejection-flow-slot" hidden></div>
+        </div>`;
+
+      // ── Skip overlay ─────────────────────────────────────────────────────
+      let _skipOverlay = '';
+      if (_isSkipped) {
+        // Find strongest signal to support the skip
+        let _skipSignalLine = '';
+        const _skipOutput = role.latest_match_output;
+        if (_skipOutput) {
+          if (_skipOutput.hard_no_reason) {
+            _skipSignalLine = _skipOutput.hard_no_reason;
+          } else if (Array.isArray(_skipOutput.friction_signals) && _skipOutput.friction_signals.length) {
+            const _fs = _skipOutput.friction_signals[0];
+            _skipSignalLine = typeof _fs === 'string' ? _fs : (_fs.label || _fs.text || '');
+          }
+          // Truncate to first sentence, max 80 chars
+          if (_skipSignalLine.length > 80) {
+            var _sEnd = _skipSignalLine.search(/[.!?]\s/);
+            _skipSignalLine = (_sEnd > 0 && _sEnd <= 80) ? _skipSignalLine.slice(0, _sEnd + 1) : _skipSignalLine.slice(0, 78) + '\u2026';
+          }
+        }
+        _skipOverlay = `
+          <div class="rp-skipped-section" id="rp-skipped-overlay">
+            <div class="rp-skipped-msg">Skipped \u2014 that looks like the right call</div>
+            ${_skipSignalLine ? `<div class="rp-skipped-reason">${esc(_skipSignalLine)}</div>` : ''}
+            <button class="rw-btn rw-btn-sm" id="rp-btn-reconsider">Reconsider</button>
+          </div>`;
+      }
+
+      // ── Tab structure ────────────────────────────────────────────────────
+      const _analysisActive = !_showAppliedTab || _isSkipped;
+      const _appliedActive  = _showAppliedTab && !_isSkipped;
+
+      // Tabs + panels live inside .rw-main-col only; .rw-two-col-layout stays the
+      // same structural level as renderMatchOutput so the sidebar column stays
+      // full-height and #col-overview-body remains the sole vertical scroll context.
+      return `<div class="rw-overview-wrap">
+        <div class="rw-two-col-layout">
+          <div class="rw-main-col">
+            <div class="rp-page" id="rp-page">
+              <nav class="rp-tabs" id="rp-tabs">
+                <button class="rp-tab${_analysisActive ? ' rp-tab--active' : ''}" data-rp-tab="analysis">Analysis</button>
+                <button class="rp-tab${_appliedActive ? ' rp-tab--active' : ''}${_showAppliedTab ? '' : ' hidden'}" data-rp-tab="applied" id="rp-tab-applied">Applied</button>
+              </nav>
+              <div class="rp-tab-panel${_analysisActive ? ' rp-tab-panel--active' : ''}" data-rp-panel="analysis">
+                ${_skipOverlay}
+                ${_mainHtml}
+              </div>
+              <div class="rp-tab-panel${_appliedActive ? ' rp-tab-panel--active' : ''}" data-rp-panel="applied">
+                ${_appliedHtml}
+              </div>
+            </div>
+          </div>
+          <div class="rw-sidebar-col"><div class="rw-sidebar-inner">${_sidebarInner}</div></div>
+        </div>
+        ${_jdModal}
+      </div>`;
+    }
+
+    // Wires tab switching, notes persistence, stage changes, and action buttons
+    // for a rendered role page tabs structure. Call after innerHTML is set.
+    function _wireRolePageTabs(role) {
+      // ── Tab switching ────────────────────────────────────────────────────
+      document.querySelectorAll('.rp-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          var target = tab.dataset.rpTab;
+          document.querySelectorAll('.rp-tab').forEach(function(t) {
+            t.classList.toggle('rp-tab--active', t.dataset.rpTab === target);
+          });
+          document.querySelectorAll('.rp-tab-panel').forEach(function(p) {
+            p.classList.toggle('rp-tab-panel--active', p.dataset.rpPanel === target);
+          });
+        });
+      });
+
+      // ── Notes persistence (localStorage, debounced) ─────────────────────
+      const _notesEl = document.getElementById('rp-notes');
+      if (_notesEl) {
+        let _notesTimer = null;
+        _notesEl.addEventListener('input', function() {
+          clearTimeout(_notesTimer);
+          _notesTimer = setTimeout(function() {
+            localStorage.setItem(`rw_role_notes_${role.id}`, _notesEl.value);
+          }, 500);
+        });
+      }
+
+      // ── Stage dropdown ──────────────────────────────────────────────────
+      const _stageSelect = document.getElementById('rp-stage-select');
+      if (_stageSelect) {
+        _stageSelect.addEventListener('change', async function() {
+          const _newStage = _stageSelect.value;
+          const _step = RAIL_STAGE_STEPS.find(s => s.stage === _newStage);
+          if (!_step) return;
+          _stageSelect.disabled = true;
+          try {
+            await markStage(role.id, _step.status, _step.stage);
+            const _upd = allRoles.find(r => r.id === role.id);
+            if (_upd) { renderRoleDoc(_upd); renderRail(_upd); }
+          } catch (_) {
+            _stageSelect.disabled = false;
+          }
+        });
+      }
+
+      // ── Next stage button ───────────────────────────────────────────────
+      document.getElementById('rp-btn-next-stage')?.addEventListener('click', async function() {
+        const _stageIdx = currentStageIndex(role);
+        const _next = RAIL_STAGE_STEPS[_stageIdx + 1];
+        if (!_next) return;
+        this.disabled = true; this.textContent = 'Saving\u2026';
+        await markStage(role.id, _next.status, _next.stage);
+        const _upd = allRoles.find(r => r.id === role.id);
+        if (_upd) { renderRoleDoc(_upd); renderRail(_upd); }
+      });
+
+      // ── Rejected button ─────────────────────────────────────────────────
+      document.getElementById('rp-btn-rejected')?.addEventListener('click', function() {
+        showOutcomeReasonForm(role.id, 'rejected');
+      });
+
+      // ── Withdraw button ─────────────────────────────────────────────────
+      document.getElementById('rp-btn-withdrew')?.addEventListener('click', function() {
+        showOutcomeReasonForm(role.id, 'withdrew');
+      });
+
+      // ── Reconsider button (skip overlay) ────────────────────────────────
+      document.getElementById('rp-btn-reconsider')?.addEventListener('click', async function() {
+        await _setUserDecision(role, null);
+        const _upd = allRoles.find(r => r.id === role.id);
+        if (_upd) { renderRoleDoc(_upd); renderRail(_upd); }
+      });
+    }
+
+    // Switches to the Applied tab (called after user clicks Apply)
+    function _switchToAppliedTab() {
+      // Show the Applied tab button if hidden
+      const _appliedTabBtn = document.getElementById('rp-tab-applied');
+      if (_appliedTabBtn) _appliedTabBtn.classList.remove('hidden');
+      // Toggle active states
+      document.querySelectorAll('.rp-tab').forEach(function(t) {
+        t.classList.toggle('rp-tab--active', t.dataset.rpTab === 'applied');
+      });
+      document.querySelectorAll('.rp-tab-panel').forEach(function(p) {
+        p.classList.toggle('rp-tab-panel--active', p.dataset.rpPanel === 'applied');
+      });
+    }
+
     function renderAppliedState(role) {
       const _pActEl = document.getElementById('doc-progressed-actions');
       if (!_pActEl) return;
@@ -8930,9 +9459,9 @@
         _ctxParts.push(`<a href="${esc(role.job_url)}" target="_blank" rel="noopener">Job posting ↗</a>`);
       }
       if (role._appliedDate) {
-        const _dStr = new Date(role._appliedDate)
-          .toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-        _ctxParts.push(`Applied ${_dStr}`);
+        const _days = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
+        const _agoStr = _days === 0 ? 'today' : _days === 1 ? 'yesterday' : `${_days} days ago`;
+        _ctxParts.push(`Applied ${_agoStr}`);
       }
       if (role.role_recruiters && role.role_recruiters.length) {
         const _rec = role.role_recruiters[0];
@@ -8963,6 +9492,7 @@
         : '';
 
       _pActEl.innerHTML = `
+        <div class="as-header">Applied \u2014 nice. Let\u2019s make this count.</div>
         <div class="as-stage-timeline">${_tlHtml}</div>
         ${_qcHtml}
         <div class="as-action-block">
@@ -9006,40 +9536,39 @@
 
     // ── Prep Panel: called async after analysis data loads ───────────────────
     // Injects 3–4 role-specific prep bullets into the slot left by renderAppliedState.
-    function _updateAsPrepPanel(analysisOutput) {
-      const _slot = document.getElementById('as-prep-panel-slot');
+    function _updateAsPrepPanel(analysisOutput, slotId) {
+      const _slot = document.getElementById(slotId || 'as-prep-panel-slot');
       if (!_slot || !analysisOutput) return;
 
       const _bullets = [];
 
-      // what_they_are_really_looking_for → top 2 sentences or items
+      // what_they_are_really_looking_for → top 2 items, prefixed "Review:"
       const _wtr = analysisOutput.what_they_are_really_looking_for;
       if (typeof _wtr === 'string' && _wtr.trim()) {
         const _sents = _wtr.match(/[^.!?]+[.!?]+/g) || [_wtr];
-        _sents.slice(0, 2).forEach(s => { if (s.trim()) _bullets.push(s.trim()); });
+        _sents.slice(0, 2).forEach(s => { if (s.trim()) _bullets.push(`Review: ${s.trim()}`); });
       } else if (Array.isArray(_wtr)) {
         _wtr.slice(0, 2).forEach(r => {
           const _t = typeof r === 'string' ? r : (r.point || r.text || r.item || '');
-          if (_t.trim()) _bullets.push(_t.trim());
+          if (_t.trim()) _bullets.push(`Review: ${_t.trim()}`);
         });
       }
 
-      // risks_and_unknowns → up to 2, prefixed with "Watch:"
+      // risks_and_unknowns → up to 1, prefixed with "Watch:"
       const _risks = analysisOutput.risks_and_unknowns;
       if (Array.isArray(_risks)) {
-        _risks.slice(0, 2).forEach(r => {
-          const _t = typeof r === 'string' ? r : (r.risk || r.point || r.text || '');
-          if (_t.trim()) _bullets.push(`Watch: ${_t.trim()}`);
-        });
+        const _rFirst = _risks[0];
+        const _t = typeof _rFirst === 'string' ? _rFirst : (_rFirst?.risk || _rFirst?.point || _rFirst?.text || '');
+        if (_t.trim()) _bullets.push(`Watch: ${_t.trim()}`);
       } else if (typeof _risks === 'string' && _risks.trim()) {
         _bullets.push(`Watch: ${_risks.trim()}`);
       }
 
       if (!_bullets.length) return; // nothing useful — leave slot empty
 
-      const _items = _bullets.slice(0, 4).map(b => `<li class="as-prep-item">${esc(b)}</li>`).join('');
-      _slot.innerHTML = `<div class="as-prep-panel">
-        <div class="as-prep-heading">If they reply, be ready for this</div>
+      const _items = _bullets.slice(0, 3).map(b => `<li class="as-prep-item">${esc(b)}</li>`).join('');
+      _slot.innerHTML = `<div class="doc-section">
+        <div class="doc-section-heading">Prep guidance</div>
         <ul class="as-prep-list">${_items}</ul>
       </div>`;
     }
@@ -9098,17 +9627,30 @@
         const _resultEl = document.getElementById('as-rej-result');
 
         try {
+          // Build short preference context for the AI to reference
+          const _up = (typeof userProfile !== 'undefined' && userProfile) ? userProfile : {};
+          const _prefParts = [];
+          if (Array.isArray(_up.work_models) && _up.work_models.length) _prefParts.push(`Work model: ${_up.work_models.join(', ')}`);
+          if (Array.isArray(_up.employment_types) && _up.employment_types.length) _prefParts.push(`Employment: ${_up.employment_types.join(', ')}`);
+          if (Array.isArray(_up.company_stages) && _up.company_stages.length) {
+            const _ideal = _up.company_stages.filter(s => s.strength === 'ideal').map(s => s.stage);
+            if (_ideal.length) _prefParts.push(`Preferred stages: ${_ideal.join(', ')}`);
+          }
+          const _prefCtx = _prefParts.length ? `\nUser preferences: ${_prefParts.join('. ')}.` : '';
+
           const _msg = [
-            'You are helping a job seeker understand a rejection. Be brief and kind.',
+            'You are helping a job seeker understand a rejection. Be calm, neutral, and brief. No judgement, no positivity hype. Just clarity.',
             '',
             `Role: ${role.role_title || 'Unknown role'} at ${role.company_name || 'Unknown company'}`,
+            _prefCtx,
             '',
             'Rejection message or notes:',
             _text,
             '',
-            'Respond with exactly two lines:',
-            'SIGNAL: [one sentence — the most likely reason they weren\'t selected]',
-            'TAKEAWAY: [one sentence — the most useful thing they can learn or do differently]',
+            'Respond with exactly three lines:',
+            'SIGNAL: [one sentence \u2014 what likely happened, stated neutrally]',
+            'TAKEAWAY: [one sentence \u2014 something useful to carry forward]',
+            'CONTEXT: [one sentence \u2014 whether this rejection relates to a mismatch with their preferences, or is just a standard process outcome. Be honest but neutral.]',
           ].join('\n');
 
           const _res = await callWorkspaceChatAPI(_msg, {
@@ -9118,11 +9660,13 @@
 
           let _signal   = '';
           let _takeaway = '';
+          let _context  = '';
 
           if (_res?.reply) {
             const _lines = _res.reply.split('\n').map(l => l.trim()).filter(Boolean);
             _signal   = (_lines.find(l => /^signal:/i.test(l))   || '').replace(/^signal:\s*/i,   '').trim();
             _takeaway = (_lines.find(l => /^takeaway:/i.test(l)) || '').replace(/^takeaway:\s*/i, '').trim();
+            _context  = (_lines.find(l => /^context:/i.test(l))  || '').replace(/^context:\s*/i,  '').trim();
           }
 
           if (_resultEl) {
@@ -9131,6 +9675,7 @@
               _resultEl.innerHTML = `<div class="as-rejection-result">
                 ${_signal   ? `<div class="as-rejection-signal">${esc(_signal)}</div>`   : ''}
                 ${_takeaway ? `<div class="as-rejection-takeaway">${esc(_takeaway)}</div>` : ''}
+                ${_context  ? `<div class="as-rejection-context">${esc(_context)}</div>`  : ''}
               </div>`;
             } else if (_res?.reply) {
               _resultEl.innerHTML = `<div class="as-rejection-result">
@@ -9505,8 +10050,28 @@
       // Build the top-of-page signal element based on whether role has progressed
       const _stageClass     = stageTagClass(_currentStage);
       const _topSignalHtml  = _isProgressed
-        // Progressed: calm applied-timing line. Stage state lives in the rail — no pill here.
+        // Progressed: calm timing line. For outcomes, add contextual explanation.
         ? (() => {
+            // Rejected / outcome roles: show what happened
+            if (role.outcome_state) {
+              const _stage = currentStageLabel(role);
+              const _stageForCopy = (_stage && _stage !== 'JD Review') ? _stage : null;
+              let _outcomeLine = '';
+              if (role.outcome_state === 'rejected') {
+                _outcomeLine = _stageForCopy ? `Rejected after ${_stage}` : 'Rejected after review';
+              } else if (role.outcome_state === 'no_response' && role._appliedDate) {
+                const _nrDays = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
+                _outcomeLine = `No response after ${_nrDays} day${_nrDays !== 1 ? 's' : ''}`;
+              } else if (role.outcome_state === 'ghosted') {
+                _outcomeLine = _stageForCopy ? `Ghosted after ${_stage}` : 'Ghosted';
+              } else if (role.outcome_state === 'withdrew') {
+                _outcomeLine = _stageForCopy ? `Withdrawn after ${_stage}` : 'Withdrawn';
+              } else if (role.outcome_state === 'offer_accepted') {
+                _outcomeLine = 'Offer accepted';
+              }
+              if (_outcomeLine) return `<div class="doc-applied-status">${esc(_outcomeLine)}</div>`;
+            }
+            // Active in-process roles: show applied timing
             if (role._appliedDate) {
               const _days = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
               const _daysStr = _days === 0 ? 'today' : _days === 1 ? 'yesterday' : `${_days} days ago`;
@@ -9631,6 +10196,26 @@
       // + PrepPanel (filled async) + RejectionFlow.
       if (_isProgressed && !isArchivedRole(role) && !role.outcome_state) {
         renderAppliedState(role);
+      }
+
+      // ── Pattern Observations — subtle cross-role pattern block ─────────────
+      // Shown for applied and outcome roles when enough data exists.
+      if (_isProgressed) {
+        const _patObs = _computePatternObservations(role);
+        const _patEl = document.getElementById('doc-pattern-notice');
+        if (_patEl && _patObs.length) {
+          // Find the first observation with a strong-enough interpretation
+          let _patInterpHtml = '';
+          for (let _pi = 0; _pi < _patObs.length; _pi++) {
+            const _interp = _interpretObservation(_patObs[_pi]);
+            if (_interp) { _patInterpHtml = `<div class="rw-obs-interp">${esc(_interp)}</div>`; break; }
+          }
+          _patEl.innerHTML = `<div class="rw-pattern-obs">
+            <div class="rw-pattern-obs-label">From your search</div>
+            <ul class="rw-pattern-obs-list">${_patObs.map(o => `<li>${esc(o)}</li>`).join('')}</ul>
+            ${_patInterpHtml}
+          </div>`;
+        }
       }
 
       // Populate match output panel — analysis is primary content, raw JD is collapsible fallback
@@ -12274,14 +12859,17 @@
               };
             } else {
               const _e = _payload?.error;
-              if (_e === 'no_session' || _e === 'session_expired') {
-                throw new Error('LinkedIn session not set up \u2014 add it in Admin \u2192 LinkedIn. For now, copy the job description text from the listing and paste it here.');
+              if (_e === 'no_session') {
+                throw new Error('LinkedIn URL detected. To fetch job details automatically, add your LinkedIn session in Admin \u2192 LinkedIn. Or paste the job description text directly instead.');
               }
-              throw new Error('Couldn\u2019t fetch that job listing. Copy the description text from the page and paste it here instead.');
+              if (_e === 'session_expired') {
+                throw new Error('LinkedIn URL detected, but your session has expired. Update it in Admin \u2192 LinkedIn, or paste the job description text directly.');
+              }
+              throw new Error('Could not fetch that job listing. Try pasting the job description text directly instead.');
             }
           } else {
             // Non-LinkedIn URL — no scraper available
-            throw new Error('Auto-fetch only works for LinkedIn URLs. Copy the job description text from the page and paste it here.');
+            throw new Error('URL detected, but automatic fetching is only available for LinkedIn. Paste the job description text directly instead.');
           }
           _completeLine();
         }
@@ -12433,9 +13021,11 @@
         const _submitRow = document.getElementById('rw-ing-submit-row');
         if (_procEl) _procEl.setAttribute('hidden', '');
         if (_idleEl) _idleEl.removeAttribute('hidden');
-        // Clear textarea so user can paste fresh content (especially after URL fetch failures)
-        if (_textarea) { _textarea.value = ''; setTimeout(() => _textarea.focus(), 60); }
-        if (_submitRow) _submitRow.setAttribute('hidden', '');
+        // Preserve the pasted input — do NOT clear the textarea.
+        // The user can see what they entered, clear it themselves, and paste JD text.
+        // Show the submit row so they can retry immediately after editing.
+        if (_submitRow && _textarea?.value.trim()) _submitRow.removeAttribute('hidden');
+        if (_textarea) setTimeout(() => _textarea.focus(), 60);
         if (_errorEl) {
           _errorEl.textContent = err.message || 'Something went wrong. Please try again.';
           _errorEl.removeAttribute('hidden');
@@ -13385,185 +13975,209 @@
         <div style="height:100%;overflow-y:auto;box-sizing:border-box;">
         <div class="col-center-inner">
           <h1 class="doc-role-title" style="margin-bottom:4px;">Profile</h1>
-          <p style="font-size:13px;color:var(--text-secondary);margin:0 0 32px;line-height:1.5;">Your preferences and CV context. Rolewise can use this to understand you better over time.</p>
+          <p style="font-size:13px;color:var(--text-secondary);margin:0 0 20px;line-height:1.5;">Your preferences and CV context.</p>
 
-          <!-- A: Identity ────────────────────────────────── -->
-          <div class="doc-section" style="margin-bottom:28px;">
-            <div class="doc-section-heading">Identity</div>
-            <div class="profile-identity-row">
-              <div class="profile-page-avatar" id="profile-page-avatar-circle">
-                <span id="profile-page-initials">?</span>
-              </div>
-              <div class="profile-identity-fields">
-                <div class="field-group">
-                  <label class="field-label" for="pref-display-name">Your name</label>
-                  <input class="field-input" id="pref-display-name" type="text" placeholder="e.g. Alex Chen" autocomplete="off">
+          <!-- Tab bar -->
+          <nav class="profile-tabs" role="tablist">
+            <button class="profile-tab profile-tab--active" data-tab="identity"     role="tab" aria-selected="true">Profile</button>
+            <button class="profile-tab"                     data-tab="jobprefs"     role="tab">Job Preferences</button>
+            <button class="profile-tab"                     data-tab="cv"           role="tab">CV Library</button>
+            <button class="profile-tab"                     data-tab="appearance"   role="tab">Appearance</button>
+            <button class="profile-tab"                     data-tab="linkedin"     role="tab">LinkedIn</button>
+          </nav>
+
+          <!-- ── Tab 1: Profile ──────────────────────────────── -->
+          <div class="profile-tab-panel profile-tab-panel--active" data-panel="identity">
+
+            <div class="doc-section" style="margin-bottom:0;">
+              <div class="doc-section-heading">Identity</div>
+              <div class="profile-identity-row">
+                <div class="profile-page-avatar" id="profile-page-avatar-circle">
+                  <span id="profile-page-initials">?</span>
                 </div>
-                <div class="field-group">
-                  <label class="field-label" for="pref-location">Location</label>
-                  <input class="field-input" id="pref-location" type="text" placeholder="e.g. London, UK or Remote">
+                <div class="profile-identity-fields">
+                  <div class="field-group">
+                    <label class="field-label" for="pref-display-name">Your name</label>
+                    <input class="field-input" id="pref-display-name" type="text" placeholder="e.g. Alex Chen" autocomplete="off">
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="pref-location">Location</label>
+                    <input class="field-input" id="pref-location" type="text" placeholder="e.g. London, UK or Remote">
+                  </div>
                 </div>
               </div>
             </div>
+
+            <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+              <div class="doc-section-heading">Personal Context</div>
+              <p class="pref-context-note" style="margin-bottom:12px;">Write a few lines about the kind of work, environment, constraints, and opportunities that matter to you. Rolewise uses this as context when reviewing roles.</p>
+              <textarea class="pref-role-note-textarea" id="pref-role-note" placeholder="e.g. I prefer complex B2B SaaS products. I want high ownership and strong product collaboration. Outside IR35 contract work is ideal, but I&#39;m open to strong permanent roles…" spellcheck="true"></textarea>
+            </div>
+
+            <div id="pref-save-error" class="inline-error hidden" style="margin-top:20px;"></div>
+            <div style="display:flex;align-items:center;gap:14px;margin-top:20px;margin-bottom:8px;">
+              <button class="btn-primary" id="btn-save-prefs">Save</button>
+              <span id="pref-save-confirm" style="font-size:12.5px;color:var(--text-muted);"></span>
+            </div>
+            <span id="pref-profile-id" data-id="" style="display:none;"></span>
           </div>
 
-          <!-- B: Work Preferences ─────────────────────────── -->
-          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
-            <div class="doc-section-heading">Work Preferences</div>
+          <!-- ── Tab 2: Job Preferences ──────────────────────── -->
+          <div class="profile-tab-panel" data-panel="jobprefs">
 
-            <div class="field-group" style="margin-bottom:18px;">
-              <div class="field-label">Work model <span class="opt">(select all that apply)</span></div>
-              <div class="pref-check-group pref-checkbox-grid">
-                <label class="pref-check"><input type="checkbox" name="pref-wm" value="remote"> Remote</label>
-                <label class="pref-check"><input type="checkbox" name="pref-wm" value="hybrid"> Hybrid</label>
-                <label class="pref-check"><input type="checkbox" name="pref-wm" value="on-site"> On-site</label>
-              </div>
-            </div>
+            <!-- Saved preferences summary -->
+            <div id="pref-summary-strip" class="pref-summary-strip"></div>
 
-            <div class="pref-reveal" id="reveal-hybrid" style="display:none;">
-              <div class="field-group" style="margin-bottom:14px;">
-                <label class="field-label" for="pref-hybrid-max-days">Maximum office days per week</label>
-                <input class="field-input" id="pref-hybrid-max-days" type="number" min="1" max="5" placeholder="e.g. 2" style="max-width:100px;">
-              </div>
-            </div>
+            <!-- Work Preferences -->
+            <div class="doc-section" style="margin-bottom:0;">
+              <div class="doc-section-heading">Work Preferences</div>
 
-            <div class="pref-reveal" id="reveal-office-location" style="display:none;">
               <div class="field-group" style="margin-bottom:18px;">
-                <label class="field-label" for="pref-office-location">Preferred office location</label>
-                <input class="field-input" id="pref-office-location" type="text" placeholder="e.g. London, City or Canary Wharf">
+                <div class="field-label">Work model <span class="opt">(select all that apply)</span></div>
+                <div class="pref-check-group pref-checkbox-grid">
+                  <label class="pref-check"><input type="checkbox" name="pref-wm" value="remote"> Remote</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-wm" value="hybrid"> Hybrid</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-wm" value="on-site"> On-site</label>
+                </div>
+              </div>
+
+              <div class="pref-reveal" id="reveal-hybrid" style="display:none;">
+                <div class="field-group" style="margin-bottom:14px;">
+                  <label class="field-label" for="pref-hybrid-max-days">Maximum office days per week</label>
+                  <input class="field-input" id="pref-hybrid-max-days" type="number" min="1" max="5" placeholder="e.g. 2" style="max-width:100px;">
+                </div>
+              </div>
+
+              <div class="pref-reveal" id="reveal-office-location" style="display:none;">
+                <div class="field-group" style="margin-bottom:18px;">
+                  <label class="field-label" for="pref-office-location">Preferred office location</label>
+                  <input class="field-input" id="pref-office-location" type="text" placeholder="e.g. London, City or Canary Wharf">
+                </div>
+              </div>
+
+              <div class="field-group">
+                <div class="field-label">Employment type <span class="opt">(select all that apply)</span></div>
+                <div class="pref-check-group pref-checkbox-grid">
+                  <label class="pref-check"><input type="checkbox" name="pref-emp-type" value="permanent"> Permanent</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-emp-type" value="contract"> Contract</label>
+                </div>
               </div>
             </div>
 
-            <div class="field-group">
-              <div class="field-label">Employment type <span class="opt">(select all that apply)</span></div>
-              <div class="pref-check-group pref-checkbox-grid">
-                <label class="pref-check"><input type="checkbox" name="pref-emp-type" value="permanent"> Permanent</label>
-                <label class="pref-check"><input type="checkbox" name="pref-emp-type" value="contract"> Contract</label>
+            <!-- Compensation -->
+            <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+              <div class="doc-section-heading">Compensation</div>
+
+              <div class="field-group" style="margin-bottom:16px;">
+                <label class="field-label" for="pref-salary-min">Minimum salary <span class="opt">(£/year, permanent)</span></label>
+                <input class="field-input" id="pref-salary-min" type="number" placeholder="e.g. 90000" min="0" style="max-width:160px;">
               </div>
-            </div>
-          </div>
 
-          <!-- C: Compensation ─────────────────────────────── -->
-          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
-            <div class="doc-section-heading">Compensation</div>
+              <div class="field-group" style="margin-bottom:16px;">
+                <label class="field-label" for="pref-day-rate">Day rate <span class="opt">(£/day, contract)</span></label>
+                <input class="field-input" id="pref-day-rate" type="number" placeholder="e.g. 550" min="0" style="max-width:160px;">
+              </div>
 
-            <div class="field-group" style="margin-bottom:16px;">
-              <label class="field-label" for="pref-salary-min">Minimum salary <span class="opt">(£/year, permanent)</span></label>
-              <input class="field-input" id="pref-salary-min" type="number" placeholder="e.g. 90000" min="0" style="max-width:160px;">
-            </div>
+              <div class="field-group" style="margin-bottom:16px;">
+                <div class="field-label">IR35 status</div>
+                <div class="pref-radio-group">
+                  <label class="pref-radio"><input type="radio" name="pref-ir35" value="outside"> Outside IR35</label>
+                  <label class="pref-radio"><input type="radio" name="pref-ir35" value="inside"> Inside IR35</label>
+                  <label class="pref-radio"><input type="radio" name="pref-ir35" value="na" checked> Not applicable</label>
+                </div>
+              </div>
 
-            <div class="field-group" style="margin-bottom:16px;">
-              <label class="field-label" for="pref-day-rate">Day rate <span class="opt">(£/day, contract)</span></label>
-              <input class="field-input" id="pref-day-rate" type="number" placeholder="e.g. 550" min="0" style="max-width:160px;">
-            </div>
-
-            <div class="field-group" style="margin-bottom:16px;">
-              <div class="field-label">IR35 status</div>
-              <div class="pref-radio-group">
-                <label class="pref-radio"><input type="radio" name="pref-ir35" value="outside"> Outside IR35</label>
-                <label class="pref-radio"><input type="radio" name="pref-ir35" value="inside"> Inside IR35</label>
-                <label class="pref-radio"><input type="radio" name="pref-ir35" value="na" checked> Not applicable</label>
+              <div class="field-group">
+                <label class="field-label" for="pref-days-per-month">Days per month <span class="opt">(default 20, contract)</span></label>
+                <input class="field-input" id="pref-days-per-month" type="number" placeholder="20" min="1" max="31" style="max-width:160px;">
               </div>
             </div>
 
-            <div class="field-group">
-              <label class="field-label" for="pref-days-per-month">Days per month <span class="opt">(default 20, contract)</span></label>
-              <input class="field-input" id="pref-days-per-month" type="number" placeholder="20" min="1" max="31" style="max-width:160px;">
-            </div>
-          </div>
-
-          <!-- D: Boundaries and Deal-Breakers ──────────────── -->
-          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
-            <div class="doc-section-heading">Boundaries and Deal-Breakers</div>
-            <p class="pref-context-note" style="margin-bottom:16px;">What would make a role an automatic no? Add anything here — requirements, conditions, or working styles you won&#39;t accept.</p>
-            <div id="pref-deal-breaker-list" class="pref-deal-breaker-list"></div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
-              <input class="field-input" id="pref-deal-breaker-input" type="text" placeholder="e.g. Requires production coding" style="flex:1;max-width:340px;" autocomplete="off">
-              <button class="btn-ghost" id="btn-add-deal-breaker" type="button" style="height:39px;padding-top:0;padding-bottom:0;align-self:center;">Add</button>
-            </div>
-          </div>
-
-          <!-- E: Company Preferences ──────────────────────── -->
-          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
-            <div class="doc-section-heading">Company Preferences</div>
-            <p class="pref-context-note" style="margin-bottom:16px;">Mark each company stage as Ideal, Open to, or Avoid to help Rolewise understand where you fit best.</p>
-            <div id="pref-stage-list" class="pref-stage-list"></div>
-          </div>
-
-          <!-- F: Role Preferences ──────────────────────────── -->
-          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
-            <div class="doc-section-heading">Role Preferences</div>
-
-            <div class="field-group" style="margin-bottom:18px;">
-              <div class="field-label">Seniority level <span class="opt">(select all that apply)</span></div>
-              <div class="pref-check-group pref-checkbox-grid">
-                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="lead"> Lead</label>
-                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="principal"> Principal</label>
-                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="head"> Head of</label>
-                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="director"> Director</label>
-                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="vp"> VP</label>
-                <label class="pref-check"><input type="checkbox" name="pref-seniority" value="cxo"> C-suite</label>
+            <!-- Boundaries and Deal-Breakers -->
+            <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+              <div class="doc-section-heading">Boundaries and Deal-Breakers</div>
+              <p class="pref-context-note" style="margin-bottom:16px;">What would make a role an automatic no? Add anything here — requirements, conditions, or working styles you won&#39;t accept.</p>
+              <div id="pref-deal-breaker-list" class="pref-deal-breaker-list"></div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+                <input class="field-input" id="pref-deal-breaker-input" type="text" placeholder="e.g. Requires production coding" style="flex:1;max-width:340px;" autocomplete="off">
+                <button class="btn-ghost" id="btn-add-deal-breaker" type="button" style="height:39px;padding-top:0;padding-bottom:0;align-self:center;">Add</button>
               </div>
             </div>
 
-            <div class="field-group" style="margin-bottom:18px;">
-              <div class="field-label">Domains <span class="opt">(select all that apply)</span></div>
-              <div class="pref-check-group pref-checkbox-grid">
-                <label class="pref-check"><input type="checkbox" name="pref-domain" value="b2b-saas"> B2B SaaS</label>
-                <label class="pref-check"><input type="checkbox" name="pref-domain" value="consumer"> Consumer</label>
-                <label class="pref-check"><input type="checkbox" name="pref-domain" value="fintech"> Fintech</label>
-                <label class="pref-check"><input type="checkbox" name="pref-domain" value="healthtech"> HealthTech</label>
-                <label class="pref-check"><input type="checkbox" name="pref-domain" value="edtech"> EdTech</label>
-                <label class="pref-check"><input type="checkbox" name="pref-domain" value="ecommerce"> E-commerce</label>
-                <label class="pref-check"><input type="checkbox" name="pref-domain" value="enterprise"> Enterprise</label>
-                <label class="pref-check"><input type="checkbox" name="pref-domain" value="marketplace"> Marketplace</label>
+            <!-- Company Preferences -->
+            <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+              <div class="doc-section-heading">Company Preferences</div>
+              <p class="pref-context-note" style="margin-bottom:16px;">Mark each company stage as Ideal, Open to, or Avoid to help Rolewise understand where you fit best.</p>
+              <div id="pref-stage-list" class="pref-stage-list"></div>
+            </div>
+
+            <!-- Role Preferences -->
+            <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+              <div class="doc-section-heading">Role Preferences</div>
+
+              <div class="field-group" style="margin-bottom:18px;">
+                <div class="field-label">Seniority level <span class="opt">(select all that apply)</span></div>
+                <div class="pref-check-group pref-checkbox-grid">
+                  <label class="pref-check"><input type="checkbox" name="pref-seniority" value="lead"> Lead</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-seniority" value="principal"> Principal</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-seniority" value="head"> Head of</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-seniority" value="director"> Director</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-seniority" value="vp"> VP</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-seniority" value="cxo"> C-suite</label>
+                </div>
+              </div>
+
+              <div class="field-group" style="margin-bottom:18px;">
+                <div class="field-label">Domains <span class="opt">(select all that apply)</span></div>
+                <div class="pref-check-group pref-checkbox-grid">
+                  <label class="pref-check"><input type="checkbox" name="pref-domain" value="b2b-saas"> B2B SaaS</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-domain" value="consumer"> Consumer</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-domain" value="fintech"> Fintech</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-domain" value="healthtech"> HealthTech</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-domain" value="edtech"> EdTech</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-domain" value="ecommerce"> E-commerce</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-domain" value="enterprise"> Enterprise</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-domain" value="marketplace"> Marketplace</label>
+                </div>
+              </div>
+
+              <div class="field-group" style="margin-bottom:18px;">
+                <div class="field-label">Product maturity <span class="opt">(select all that apply)</span></div>
+                <div class="pref-check-group">
+                  <label class="pref-check"><input type="checkbox" name="pref-maturity" value="building"> Building from scratch (0\u21921)</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-maturity" value="scaling"> Scaling an existing product</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-maturity" value="mature"> Mature / optimisation</label>
+                </div>
+              </div>
+
+              <div class="field-group" style="margin-bottom:14px;">
+                <label class="field-label" for="pref-work-more">Work I want more of</label>
+                <input class="field-input" id="pref-work-more" type="text" placeholder="e.g. Strategy, discovery, cross-functional alignment">
+              </div>
+
+              <div class="field-group">
+                <label class="field-label" for="pref-work-less">Work I want less of</label>
+                <input class="field-input" id="pref-work-less" type="text" placeholder="e.g. Delivery management, status reporting">
               </div>
             </div>
 
-            <div class="field-group" style="margin-bottom:18px;">
-              <div class="field-label">Product maturity <span class="opt">(select all that apply)</span></div>
-              <div class="pref-check-group">
-                <label class="pref-check"><input type="checkbox" name="pref-maturity" value="building"> Building from scratch (0→1)</label>
-                <label class="pref-check"><input type="checkbox" name="pref-maturity" value="scaling"> Scaling an existing product</label>
-                <label class="pref-check"><input type="checkbox" name="pref-maturity" value="mature"> Mature / optimisation</label>
-              </div>
-            </div>
-
-            <div class="field-group" style="margin-bottom:14px;">
-              <label class="field-label" for="pref-work-more">Work I want more of</label>
-              <input class="field-input" id="pref-work-more" type="text" placeholder="e.g. Strategy, discovery, cross-functional alignment">
-            </div>
-
-            <div class="field-group">
-              <label class="field-label" for="pref-work-less">Work I want less of</label>
-              <input class="field-input" id="pref-work-less" type="text" placeholder="e.g. Delivery management, status reporting">
+            <div style="display:flex;align-items:center;gap:14px;margin-top:24px;margin-bottom:8px;">
+              <button class="btn-primary" id="btn-save-prefs-jobprefs">Save preferences</button>
+              <span id="pref-save-confirm-jobprefs" style="font-size:12.5px;color:var(--text-muted);"></span>
             </div>
           </div>
 
-          <!-- G: Personal Context ──────────────────────────── -->
-          <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
-            <div class="doc-section-heading">Personal Context</div>
-            <p class="pref-context-note" style="margin-bottom:12px;">Write a few lines about the kind of work, environment, constraints, and opportunities that matter to you. Rolewise uses this as context when reviewing roles.</p>
-            <textarea class="pref-role-note-textarea" id="pref-role-note" placeholder="e.g. I prefer complex B2B SaaS products. I want high ownership and strong product collaboration. Outside IR35 contract work is ideal, but I&#39;m open to strong permanent roles…" spellcheck="true"></textarea>
-          </div>
+          <!-- ── Tab 3: CV Library ────────────────────────────── -->
+          <div class="profile-tab-panel" data-panel="cv">
+            <div class="doc-section" style="margin-bottom:0;">
+              <div class="doc-section-heading">Your CVs</div>
+              <p class="pref-context-note" style="margin-bottom:16px;">Rolewise can use your CV variants as context when reviewing roles and spotting patterns over time.</p>
+              <div id="cv-list"></div>
+            </div>
 
-          <!-- Save row -->
-          <div id="pref-save-error" class="inline-error hidden" style="margin-top:20px;"></div>
-          <div style="display:flex;align-items:center;gap:14px;margin-top:20px;margin-bottom:8px;">
-            <button class="btn-primary" id="btn-save-prefs">Save preferences</button>
-            <span id="pref-save-confirm" style="font-size:12.5px;color:var(--text-muted);"></span>
-          </div>
-          <span id="pref-profile-id" data-id="" style="display:none;"></span>
-
-          <!-- D: CV Library ──────────────────────────────── -->
-          <div class="doc-section" style="margin-top:32px; padding-top:28px; border-top:1px solid var(--border-light);">
-            <div class="doc-section-heading">CV Library</div>
-            <p class="pref-context-note" style="margin-bottom:16px;">Rolewise can use your CV variants as context when reviewing roles and spotting patterns over time.</p>
-            <div id="cv-list"></div>
-
-            <div style="margin-top:20px; padding-top:20px; border-top:1px solid var(--border-light);">
-              <div class="doc-section-heading" style="margin-bottom:14px;">Add a CV version</div>
-              <div id="cv-save-error" class="inline-error hidden"></div>
+            <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+              <div class="doc-section-heading">Add a CV version</div>
+              <div id="cv-save-error" class="inline-error hidden" style="margin-bottom:12px;"></div>
 
               <div class="field-group" style="margin-bottom:12px;">
                 <label class="field-label" for="cv-name">Name <span class="opt">(required)</span></label>
@@ -13600,39 +14214,81 @@
             </div>
           </div>
 
-          <!-- E: Appearance ──────────────────────────────── -->
-          <div class="doc-section" id="profile-appearance-section" style="margin-top:32px; padding-top:28px; border-top:1px solid var(--border-light);">
-            <div class="doc-section-heading">Appearance</div>
-            <p class="pref-context-note" style="margin-bottom:16px;">Choose how Rolewise looks on this device.</p>
-            <div class="field-group" style="margin-top:8px;">
-              <div class="field-label" style="margin-bottom:10px;">Colour scheme</div>
-              <div class="appearance-mode-row" id="appearance-mode-row">
-                <button class="appearance-mode-btn" data-mode="light"  onclick="setAppearanceMode('light')">Light</button>
-                <button class="appearance-mode-btn" data-mode="dark"   onclick="setAppearanceMode('dark')">Dark</button>
-                <button class="appearance-mode-btn" data-mode="system" onclick="setAppearanceMode('system')">System</button>
+          <!-- ── Tab 4: Appearance ───────────────────────────── -->
+          <div class="profile-tab-panel" data-panel="appearance">
+            <div class="doc-section" id="profile-appearance-section" style="margin-bottom:0;">
+              <div class="doc-section-heading">Appearance</div>
+              <p class="pref-context-note" style="margin-bottom:16px;">Choose how Rolewise looks on this device.</p>
+              <div class="field-group" style="margin-top:8px;">
+                <div class="field-label" style="margin-bottom:10px;">Colour scheme</div>
+                <div class="appearance-mode-row" id="appearance-mode-row">
+                  <button class="appearance-mode-btn" data-mode="light"  onclick="setAppearanceMode('light')">Light</button>
+                  <button class="appearance-mode-btn" data-mode="dark"   onclick="setAppearanceMode('dark')">Dark</button>
+                  <button class="appearance-mode-btn" data-mode="system" onclick="setAppearanceMode('system')">System</button>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- F: LinkedIn ─────────────────────────────────── -->
-          <div class="doc-section" id="profile-linkedin-section" style="margin-top:32px; padding-top:28px; border-top:1px solid var(--border-light);">
-            <div class="doc-section-heading">LinkedIn</div>
-            <p class="pref-context-note" style="margin-bottom:16px;">Paste your LinkedIn <code>li_at</code> session cookie to enable one-click JD fetch. Find it in Chrome DevTools → Application → Cookies → www.linkedin.com.</p>
-            <div class="field-group" style="margin-bottom:16px;">
-              <label class="field-label" for="pref-li-at">li_at cookie value</label>
-              <textarea class="field-textarea" id="pref-li-at" placeholder="Paste your li_at value here…" spellcheck="false" autocomplete="off" style="min-height:72px;font-family:var(--font-mono,monospace);font-size:11px;word-break:break-all;"></textarea>
-            </div>
-            <div style="display:flex;align-items:center;gap:14px;">
-              <button class="btn-primary" id="btn-save-li-at">Save</button>
-              <span id="li-at-save-confirm" style="font-size:12.5px;color:var(--text-muted);"></span>
+          <!-- ── Tab 5: LinkedIn ─────────────────────────────── -->
+          <div class="profile-tab-panel" data-panel="linkedin">
+            <div class="doc-section" id="profile-linkedin-section" style="margin-bottom:0;">
+              <div class="doc-section-heading">LinkedIn</div>
+              <p class="pref-context-note" style="margin-bottom:16px;">Paste your LinkedIn <code>li_at</code> session cookie to enable one-click JD fetch. Find it in Chrome DevTools &rarr; Application &rarr; Cookies &rarr; www.linkedin.com.</p>
+              <div class="field-group" style="margin-bottom:16px;">
+                <label class="field-label" for="pref-li-at">li_at cookie value</label>
+                <textarea class="field-textarea" id="pref-li-at" placeholder="Paste your li_at value here…" spellcheck="false" autocomplete="off" style="min-height:72px;font-family:var(--font-mono,monospace);font-size:11px;word-break:break-all;"></textarea>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;">
+                <button class="btn-primary" id="btn-save-li-at">Save</button>
+                <span id="li-at-save-confirm" style="font-size:12.5px;color:var(--text-muted);"></span>
+              </div>
             </div>
           </div>
+
         </div>
         </div>
       `;
 
-      // Wire up preferences save
-      document.getElementById('btn-save-prefs').addEventListener('click', savePreferences);
+      // ── Tab switching ───────────────────────────────────────────────────────
+      document.querySelectorAll('.profile-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          var target = tab.dataset.tab;
+          document.querySelectorAll('.profile-tab').forEach(function(t) {
+            t.classList.toggle('profile-tab--active', t.dataset.tab === target);
+            t.setAttribute('aria-selected', t.dataset.tab === target ? 'true' : 'false');
+          });
+          document.querySelectorAll('.profile-tab-panel').forEach(function(p) {
+            p.classList.toggle('profile-tab-panel--active', p.dataset.panel === target);
+          });
+          // Scroll panel back to top on switch
+          var scroll = document.querySelector('[style*="overflow-y"]');
+          if (scroll) scroll.scrollTop = 0;
+        });
+      });
+
+      // ── Preferences save (both Profile tab and Job Prefs tab share one handler) ──
+      function _wireSaveBtn(id, confirmId) {
+        var btn = document.getElementById(id);
+        var confirm = document.getElementById(confirmId);
+        if (!btn) return;
+        btn.addEventListener('click', async function() {
+          btn.disabled = true; btn.textContent = 'Saving\u2026';
+          if (confirm) confirm.textContent = '';
+          try {
+            await savePreferences();
+            _renderPrefSummary();
+            if (confirm) { confirm.textContent = 'Saved.'; setTimeout(function() { if (confirm) confirm.textContent = ''; }, 2500); }
+          } catch(e) {
+            var errEl = document.getElementById('pref-save-error');
+            if (errEl) { errEl.textContent = e.message || 'Save failed.'; errEl.classList.remove('hidden'); }
+          } finally {
+            btn.disabled = false; btn.textContent = id === 'btn-save-prefs' ? 'Save' : 'Save preferences';
+          }
+        });
+      }
+      _wireSaveBtn('btn-save-prefs', 'pref-save-confirm');
+      _wireSaveBtn('btn-save-prefs-jobprefs', 'pref-save-confirm-jobprefs');
 
       // Work model conditional reveals
       document.querySelectorAll('input[name="pref-wm"]').forEach(function(cb) {
@@ -13658,6 +14314,43 @@
       _renderDealBreakers();
       _renderCompanyStages();
 
+      // ── Prefs summary strip ─────────────────────────────────────────────────
+      function _renderPrefSummary() {
+        var strip = document.getElementById('pref-summary-strip');
+        if (!strip || !userProfile) { if (strip) strip.innerHTML = ''; return; }
+        var p = userProfile;
+        var pills = [];
+        // Work models
+        var wms = Array.isArray(p.work_models) && p.work_models.length ? p.work_models : (p.work_model && p.work_model !== 'unsure' ? [p.work_model] : []);
+        if (wms.length) {
+          var wmLabel = wms.map(function(m) { return m.charAt(0).toUpperCase() + m.slice(1).replace('-', '\u2011'); }).join(' / ');
+          if (p.hybrid_max_days && wms.indexOf('hybrid') >= 0) wmLabel += ' \u2264' + p.hybrid_max_days + 'd';
+          pills.push(wmLabel);
+        }
+        // Employment
+        var emps = Array.isArray(p.employment_types) && p.employment_types.length ? p.employment_types : (p.contract_type && p.contract_type !== 'either' ? [p.contract_type] : []);
+        if (emps.length) pills.push(emps.map(function(e) { return e.charAt(0).toUpperCase() + e.slice(1); }).join(' / '));
+        // Salary
+        if (p.salary_min) pills.push('\u00a3' + Math.round(p.salary_min / 1000) + 'k min');
+        if (p.day_rate)   pills.push('\u00a3' + p.day_rate + '/day');
+        // Company stages — only 'ideal' ones
+        if (Array.isArray(p.company_stages)) {
+          var idealStages = p.company_stages.filter(function(s) { return s.strength === 'ideal'; });
+          if (idealStages.length) {
+            var _STAGE_SHORT = { 'early-startup':'Early-stage', 'growth':'Growth', 'scale-up':'Scale-up', 'enterprise':'Enterprise', 'nfp':'NFP', 'agency':'Agency' };
+            pills.push(idealStages.map(function(s) { return _STAGE_SHORT[s.stage] || s.stage; }).join(', '));
+          }
+        }
+        // Seniority
+        if (Array.isArray(p.seniority) && p.seniority.length) {
+          var _SEN_SHORT = { lead:'Lead', principal:'Principal', head:'Head of', director:'Director', vp:'VP', cxo:'C-suite' };
+          pills.push(p.seniority.map(function(s) { return _SEN_SHORT[s] || s; }).join(', '));
+        }
+        strip.innerHTML = pills.length
+          ? pills.map(function(t) { return '<span class="pref-summary-pill">' + esc(t) + '</span>'; }).join('')
+          : '<span style="font-size:12px;color:var(--text-light);">No preferences saved yet — fill in the sections below.</span>';
+      }
+
       // Live-update profile page avatar as name is typed
       const _nameInputEl = document.getElementById('pref-display-name');
       const _pageInitialsEl = document.getElementById('profile-page-initials');
@@ -13679,6 +14372,7 @@
           const idEl = document.getElementById('pref-profile-id');
           if (idEl) idEl.dataset.id = profile.id;
           fillPreferencesForm(profile.preferences_json || {});
+          _renderPrefSummary();
         } catch (e) {
           if (errEl) { errEl.textContent = 'Could not load preferences: ' + e.message; errEl.classList.remove('hidden'); }
         }
@@ -15836,9 +16530,14 @@
       return `<div class="rw-card rw-card--full rw-srim" id="section-similar-roles">${_html}</div>`;
     }
 
-    function renderMatchOutput(output) {
+    function renderMatchOutput(output, options) {
+      const _partsOnly = options && options.partsOnly;
       if (!output || typeof output !== 'object') {
-        return '<p class="doc-no-analysis" style="padding:8px 0;">No analysis data.</p>';
+        const _empty = '<p class="doc-no-analysis" style="padding:8px 0;">No analysis data.</p>';
+        if (_partsOnly) {
+          return { mainHtml: _empty, sidebarInnerHtml: '', jdModal: '' };
+        }
+        return _empty;
       }
 
       // ── Convert legacy shape to canonical before rendering ─────────────────
@@ -16012,7 +16711,9 @@
           const _dbIsHybrid = _dbWm.startsWith('hybrid') || _dbWm.startsWith('onsite') || _dbWm.startsWith('on-site') ||
                               (_dbPd.location || '').toLowerCase().includes('hybrid') ||
                               (_dbPd.location || '').toLowerCase().includes('on-site');
-          const _dbNotViable = _dbIsHardNo || _dbHasCoding || _dbIsHybrid;
+          // Viability: only hard_no and coding are definite breaks.
+          // Hybrid/on-site are ambiguous — classified as NEEDS_CLARITY, not BREAKS.
+          const _dbNotViable = _dbIsHardNo || _dbHasCoding;
 
           // 1. Fit reality
           // Hard blockers are woven into the prose by the AI, not rendered as a banner.
@@ -16052,7 +16753,8 @@
               ? output.role_reality_summary.slice(0, 4) : null;
             if (_rrs) {
               _whatIsItHtml = `<ul class="rw-doc-bullets">${_rrs.map(s => `<li>${esc(String(s))}</li>`).join('')}</ul>`;
-            } else if (output.role_summary && output.role_summary !== 'Unknown' && output.role_summary !== 'Not stated') {
+            } else if (!_roleSummaryHtml && output.role_summary && output.role_summary !== 'Unknown' && output.role_summary !== 'Not stated') {
+              // Only fall back to role_summary when it isn't already shown in "Role summary" above
               _whatIsItHtml = `<p class="rw-doc-prose">${esc(output.role_summary)}</p>`;
             } else if (output.role_archetype) {
               const _archText = typeof output.role_archetype === 'object' ? output.role_archetype.primary : output.role_archetype;
@@ -16212,9 +16914,8 @@
               ? `<p class="rw-doc-prose">Inferred:</p>` + _bullets(_sec.inferred) : '';
             _risksHtml = _intro + _stated + _inferred;
           } else {
-            _risksHtml = _fa && _fa.watchouts.length
-              ? `<ul class="rw-doc-bullets rw-doc-bullets--muted">${_fa.watchouts.map(w => `<li>${esc(w)}</li>`).join('')}</ul>`
-              : '';
+            // Populated after unified classification pass from NEEDS_CLARITY signals
+            _risksHtml = '';
           }
 
           // 7. Candidate match (personalisation section)
@@ -16240,192 +16941,38 @@
           // Viability vars (_dbIsHardNo, _dbHasCoding, _dbIsHybrid, _dbNotViable,
           // _dbPd, _dbFs, _dbWm, _DB_CODING) hoisted above fit reality section.
 
-          // ── Signal bullets (3–5, one idea per bullet, no paragraphs) ───
-          const _signals = [];
-          const _needsClarity = [];
+          // ═══════════════════════════════════════════════════════════════════
+          // Signal classification + decision rendering (analysis/signals.js + analysis/render.js)
+          // ═══════════════════════════════════════════════════════════════════
 
-          if (_dbNotViable) {
-            // Blockers first, then facts
-            if (_dbHasCoding) _signals.push('Production coding required');
-            if (_dbIsHybrid) {
-              const _wmLabel = _dbPd.remote_model || _dbPd.location || 'On-site/hybrid';
-              _signals.push(`Work model: ${_wmLabel}`);
-            }
-            if (_dbIsHardNo && !_dbHasCoding && !_dbIsHybrid) _signals.push(output.hard_no_reason || 'Hard constraint detected');
-            // Add factual context even for not-viable
-            const _dbSen = (_dbPd.seniority || '').toLowerCase();
-            if (_dbSen && _dbSen !== 'not stated') _signals.push(`Seniority: ${_dbPd.seniority}`);
-            if (_dbPd.location && !_dbIsHybrid) _signals.push(`Location: ${_dbPd.location}`);
-          } else {
-            // Positive signals
-            if (_dbWm.startsWith('remote')) _signals.push('Remote role');
-            if (!_dbHasCoding) _signals.push('No production coding requirement');
-            // Salary
-            const _dbSal = (_dbPd.salary_annual || '').toLowerCase();
-            if (_dbPd.salary_annual && _dbSal !== 'not stated' && !_dbSal.includes('not stated') && !_dbSal.includes('competitive')) {
-              _signals.push(`Compensation: ${_dbPd.salary_annual}`);
-            }
-            // Seniority match
-            const _dbSen = (_dbPd.seniority || '').toLowerCase();
-            if (_dbSen && _dbSen !== 'not stated') _signals.push(`Seniority: ${_dbPd.seniority}`);
-            // Domain / scope from role_summary
-            const _rss = output.role_shape_signals || {};
-            if (_rss.product_mode === 'greenfield') _signals.push('Building new product');
-            else if (_rss.product_mode === 'iteration') _signals.push('Iterating on existing product');
-            // Pattern match
-            if (output.pattern_type === 'pursue_pattern') _signals.push('Matches roles you tend to pursue');
+          // ── Classify signals ──────────────────────────────────────────
+          // Resolve engagement_type: role-level (structured) → AI practical_details fallback
+          var _engTypeForSignals = (function() {
+            var _role = (typeof selectedRoleId !== 'undefined') ? allRoles.find(function(r) { return r.id === selectedRoleId; }) : null;
+            return (_role && _role.engagement_type && _role.engagement_type !== 'Unknown')
+              ? _role.engagement_type
+              : (_dbPd.employment_type || null);
+          })();
+
+          var _signals = classifySignals(output, _narr,
+            { isHardNo: _dbIsHardNo, hasCoding: _dbHasCoding, dbWm: _dbWm, dbPd: _dbPd, engagementType: _engTypeForSignals },
+            userProfile || {});
+
+          // ── Populate risks fallback from NEEDS_CLARITY ────────────────
+          if (!_risksHtml && _signals.clarity.length) {
+            _risksHtml = '<ul class="rw-doc-bullets rw-doc-bullets--muted">' +
+              _signals.clarity.map(function(s) { return '<li>' + esc(s.text) + '</li>'; }).join('') + '</ul>';
           }
 
-          // ── Needs clarity (ambiguity signals, max 3) ───────────────────
-          const _dbSalClarity = (_dbPd.salary_annual || '').toLowerCase();
-          const _salUnclear = !_dbPd.salary_annual || _dbSalClarity === 'not stated'
-            || _dbSalClarity.includes('not stated') || _dbSalClarity.includes('competitive');
-          if (_salUnclear && !_dbNotViable) _needsClarity.push('Salary not disclosed');
-          if (_dbWm.startsWith('not stated') || (!_dbWm && !_dbIsHybrid)) _needsClarity.push('Work model not stated');
-          const _rssClarity = output.role_shape_signals || {};
-          if (_rssClarity.product_mode === 'mixed' || !_rssClarity.product_mode) {
-            // Only add if we have no other clarity about scope
-            if (_needsClarity.length < 2) _needsClarity.push('Product scope unclear');
-          }
+          // ── Render decision block ─────────────────────────────────────
+          var _decision = renderDecisionBlock(_signals,
+            { isHardNo: _dbIsHardNo, hasCoding: _dbHasCoding },
+            _narr, output);
+          var _decisionBlockHtml = _decision.html;
+          var _cvPlaceholderHtml = _decision.cvPlaceholderHtml;
 
-          // Cap bullets — max 4 signals, max 2 clarity
-          const _signalsCapped = _signals.slice(0, 4);
-          const _clarityCapped = _needsClarity.slice(0, 2);
-
-          // ── One-line summary (max 1 sentence, no paragraph) ────────────
-          // When a local veto (_dbNotViable) overrides the AI decision, the
-          // narrative summary may contradict the "Not viable" header. Use
-          // a locally generated reason instead of the AI prose in that case.
-          let _decOneLiner = '';
-          if (_dbNotViable) {
-            // Priority: explicit hard_no_reason > coding > hybrid > generic
-            if (_dbIsHardNo && output.hard_no_reason) _decOneLiner = output.hard_no_reason;
-            else if (_dbHasCoding) _decOneLiner = 'This role requires production-level coding.';
-            else if (_dbIsHybrid) _decOneLiner = 'This role requires on-site or hybrid attendance.';
-            else _decOneLiner = 'A hard constraint conflict was detected.';
-          } else if (_narr?.decision?.summary) {
-            // Take first sentence only
-            const _raw = _narr.decision.summary;
-            const _sentEnd = _raw.search(/[.!?]\s/);
-            _decOneLiner = _sentEnd > 0 ? _raw.slice(0, _sentEnd + 1) : (_raw.length <= 120 ? _raw : '');
-          } else if (output.hard_no && output.hard_no_reason) {
-            _decOneLiner = output.hard_no_reason;
-          }
-          // Strip "however"/"but" constructs — keep it clean
-          if (_decOneLiner && /\b(however|but)\b/i.test(_decOneLiner)) {
-            const _cutIdx = _decOneLiner.search(/[,;]\s*(however|but)\b/i);
-            if (_cutIdx > 20) _decOneLiner = _decOneLiner.slice(0, _cutIdx).trim();
-          }
-
-          const _dbIcon  = _dbNotViable ? '\u2715' : '\u2713';
-          const _dbTitle = _dbNotViable ? 'Not viable for you' : 'Worth exploring';
-          const _dbMod   = _dbNotViable ? 'rw-decision-block--not-viable' : 'rw-decision-block--worth';
-
-          const _cvPlaceholderHtml = _dbNotViable ? '' :
-            `<div class="rw-decision-block-cv" id="rw-fa-cv-placeholder">Loading recommendation\u2026</div>`;
-
-          const _decisionBlockHtml = `<div class="rw-decision-block ${_dbMod}">
-            <div class="rw-decision-block-header">
-              <span class="rw-decision-block-icon">${_dbIcon}</span>
-              <span class="rw-decision-block-title">${_dbTitle}</span>
-            </div>
-            ${_signalsCapped.length ? `<ul class="rw-decision-block-reasons">${_signalsCapped.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
-            ${_clarityCapped.length ? `<div class="rw-decision-block-clarity"><span class="rw-decision-block-clarity-label">Needs clarity</span><ul class="rw-decision-block-reasons rw-decision-block-reasons--clarity">${_clarityCapped.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}
-            ${_cvPlaceholderHtml}
-            ${_decOneLiner ? `<p class="rw-decision-block-summary">${esc(_decOneLiner)}</p>` : ''}
-          </div>`;
-
-          // ── Match / Break bullets ────────────────────────────────────────
-          // Compact, scannable bullets directly below the decision block.
-          // "Where this role matches" = strongest positive signals (max 4)
-          // "Why this breaks"         = hard blockers + constraints (max 4)
-          // Sources: narrative fit_reality, risks, output signals, practical_details
-          // No duplication with banner reasons — these add detail.
-
-          const _matchBullets = [];
-          const _breakBullets = [];
-          const _dbReasonSet = new Set(_signalsCapped.map(r => r.toLowerCase()));
-
-          // ── Break bullets (hard blockers first) ──────────────────────────
-          if (_dbHasCoding) _breakBullets.push('This role requires production-level coding');
-          if (_dbIsHybrid) {
-            const _locDetail = _dbPd.location || _dbPd.remote_model || 'On-site/hybrid';
-            _breakBullets.push(`Work model: ${_locDetail}`);
-          }
-          // Salary missing
-          const _dbSalChk = (_dbPd.salary_annual || '').toLowerCase();
-          const _salMissing = !_dbPd.salary_annual || _dbSalChk === 'not stated'
-            || _dbSalChk.includes('not stated') || _dbSalChk.includes('competitive');
-          if (_salMissing) _breakBullets.push('Salary not disclosed');
-          // Narrative inferred risks (add top ones not already in break)
-          if (_narr?.risks_and_unknowns?.inferred) {
-            const _inf = Array.isArray(_narr.risks_and_unknowns.inferred) ? _narr.risks_and_unknowns.inferred : [];
-            for (const r of _inf) {
-              if (_breakBullets.length >= 4) break;
-              const _rLow = r.toLowerCase();
-              if (_breakBullets.some(b => _rLow.includes(b.toLowerCase().slice(0, 20)))) continue;
-              if (_rLow.includes('coding') || _rLow.includes('on-site') || _rLow.includes('salary')) continue;
-              _breakBullets.push(r.replace(/\s*\((Stated|Inferred)\)\s*$/i, ''));
-            }
-          }
-
-          // ── Match bullets (strongest positives) ──────────────────────────
-          // Remote work
-          if (_dbWm.startsWith('remote') && !_dbReasonSet.has('remote role')) {
-            _matchBullets.push('Fully remote, no office requirement');
-          } else if (_dbWm.startsWith('remote')) {
-            // Already in banner — skip to avoid duplication
-          }
-          // No coding
-          if (!_dbHasCoding && !_dbReasonSet.has('no production coding requirement')) {
-            _matchBullets.push('No production coding expected');
-          }
-          // Seniority match
-          const _senVal = (_dbPd.role_seniority || output.role_seniority || '').toLowerCase();
-          if (['senior', 'lead', 'principal', 'staff', 'head of', 'director'].some(t => _senVal.includes(t))) {
-            _matchBullets.push('Seniority aligns with your background');
-          }
-          // Salary stated
-          if (!_salMissing) {
-            _matchBullets.push(`Compensation stated: ${_dbPd.salary_annual}`);
-          }
-          // Pattern match
-          if (output.pattern_type === 'pursue_pattern') {
-            _matchBullets.push('Matches roles you tend to pursue');
-          }
-          // Narrative fit_reality: extract first paragraph as potential match signal
-          if (_narr?.fit_reality?.paragraphs) {
-            const _fp = _narr.fit_reality.paragraphs[0] || '';
-            // Only use if it reads like a positive match (starts with "Strong match", etc.)
-            if (/^(Strong|Good|Close|Direct|Clear)\s/i.test(_fp) && _matchBullets.length < 4) {
-              _matchBullets.push(_fp);
-            }
-          }
-          // Company stage
-          const _cs = output.company_stage || (output.role_shape_signals || {}).company_stage_signal || null;
-          if (_cs === 'startup' && _matchBullets.length < 4) {
-            _matchBullets.push('Early-stage startup');
-          } else if (_cs === 'scaleup' && _matchBullets.length < 4) {
-            _matchBullets.push('Scale-up stage company');
-          }
-
-          // Cap at 4
-          const _matchCapped = _matchBullets.slice(0, 4);
-          const _breakCapped = _breakBullets.slice(0, 4);
-
-          const _matchBreakHtml = (_matchCapped.length || _breakCapped.length) ? `
-            <div class="rw-match-break" id="section-match-break">
-              ${_matchCapped.length ? `
-                <div class="rw-mb-col rw-mb-col--match">
-                  <h3 class="rw-mb-heading rw-mb-heading--match">Where this role matches</h3>
-                  <ul class="rw-mb-list">${_matchCapped.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
-                </div>` : ''}
-              ${_breakCapped.length ? `
-                <div class="rw-mb-col rw-mb-col--break">
-                  <h3 class="rw-mb-heading rw-mb-heading--break">Why this breaks</h3>
-                  <ul class="rw-mb-list">${_breakCapped.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
-                </div>` : ''}
-            </div>` : '';
+          // ── Render match/break section ────────────────────────────────
+          var _matchBreakHtml = renderMatchBreak(_signals, _decision.hasBreaks, _decision.topSignals);
 
           // ── Assemble HTML: all 13 structural sections ─────────────────
           // 1. Decision block  2. Recommended CV  3. Role summary (Match/Break)
@@ -17575,6 +18122,10 @@
           <div class="rw-jd-modal__body" id="rw-jd-modal-body"></div>
         </div>
       </div>`;
+
+      if (_partsOnly) {
+        return { mainHtml: html, sidebarInnerHtml: _fullSidebar, jdModal: _jdModal };
+      }
 
       return `<div class="rw-two-col-layout">
         <div class="rw-main-col">${html}</div>
@@ -27620,10 +28171,16 @@ If a field cannot be determined from the message, return null for that field.`,
 
       // ── Pattern insights ─────────────────────────────────────────────────────
       const _insights     = _computeOutcomeInsights(allRoles);
+      let _ovInterpHtml = '';
+      for (let _oi = 0; _oi < _insights.length; _oi++) {
+        const _interp = _interpretObservation(_insights[_oi]);
+        if (_interp) { _ovInterpHtml = `<div class="rw-obs-interp">${esc(_interp)}</div>`; break; }
+      }
       const _insightsHtml = _insights.length ? `
         <div class="ov-insights">
           <div class="ov-insights-label">Patterns so far</div>
           ${_insights.map(t => `<div class="ov-insight-item">${esc(t)}</div>`).join('')}
+          ${_ovInterpHtml}
         </div>` : '';
 
       // ── Empty state ──────────────────────────────────────────────────────────
@@ -27641,6 +28198,10 @@ If a field cannot be determined from the message, return null for that field.`,
           ${_nextHtml}
           ${_insightsHtml}
         </div>`;
+
+      // ── "While you were away" banner (shown once per session) ──────────
+      const _ovPage = el.querySelector('.ov-page');
+      if (_ovPage) _renderAwaySummaryBanner(_ovPage);
 
       // Pipeline chip clicks → Applications with matching filter
       el.querySelectorAll('.ov-chip').forEach(chip => {
@@ -27885,8 +28446,13 @@ If a field cannot be determined from the message, return null for that field.`,
 
       // ── Render page skeleton (Timeline loads async below) ─────────────────
       el.innerHTML = `<div class="review-wrap">
-        <div class="review-page-title">Review</div>
-        <div class="review-page-sub">Understand how your search is progressing.</div>
+        <div class="review-page-header">
+          <div>
+            <div class="review-page-title">Review</div>
+            <div class="review-page-sub">Understand how your search is progressing.</div>
+          </div>
+          <button class="rw-btn rw-btn-sm" id="btn-monthly-review">Monthly summary</button>
+        </div>
 
         <div class="review-section">
           <div class="review-section-label">Search State</div>
@@ -27919,6 +28485,9 @@ If a field cannot be determined from the message, return null for that field.`,
       </div>`;
 
       document.getElementById('col-rail-section').innerHTML = ''; _setRailVisible(false);
+
+      // ── Monthly Review trigger ────────────────────────────────────────────
+      document.getElementById('btn-monthly-review')?.addEventListener('click', _openMonthlyReview);
 
       // ── Decision Layer: skip reason + blocker breakdown (async) ───────────
       (async () => {
@@ -28200,6 +28769,121 @@ If a field cannot be determined from the message, return null for that field.`,
         if (timelineSec) timelineSec.innerHTML = `<div class="review-section-label">Timeline</div>
           <div class="review-timeline-empty">Could not load timeline.</div>`;
       }
+    }
+
+    // ── Monthly Hiring Reality Review ────────────────────────────────────────
+    // Lightweight modal overlay showing a calm, factual summary of the current
+    // calendar month. No scoring, judgement, or advice — just clarity.
+    function _openMonthlyReview() {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      const monthLabel = now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
+      // ── Filter roles active this month ──────────────────────────────────
+      function _inMonth(dateStr) {
+        if (!dateStr) return false;
+        return new Date(dateStr).getTime() >= monthStart;
+      }
+
+      const appliedThisMonth = allRoles.filter(r => _inMonth(r._appliedDate));
+      const reviewedThisMonth = allRoles.filter(r => _inMonth(r.latest_match_at));
+
+      // ── Progression: highest stage reached by roles applied this month ──
+      const _progCounts = { applied: 0, recruiter: 0, interview: 0, offer: 0 };
+      appliedThisMonth.forEach(r => {
+        const idx = currentStageIndex(r);
+        if (idx >= 1) _progCounts.applied++;
+        if (idx >= 2) _progCounts.recruiter++;
+        if (idx >= 3) _progCounts.interview++;
+        if (idx >= 5) _progCounts.offer++;
+      });
+
+      // ── Outcomes this month ─────────────────────────────────────────────
+      const _outcomeCounts = { rejected: 0, no_response: 0, ghosted: 0, in_progress: 0 };
+      appliedThisMonth.forEach(r => {
+        if (r.outcome_state === 'rejected') _outcomeCounts.rejected++;
+        else if (r.outcome_state === 'no_response') _outcomeCounts.no_response++;
+        else if (r.outcome_state === 'ghosted') _outcomeCounts.ghosted++;
+        else if (!r.outcome_state) _outcomeCounts.in_progress++;
+      });
+
+      // ── Observations (reuse existing + month-specific) ──────────────────
+      const _obs = _computePatternObservations(null).slice(0, 2);
+
+      // Month-specific: dominant work model applied to
+      if (appliedThisMonth.length >= 3) {
+        const _wmCounts = {};
+        appliedThisMonth.forEach(r => {
+          const wm = (r.work_model || '').toLowerCase();
+          const bucket = wm.includes('remote') ? 'Remote' : wm.includes('hybrid') ? 'Hybrid' : (wm.includes('onsite') || wm.includes('on-site')) ? 'On-site' : null;
+          if (bucket) _wmCounts[bucket] = (_wmCounts[bucket] || 0) + 1;
+        });
+        const _top = Object.entries(_wmCounts).sort((a, b) => b[1] - a[1])[0];
+        if (_top && _top[1] >= Math.ceil(appliedThisMonth.length * 0.6)) {
+          _obs.push(`Most applications this month were for ${_top[0].toLowerCase()} roles`);
+        }
+      }
+
+      const _obsSlice = _obs.slice(0, 3);
+
+      // ── Build HTML rows ─────────────────────────────────────────────────
+      function _row(label, val) {
+        return `<div class="review-data-row"><span class="review-data-label">${esc(label)}</span><span class="review-data-val">${val}</span></div>`;
+      }
+
+      const activityHtml = _row('Applied', appliedThisMonth.length) + _row('Reviewed', reviewedThisMonth.length);
+
+      const progressionHtml = _row('Application', _progCounts.applied)
+        + _row('Recruiter screen', _progCounts.recruiter)
+        + _row('Interview', _progCounts.interview)
+        + _row('Offer', _progCounts.offer);
+
+      const outcomeHtml = _row('Rejected', _outcomeCounts.rejected)
+        + _row('No response', _outcomeCounts.no_response)
+        + _row('Ghosted', _outcomeCounts.ghosted)
+        + _row('In progress', _outcomeCounts.in_progress);
+
+      let _mrInterpHtml = '';
+      for (let _mi = 0; _mi < _obsSlice.length; _mi++) {
+        const _interp = _interpretObservation(_obsSlice[_mi]);
+        if (_interp) { _mrInterpHtml = `<div class="rw-obs-interp">${esc(_interp)}</div>`; break; }
+      }
+      const obsHtml = _obsSlice.length
+        ? `<div class="review-section"><div class="review-section-label">Observations</div><ul class="rw-mr-obs-list">${_obsSlice.map(o => `<li>${esc(o)}</li>`).join('')}</ul>${_mrInterpHtml}</div>`
+        : '';
+
+      // ── Inject or reuse modal ───────────────────────────────────────────
+      let modal = document.getElementById('rw-mr-modal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'rw-mr-modal';
+        modal.className = 'rw-mr-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        document.body.appendChild(modal);
+      }
+
+      modal.removeAttribute('hidden');
+      modal.innerHTML = `
+        <div class="rw-mr-modal__backdrop" id="rw-mr-backdrop"></div>
+        <div class="rw-mr-modal__dialog">
+          <div class="rw-mr-modal__header">
+            <span class="rw-mr-modal__title">${esc(monthLabel)}</span>
+            <button class="rw-mr-modal__close" id="rw-mr-close">\u2715</button>
+          </div>
+          <div class="rw-mr-modal__body">
+            <div class="review-section"><div class="review-section-label">Activity</div>${activityHtml}</div>
+            <div class="review-section"><div class="review-section-label">Progression</div>${progressionHtml}</div>
+            <div class="review-section"><div class="review-section-label">Outcomes</div>${outcomeHtml}</div>
+            ${obsHtml}
+          </div>
+        </div>`;
+
+      // ── Wire close handlers ─────────────────────────────────────────────
+      function _close() { modal.setAttribute('hidden', ''); }
+      document.getElementById('rw-mr-close')?.addEventListener('click', _close);
+      document.getElementById('rw-mr-backdrop')?.addEventListener('click', _close);
+      modal.addEventListener('keydown', e => { if (e.key === 'Escape') _close(); });
     }
 
     function renderPlaceholderView(key) {
@@ -28733,10 +29417,10 @@ If a field cannot be determined from the message, return null for that field.`,
           const _e = payload?.error;
           if (_liStatus) _liStatus.textContent =
             _e === 'no_session'
-              ? 'LinkedIn session not set. Add it in Admin → LinkedIn.'
+              ? 'LinkedIn URL detected. To fetch automatically, add your session in Admin \u2192 LinkedIn.'
               : (_e === 'session_expired')
-              ? 'LinkedIn session expired. Update it in Admin → LinkedIn.'
-              : 'Could not fetch job description. Try opening the role and pasting manually.';
+              ? 'LinkedIn URL detected, but your session has expired. Update it in Admin \u2192 LinkedIn.'
+              : 'Could not fetch job description. Try pasting the text directly instead.';
           return;
         }
 
@@ -28983,6 +29667,9 @@ If a field cannot be determined from the message, return null for that field.`,
             console.warn('[refresh] candidate context load failed, using seed', e);
           });
         }
+        // ── "While you were away" check ────────────────────────────────
+        _checkAndShowAwaySummary();
+
         // Populate the center panel based on current nav
         if (currentNav === 'overview') {
           renderOverviewView();

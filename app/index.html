@@ -1072,6 +1072,9 @@
   <!-- AI Inspect: ai-meta.js must load before app.js so aiMeta() is available during render -->
   <!-- DEV ONLY — remove this line for production builds -->
   <script src="devtools/inspect/ai-meta.js"></script>
+  <!-- Analysis layer — signal classification + rendering (must load before app.js) -->
+  <script src="analysis/signals.js"></script>
+  <script src="analysis/render.js"></script>
   <!-- Reasoning Map — must load after app.js so the bridge click handler fires after ROLEWISE_REASONING_MAP is set -->
   <script src="app.js?v=li21"></script>
   <script src="reasoning-map.js"></script>

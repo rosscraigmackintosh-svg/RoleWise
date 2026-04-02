@@ -426,6 +426,63 @@
       line-height: var(--leading-normal);
     }
 
+    /* ─── "While you were away" banner ──────────────────────────────────── */
+    .rw-away-banner {
+      background: var(--surface);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg, 10px);
+      padding: 14px 16px;
+      margin-bottom: 20px;
+    }
+    .rw-away-banner__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .rw-away-banner__title {
+      font-family: var(--font-head);
+      font-size: var(--text-md);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .rw-away-banner__dismiss {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      color: var(--text-light);
+      font-size: 13px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.1s, color 0.1s;
+    }
+    .rw-away-banner__dismiss:hover {
+      background: var(--bg, #f5f5f5);
+      color: var(--text);
+    }
+    .rw-away-banner__sub {
+      font-size: var(--text-sm);
+      color: var(--text-light);
+      margin-bottom: 10px;
+    }
+    .rw-away-banner__list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .rw-away-banner__list li {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
     /* ─── Overview page ────────────────────────────────────────────────────── */
     .ov-page { max-width: 600px; }
 
@@ -5421,10 +5478,161 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
+       ROLE PAGE TABS (RW-RP-TABS)
+       Namespace: .rp-*
+       Top-level tabs wrapping Analysis / Applied on the role detail page.
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* Sits inside .rw-main-col — height comes from content; that column scrolls. */
+    .rp-page {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      width: 100%;
+    }
+
+    .rp-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border-light);
+      margin-bottom: 0;
+      flex-shrink: 0;
+    }
+    .rp-tab {
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-light);
+      padding: 8px 14px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      line-height: 1.4;
+      white-space: nowrap;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .rp-tab:hover { color: var(--text); }
+    .rp-tab--active {
+      color: var(--text);
+      border-bottom-color: var(--text);
+    }
+    .rp-tab.hidden { display: none; }
+
+    /* padding-top matches .rw-main-col::before (32px) — same top rhythm as the analysis column */
+    .rp-tab-panel {
+      display: none;
+      padding-top: 32px;
+      box-sizing: border-box;
+    }
+    .rp-tab-panel--active {
+      display: block;
+    }
+
+    /* ── Applied tab content ─────────────────────────────────────────────── */
+    /* Uses .doc-section / .doc-section-heading for vertical rhythm.
+       Only role-page-specific overrides below. */
+    .rp-applied-content {
+      max-width: 560px;
+      padding: 24px 24px 48px 0;  /* top + right + bottom; left provided by .rw-overview-wrap */
+    }
+    /* In role-page tabs, .rw-main-col::before already provides top rhythm (same as Analysis). */
+    .rw-main-col .rp-applied-content {
+      padding-top: 0;
+    }
+    /* Prep panel slot wraps a .doc-section — override :first-child zero-padding */
+    #rp-prep-panel-slot .doc-section { padding-top: 32px; }
+
+    .rp-stage-select {
+      max-width: 220px;
+      font-size: 13px;
+    }
+
+    .rp-notes {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    .rp-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .rp-action-btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-weight: 500;
+      font-family: var(--font);
+      border-radius: var(--radius, 8px);
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text-light);
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+      white-space: nowrap;
+    }
+    .rp-action-btn:hover {
+      background: var(--surface-raised, var(--surface));
+      border-color: var(--border-medium, var(--border));
+      color: var(--text);
+    }
+    .rp-action-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .rp-action-btn--danger {
+      color: var(--error);
+      border-color: color-mix(in srgb, var(--error) 25%, transparent);
+    }
+    .rp-action-btn--danger:hover {
+      color: var(--error-hover);
+      border-color: color-mix(in srgb, var(--error) 40%, transparent);
+      background: color-mix(in srgb, var(--error) 4%, transparent);
+    }
+
+    /* ── Skipped section (flat, no card) ──────────────────────────────────── */
+    .rp-skipped-section {
+      position: relative;
+      z-index: 2;
+      padding-bottom: 32px;
+      margin-bottom: 8px;
+    }
+    .rp-skipped-msg {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .rp-skipped-reason {
+      font-size: 12.5px;
+      color: var(--text-light);
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+    /* Dim the analysis content behind the skip section */
+    .rp-skipped-section ~ * {
+      opacity: 0.35;
+      pointer-events: none;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
        APPLIED STATE  (RW-APPLIED-STATE-01)
        Namespace: .as-*
        Renders inside #doc-progressed-actions for roles past JD Review.
        ═══════════════════════════════════════════════════════════════════════ */
+
+    /* ── Header ────────────────────────────────────────────────────────────── */
+    .as-header {
+      font-family: var(--font-head);
+      font-size: var(--text-lg);
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 16px;
+    }
 
     /* ── Stage Timeline ───────────────────────────────────────────────────── */
     .as-stage-timeline {
@@ -5531,20 +5739,19 @@
     }
 
     /* ── Prep Panel ───────────────────────────────────────────────────────── */
+    /* Prep panel — now rendered inside .doc-section, no card wrapper.
+       Legacy .as-prep-panel class kept for the old renderAppliedState path. */
     .as-prep-panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md, 10px);
-      padding: 14px 16px;
-      margin-bottom: 20px;
+      /* No card styles — flat document section */
     }
     .as-prep-heading {
-      font-size: 10.5px;
+      /* Legacy heading — now uses .doc-section-heading in new path */
+      font-size: 11px;
       font-weight: 600;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--text-muted);
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
     .as-prep-list {
       list-style: none;
@@ -5567,6 +5774,44 @@
       left: 0;
       color: var(--accent, #2563eb);
       font-weight: 700;
+    }
+
+    /* ── Pattern Observations ─────────────────────────────────────────────── */
+    .rw-pattern-obs {
+      padding: 12px 16px;
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-md, 8px);
+      margin-bottom: 20px;
+    }
+    .rw-pattern-obs-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-light);
+      margin-bottom: 8px;
+    }
+    .rw-pattern-obs-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .rw-pattern-obs-list li {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* ── Observation Interpretation (shared across all observation contexts) ── */
+    .rw-obs-interp {
+      font-size: 11.5px;
+      color: var(--text-light);
+      font-style: italic;
+      margin-top: 8px;
+      line-height: 1.5;
     }
 
     /* ── Quick Context Row ────────────────────────────────────────────────── */
@@ -5683,6 +5928,12 @@
       margin-bottom: 5px;
     }
     .as-rejection-takeaway { color: var(--text-muted); }
+    .as-rejection-context {
+      color: var(--text-light);
+      font-size: var(--text-sm);
+      margin-top: 6px;
+      font-style: italic;
+    }
 
     /* ── Outcome form — rejection-specific extras ──────────────────────────── */
     /* Helper text below the "Role not selected" heading */
@@ -6698,6 +6949,12 @@
       color: var(--bg);
       font-weight: 500;
     }
+    /* Contextual outcome line — e.g. "Rejected after Recruiter Screen — 12 days after applying" */
+    .outcome-context-line {
+      font-size: var(--text-sm);
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
     /* Recorded outcome display row */
     .outcome-recorded-row {
       display: flex;
@@ -7316,17 +7573,17 @@
       gap: 10px;
     }
 
-    .field-group { display: flex; flex-direction: column; gap: 5px; }
+    .field-group { display: flex; flex-direction: column; gap: 7px; }
 
     .field-label {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--color-text-secondary, var(--text-muted));
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-muted);
     }
 
     .field-label .opt {
       font-weight: 400;
-      color: var(--color-text-tertiary, var(--text-light));
+      color: var(--text-light);
     }
 
     .field-input, .field-select, .field-textarea {
@@ -7524,12 +7781,12 @@
     /* Reveal fields: indented sub-options connected to the checkbox above */
     .pref-reveal {
       padding-left: 12px;
-      margin-top: 2px;
-      margin-bottom: 4px;
+      margin-top: 8px;
+      margin-bottom: 8px;
       border-left: 2px solid var(--border-light);
     }
 
-    .pref-deal-breaker-list { display: flex; flex-direction: column; gap: 6px; min-height: 4px; }
+    .pref-deal-breaker-list { display: flex; flex-direction: column; gap: 8px; min-height: 4px; margin-bottom: 10px; }
     .pref-deal-breaker-item {
       display: flex;
       align-items: center;
@@ -7550,13 +7807,12 @@
     }
     .pref-deal-breaker-remove:hover { color: var(--text); }
 
-    .pref-stage-list { display: flex; flex-direction: column; gap: 6px; }
+    .pref-stage-list { display: flex; flex-direction: column; gap: 0; }
     .pref-stage-row {
       display: flex; align-items: center;
       justify-content: space-between; gap: 12px;
-      padding: 8px 0; border-bottom: 1px solid var(--border-light);
+      padding: 11px 0; border-bottom: none;
     }
-    .pref-stage-row:last-child { border-bottom: none; }
     .pref-stage-label { font-size: 13px; color: var(--text); flex: 1; }
     .pref-strength-pills { display: flex; gap: 4px; }
     .pref-strength-pill {
@@ -7564,7 +7820,7 @@
       border: 1px solid var(--border-light);
       background: var(--bg-subtle, #f9fafb);
       color: var(--text-light); cursor: pointer; white-space: nowrap;
-      min-width: 66px; text-align: center;
+      min-width: 58px; text-align: center;
     }
     .pref-strength-pill:hover { border-color: var(--text-light); color: var(--text); }
     .pref-strength-pill--active { font-weight: 600; }
@@ -7575,6 +7831,65 @@
     [data-theme="dark"] .pref-strength-pill--ideal.pref-strength-pill--active  { background:#064e3b; border-color:#34d399; color:#a7f3d0; }
     [data-theme="dark"] .pref-strength-pill--open.pref-strength-pill--active   { background:#1e3a5f; border-color:#60a5fa; color:#bfdbfe; }
     [data-theme="dark"] .pref-strength-pill--avoid.pref-strength-pill--active  { background:#7f1d1d; border-color:#f87171; color:#fecaca; }
+
+    /* ─── Profile page tabs ─────────────────────────────── */
+    .profile-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border-light);
+      margin-bottom: 28px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;          /* Firefox */
+    }
+    .profile-tabs::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+    .profile-tab {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-light);
+      padding: 8px 11px;
+      cursor: pointer;
+      border: none;
+      white-space: nowrap;  /* prevent tabs wrapping */
+      background: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      line-height: 1.4;
+      white-space: nowrap;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .profile-tab:hover { color: var(--text); }
+    .profile-tab--active {
+      color: var(--text);
+      border-bottom-color: var(--text);
+    }
+    .profile-tab-panel { display: none; }
+    .profile-tab-panel--active { display: block; }
+
+    /* Prefs summary strip at top of Job Preferences tab */
+    .pref-summary-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    /* Section-to-section breathing room in Job Preferences tab */
+    [data-panel="jobprefs"] .doc-section + .doc-section {
+      margin-top: 36px !important;
+      padding-top: 36px !important;
+    }
+    .pref-summary-pill {
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: var(--bg-subtle, #f9fafb);
+      border: 1px solid var(--border-light);
+      border-radius: 20px;
+      padding: 3px 10px;
+      line-height: 1.5;
+    }
 
     .cv-empty {
       font-size: 13px;
@@ -15012,6 +15327,118 @@ a.rw-rail-contact-name:hover {
 .rw-jd-modal__body .rw-jd-section,
 .rw-jd-modal__body [class*="jd-"] {
   /* let existing styles apply; no overrides needed */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MONTHLY REVIEW MODAL (RW-MR)
+   ═══════════════════════════════════════════════════════════════════════════ */
+.rw-mr-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 24px 24px;
+  box-sizing: border-box;
+}
+.rw-mr-modal[hidden] { display: none; }
+
+.rw-mr-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.rw-mr-modal__dialog {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface, #fff);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+  overflow: hidden;
+}
+
+.rw-mr-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-light, var(--border));
+  flex-shrink: 0;
+}
+
+.rw-mr-modal__title {
+  font-family: var(--font-head, var(--font));
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+}
+
+.rw-mr-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-light);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.rw-mr-modal__close:hover {
+  background: var(--bg, #f5f5f5);
+  color: var(--text);
+}
+
+.rw-mr-modal__body {
+  overflow-y: auto;
+  padding: 20px 20px 24px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.rw-mr-modal__body::-webkit-scrollbar { width: 5px; }
+.rw-mr-modal__body::-webkit-scrollbar-track { background: transparent; }
+.rw-mr-modal__body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Reuse review-section / review-data-row styles inside the modal.
+   Add smaller spacing for compact modal feel. */
+.rw-mr-modal__body .review-section { margin-bottom: 24px; }
+.rw-mr-modal__body .review-section:last-child { margin-bottom: 0; }
+
+.rw-mr-obs-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rw-mr-obs-list li {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Review page header — title + monthly summary button side by side */
+.review-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 0;
 }
 
 /* ── Responsive: collapse to single column on narrow viewports ────────────── */
