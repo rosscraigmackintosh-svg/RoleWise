@@ -6294,7 +6294,7 @@
             _pd.location = role._liLocation;
           }
           // Salary — structured platform data overrides "Not stated" gaps only
-          if (_lm.salary_text && (!_pd.salary_annual || _pd.salary_annual === 'Not stated')) {
+          if (_lm.salary_text && (!_pd.salary_annual || _pd.salary_annual === 'Not stated' || _pd.salary_annual === 'Not disclosed')) {
             _pd.salary_annual = _lm.salary_text;
           }
         }
@@ -10609,7 +10609,7 @@
                   const _noSalary = _analysed.filter(r => {
                     const fo = r.analysis?.full_output || r.latest_match_output;
                     const pd = fo?.practical_details;
-                    return !pd?.salary_annual || pd.salary_annual === 'Not stated';
+                    return !pd?.salary_annual || pd.salary_annual === 'Not stated' || pd.salary_annual === 'Not disclosed';
                   }).length;
                   if (_noSalary >= 2) {
                     _sigs.push(`Salary information absent from ${_noSalary} of ${_analysed.length} analysed roles`);
@@ -14448,7 +14448,7 @@
       const remote_model    = legacy.remote_model || 'Not stated';
       const employment_type = legacy.role_type === 'contract' ? 'Contract'
                             : legacy.role_type === 'permanent' ? 'Permanent' : 'Not stated';
-      const salary_annual   = legacy.salary_detected ? 'Salary mentioned, see original JD' : 'Not stated';
+      const salary_annual   = legacy.salary_detected ? 'Salary mentioned \u2014 see JD for details' : 'Not disclosed';
 
       return {
         fit_reality_summary:              fitPoints,
@@ -14706,7 +14706,7 @@
       if (!dayRate || dayRate <= 0) return '';
 
       const salaryAnnual = pd?.salary_annual;
-      if (!salaryAnnual || salaryAnnual === 'Not stated') return '';
+      if (!salaryAnnual || salaryAnnual === 'Not stated' || salaryAnnual === 'Not disclosed') return '';
 
       const parsed = _parseSalaryRange(salaryAnnual);
       if (!parsed) return '';
@@ -16843,7 +16843,7 @@
               (_pd.location       && _pd.location       !== 'Not stated') ? ['Location',        _pd.location]        : null,
               (_pd.remote_model   && _pd.remote_model   !== 'Not stated') ? ['Work model',      _pd.remote_model]    : null,
               (_pd.employment_type && _pd.employment_type !== 'Not stated') ? ['Employment type', _pd.employment_type] : null,
-              ['Salary', (_pd.salary_annual && _pd.salary_annual !== 'Not stated') ? _pd.salary_annual : 'Not stated'],
+              ['Salary', (_pd.salary_annual && _pd.salary_annual !== 'Not stated' && _pd.salary_annual !== 'Not disclosed') ? _pd.salary_annual : 'Not disclosed'],
               (_pd.company_type   && _pd.company_type   !== 'Not stated') ? ['Company type',    _pd.company_type]    : null,
             ].filter(Boolean);
             // Append platform context items (adapt tuple format)
@@ -17124,10 +17124,10 @@
               _primaryRows.push(['Role type', _rtLabels[_rt] || _cap(_rt), null]);
             }
 
-            // Salary — show actual value, fall back to "Not specified" (RW-SALARY-FIX)
+            // Salary — show actual value, fall back to "Not disclosed"
             {
               const _pdSal = output.practical_details?.salary_annual;
-              const _salDisplay = (_pdSal && _pdSal !== 'Not stated') ? _pdSal : 'Not specified';
+              const _salDisplay = (_pdSal && _pdSal !== 'Not stated' && _pdSal !== 'Not disclosed') ? _pdSal : 'Not disclosed';
               _primaryRows.push(['Salary', _salDisplay, null]);
             }
 
@@ -18360,11 +18360,11 @@
 
       // ── Lens 3: Economic Reality ──────────────────────────────────────────────
       const _l3 = (function () {
-        const salaryAnnual   = pd.salary_annual  || 'Not stated';
+        const salaryAnnual   = pd.salary_annual  || 'Not disclosed';
         const salarySig      = rss.salary_signal || null;
         const empType        = pd.employment_type || null;
         const isContract     = !!(empType && /contract/i.test(empType));
-        const isSalaryKnown  = salaryAnnual !== 'Not stated';
+        const isSalaryKnown  = salaryAnnual !== 'Not stated' && salaryAnnual !== 'Not disclosed';
 
         if (!isSalaryKnown && (!salarySig || salarySig === 'not_stated')) {
           return _lens('economics', 'Economic Reality', 'negative',
@@ -20227,11 +20227,11 @@
 
       const salaryAnnual = pd.salary_annual || '';
       // Skip if no salary data
-      if (!salaryAnnual || salaryAnnual === 'Not stated') {
+      if (!salaryAnnual || salaryAnnual === 'Not stated' || salaryAnnual === 'Not disclosed') {
         pd.salary_monthly = null;
         return pd;
       }
-      // Skip non-numeric labels like "Competitive", "Salary mentioned (see JD for details)"
+      // Skip non-numeric labels like "Competitive", "Salary mentioned — see JD for details"
       if (!/[£€$\d]/.test(salaryAnnual)) {
         pd.salary_monthly = null;
         return pd;
@@ -20886,7 +20886,7 @@
 
       // salary: deterministic fills gap if AI didn't extract one
       // AI salary parsing is richer, so only fill the gap — never override
-      const _aiHasSalary = (pd.salary_annual && pd.salary_annual !== 'Not stated') ||
+      const _aiHasSalary = (pd.salary_annual && pd.salary_annual !== 'Not stated' && pd.salary_annual !== 'Not disclosed') ||
                            (pd.salary_min != null) || (pd.salary_max != null);
       if (!_aiHasSalary && det.salary.normalized !== 'Not stated') {
         pd.salary_annual = det.salary.normalized;
@@ -22534,7 +22534,7 @@
       // Salary
       const hasSalaryCue = /[£€$]/.test(raw) ||
         ['salary', 'compensation', 'per year', 'per annum', '/year', '/yr', 'ote'].some(p => t.includes(p));
-      let salary_annual  = 'Not stated';
+      let salary_annual  = 'Not disclosed';
       let salary_monthly = null;
       if (hasSalaryCue) {
         // Attempt to extract a stated figure
@@ -22552,7 +22552,7 @@
             }
           }
         } else {
-          salary_annual = 'Salary mentioned (see JD for details)';
+          salary_annual = 'Salary mentioned \u2014 see JD for details';
         }
       }
 
@@ -22681,12 +22681,12 @@
       if (remote_model === 'Remote')   fitPoints.push('Role is fully remote. Positive signal.');
       if (remote_model === 'On-site')  fitPoints.push('Role is on-site. Confirm the location works for you.');
       if (remote_model === 'Hybrid')   fitPoints.push('Hybrid arrangement. Ask how many days in office before committing.');
-      if (salary_annual === 'Not stated') fitPoints.push('No salary listed. Raise this early. Do not invest significant time before knowing the range.');
+      if (salary_annual === 'Not disclosed') fitPoints.push('No salary listed. Raise this early. Do not invest significant time before knowing the range.');
       if (fitPoints.length === 0) fitPoints.push('No strong positive or negative signals detected. Review the full JD to form a view.');
 
       // ── Risks & Unknowns ──────────────────────────────────────────────────
       const risks = [];
-      if (salary_annual === 'Not stated')
+      if (salary_annual === 'Not disclosed')
         risks.push({ text: 'Salary not advertised. Negotiate range before first interview', tag: 'Inferred' });
       if (remote_model === 'Not stated')
         risks.push({ text: 'Working location / remote model not specified in JD', tag: 'Inferred' });
@@ -22707,7 +22707,7 @@
         'What does success look like in the first 6 months?',
         'Who would this role report to, and how does the team work day-to-day?',
       ];
-      if (salary_annual === 'Not stated')   questions.push('What is the salary range for this role?');
+      if (salary_annual === 'Not disclosed')   questions.push('What is the salary range for this role?');
       if (remote_model === 'Not stated')    questions.push('What is the expected working location and remote arrangement?');
       if (isBlend)                          questions.push('What percentage of this role is product design versus writing production code?');
       if (!responsibilities.length)         questions.push('Can you walk me through what a typical project looks like end-to-end?');
@@ -22761,7 +22761,7 @@
             if (_ext_location === 'Not stated' && _lDet?.location?.normalized && _lDet.location.normalized !== 'Not stated') {
               _ext_location = _lDet.location.normalized;
             }
-            if (_ext_salary_annual === 'Not stated' && _lDet?.salary?.normalized && _lDet.salary.normalized !== 'Not stated') {
+            if ((_ext_salary_annual === 'Not stated' || _ext_salary_annual === 'Not disclosed') && _lDet?.salary?.normalized && _lDet.salary.normalized !== 'Not stated' && _lDet.salary.normalized !== 'Not disclosed') {
               _ext_salary_annual = _lDet.salary.normalized;
             }
             // Wire structured salary fields from deterministic extractor
@@ -23690,7 +23690,7 @@
         practical_details: {
           location: 'Not stated', remote_model: remote,
           employment_type: isContract ? 'Contract (inferred)' : 'Not stated',
-          salary_annual: hasSalary ? 'Salary mentioned, see JD' : 'Not stated',
+          salary_annual: hasSalary ? 'Salary mentioned \u2014 see JD for details' : 'Not disclosed',
           salary_monthly: null, reporting_line: 'Not stated', visa: 'Not stated',
         },
         risks_and_unknowns:    [{ text: 'Analysis could not be completed', tag: 'Inferred' }],

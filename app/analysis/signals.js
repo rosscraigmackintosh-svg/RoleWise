@@ -93,8 +93,8 @@ function classifySignals(output, narrative, viability, userPrefs) {
 
   // ── Salary ───────────────────────────────────────────────────────
   var dbSalVal = (dbPd.salary_annual || '').toLowerCase();
-  var salUnclear = !dbPd.salary_annual || dbSalVal === 'not stated'
-    || dbSalVal.includes('not stated') || dbSalVal.includes('competitive');
+  var salUnclear = !dbPd.salary_annual || dbSalVal === 'not stated' || dbSalVal === 'not disclosed'
+    || dbSalVal.includes('not stated') || dbSalVal.includes('not disclosed') || dbSalVal.includes('competitive');
 
   if (salUnclear) {
     addSig('Salary not disclosed', 'NEEDS_CLARITY');
