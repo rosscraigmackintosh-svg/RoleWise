@@ -2972,10 +2972,10 @@
       const _cmpPill = role => {
         const fo  = role.latest_match_output || role.analysis?.full_output;
         const dec = role.analysis?.decision;
-        if (fo?.hard_no)     return { color: 'red',   label: 'Hard No' };
-        if (dec === 'Apply') return { color: 'green', label: 'Apply'   };
-        if (dec === 'Maybe') return { color: 'amber', label: 'Maybe'   };
-        if (dec === 'Skip')  return { color: 'red',   label: 'Hard No' };
+        if (fo?.hard_no)     return { color: 'red',   label: 'Not viable'    };
+        if (dec === 'Apply') return { color: 'amber', label: 'Worth exploring' };
+        if (dec === 'Maybe') return { color: 'amber', label: 'Unclear fit'    };
+        if (dec === 'Skip')  return { color: 'red',   label: 'Not viable'    };
         return null;
       };
 
@@ -3533,9 +3533,9 @@
     // Dynamic title for a decision_set snapshot based on the raw decision value
     function _decisionSnapTitle(decisionRaw) {
       const map = {
-        Apply: 'Marked Apply', apply: 'Marked Apply',
-        Maybe: 'Marked Worth Exploring', maybe: 'Marked Worth Exploring',
-        Skip:  'Marked Hard No',  skip:  'Marked Hard No',
+        Apply: 'Marked Worth Exploring', apply: 'Marked Worth Exploring',
+        Maybe: 'Marked Unclear Fit',     maybe: 'Marked Unclear Fit',
+        Skip:  'Marked Not Viable',      skip:  'Marked Not Viable',
       };
       return map[decisionRaw] || 'Decision noted';
     }
@@ -3543,8 +3543,8 @@
     // Friendly label for decision values
     function snapDecisionLabel(d) {
       if (!d) return null;
-      const map = { Apply: 'Apply', Maybe: 'Worth exploring', Skip: 'Hard no',
-                    apply: 'Apply', maybe: 'Worth exploring', skip: 'Hard no' };
+      const map = { Apply: 'Worth exploring', Maybe: 'Unclear fit', Skip: 'Not viable',
+                    apply: 'Worth exploring', maybe: 'Unclear fit', skip: 'Not viable' };
       return map[d] || d;
     }
 
@@ -10480,26 +10480,28 @@
                 const _dsFit = Array.isArray(_dsOut.fit_reality_summary)
                   ? _dsOut.fit_reality_summary.filter(Boolean) : [];
 
-                // Outcome — exactly one of: Hard No | Unclear Fit | Worth Exploring | Strong Fit
+                // Outcome — exactly one of: Not viable | Unclear Fit | Worth Exploring
                 // Routes through computeFitAssessment first for consistent vocabulary,
                 // then falls back to legacy text-matching for older stored analyses.
+                // Note: computeFitAssessment returns verdict 'maybe' (not 'unclear') for
+                // the ambiguous case — both are handled here.
                 let _dsOutcome;
                 if (_dsOut.hard_no) {
-                  _dsOutcome = 'Hard No';
+                  _dsOutcome = 'Not viable';
                 } else {
                   const _dsFa = computeFitAssessment(_dsOut);
                   if (_dsFa && _dsFa.verdict === 'no') {
-                    _dsOutcome = 'Hard No';
-                  } else if (_dsFa && _dsFa.verdict === 'unclear') {
+                    _dsOutcome = 'Not viable';
+                  } else if (_dsFa && (_dsFa.verdict === 'maybe' || _dsFa.verdict === 'unclear')) {
                     _dsOutcome = 'Unclear Fit';
                   } else if (_dsFa && _dsFa.verdict === 'yes') {
                     _dsOutcome = 'Worth Exploring';
                   } else {
                     // Legacy fallback for stored analyses that pre-date computeFitAssessment
                     const _rvText = (_dsRV.outcome || '').toLowerCase();
-                    if (/strong\s*fit|excellent|great\s*fit/i.test(_rvText))         _dsOutcome = 'Strong Fit';
+                    if (/not\s*viable/i.test(_rvText))                               _dsOutcome = 'Not viable';
                     else if (/worth\s*explor|worth\s*apply|likely\s*worth/i.test(_rvText)) _dsOutcome = 'Worth Exploring';
-                    else if (_dsNS === 'Apply')                                       _dsOutcome = 'Strong Fit';
+                    else if (_dsNS === 'Apply')                                       _dsOutcome = 'Worth Exploring';
                     else                                                              _dsOutcome = 'Worth Exploring';
                   }
                 }
@@ -10518,24 +10520,22 @@
 
                 // Suggested action — must match allowed values, derived from outcome
                 const _dsActionMap = {
-                  'Hard No':        'Skip',
+                  'Not viable':     'Skip',
                   'Unclear Fit':    'Clarify details first',
                   'Worth Exploring': 'Ask questions',
-                  'Strong Fit':     'Apply',
                 };
                 const _dsAction = _dsActionMap[_dsOutcome] || 'Clarify details first';
 
                 // Card colour class based on outcome
                 const _dsColorMap = {
-                  'Strong Fit':     'ds-green',
-                  'Hard No':        'ds-red',
                   'Worth Exploring': 'ds-amber',
+                  'Not viable':     'ds-red',
                   'Unclear Fit':    'ds-neutral',
                 };
                 const _dsColorClass = _dsColorMap[_dsOutcome] || '';
 
-                // Recommended CV — only shown when outcome is NOT Hard No
-                const _isHardNo = (_dsOutcome === 'Hard No');
+                // Recommended CV — only shown when outcome is NOT Not viable
+                const _isHardNo = (_dsOutcome === 'Not viable');
                 const _dsCvName = _isHardNo ? null : ((_dsSA.recommended_cv || '').trim() || null);
                 const _dsCvName_clean = (_dsCvName && _dsCvName !== 'Not stated') ? _dsCvName : null;
                 const _dsCvRowHtml = _dsCvName_clean
@@ -10586,9 +10586,8 @@
                   const _sdbEl = document.getElementById('sticky-decision-bar');
                   if (_sdbEl) {
                     const _sdbColorMap = {
-                      'Strong Fit':     'sdb-green',
-                      'Hard No':        'sdb-red',
                       'Worth Exploring': 'sdb-amber',
+                      'Not viable':     'sdb-red',
                       'Unclear Fit':    'sdb-neutral',
                     };
                     const _sdbClass = _sdbColorMap[_dsOutcome] || '';
@@ -12628,7 +12627,7 @@
       // Hard No banner
       if (output.hard_no) {
         html += `<div class="hn-banner">
-          <div class="hn-label">Hard No</div>
+          <div class="hn-label">Not viable</div>
           <div class="hn-reason">Production coding required.</div>
           <div class="hn-body">This role explicitly expects frontend code contributions to production, which conflicts with your saved role rules.</div>
           <div class="hn-hint">Suggested outcome: <span class="hn-hint-value">Skip</span></div>
@@ -16159,9 +16158,9 @@
       }
 
       const _verdictLabels = {
-        yes:   'Yes, worth pursuing',
-        maybe: 'Maybe, investigate first',
-        no:    'No, likely not aligned',
+        yes:   'Worth exploring',
+        maybe: 'Unclear fit — key details need confirming',
+        no:    'Not viable',
       };
       const _confLabels = {
         high:     'High confidence',
@@ -18636,7 +18635,7 @@
         _verdictHtml = '<div class="rw-lens-verdict rw-lens-verdict--hard-no">' +
           '<div class="rw-lens-icon">\u2715</div>' +
           '<div class="rw-lens-content">' +
-            '<div class="rw-lens-title">Hard No</div>' +
+            '<div class="rw-lens-title">Not viable</div>' +
             '<div class="rw-lens-desc">' + esc(_hnReas) + '</div>' +
           '</div>' +
         '</div>';
@@ -21777,7 +21776,7 @@
           return /production.cod/i.test(txt);
         })) {
           analysis.fit_reality_summary.unshift(
-            'Production coding requirement detected. This role is a Hard No per your personal rules.'
+            'Production coding requirement detected. This role is not viable per your personal rules.'
           );
         }
       } else if (_codingReq.classification === 'prototype') {
@@ -22931,7 +22930,7 @@
       // ── Fit Reality Summary ───────────────────────────────────────────────
       const fitPoints = [];
       if (isHardNo) {
-        fitPoints.push('Production coding requirement detected. This role is a Hard No per your personal rules.');
+        fitPoints.push('Production coding requirement detected. This role is not viable per your personal rules.');
       } else if (_codingReq.classification === 'prototype') {
         fitPoints.push('Coding expectation is prototype-level only. No production coding required.');
       } else if (_codingReq.classification === 'unclear') {
@@ -22988,7 +22987,7 @@
       else if (remote_model !== 'On-site')  next_step = 'Apply';
 
       const cv_reasoning = isHardNo
-        ? 'Not applicable. Hard No triggered by production coding requirement.'
+        ? 'Not applicable. Role is not viable due to production coding requirement.'
         : 'Senior Product Designer is the strongest default. Adjust if the role is more senior or more specialised.';
 
       // ── Role Summary ─────────────────────────────────────────────────────
@@ -28521,9 +28520,9 @@ If a field cannot be determined from the message, return null for that field.`,
       const decisionSection = `<div class="review-section">
           <div class="review-section-label">Decision Breakdown</div>
           ${[
-            { label: 'Hard No',         val: decSkip  },
-            { label: 'Worth Exploring', val: decMaybe },
-            { label: 'Apply',           val: decApply },
+            { label: 'Not viable',      val: decSkip  },
+            { label: 'Unclear fit',     val: decMaybe },
+            { label: 'Worth exploring', val: decApply },
           ].map(r =>
             `<div class="review-data-row">
               <span class="review-data-label">${esc(r.label)}</span>
