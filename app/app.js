@@ -1491,7 +1491,9 @@
       const parts = [];
       if (role.location_text) parts.push(esc(role.location_text));
       if (role.work_model && role.work_model !== 'unknown') {
-        parts.push(esc(role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1)));
+        const _shdWmMap = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+        const _shdWmLabel = _shdWmMap[role.work_model] || (role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1));
+        parts.push(esc(_shdWmLabel));
       }
       if (role.salary_text_raw) parts.push(esc(role.salary_text_raw));
       const company = sanitiseCompanyName(role.company_name) || '';
@@ -1554,10 +1556,12 @@
       const _metaParts = [];
       if (role.location_text) {
         const _wmRaw   = role.work_model && role.work_model !== 'unknown' ? role.work_model : null;
-        const _wmLabel = _wmRaw ? (_wmRaw.charAt(0).toUpperCase() + _wmRaw.slice(1)) : null;
+        const _rhWmMap = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+        const _wmLabel = _wmRaw ? (_rhWmMap[_wmRaw] || (_wmRaw.charAt(0).toUpperCase() + _wmRaw.slice(1))) : null;
         _metaParts.push(esc(_wmLabel ? `${role.location_text} (${_wmLabel})` : role.location_text));
       } else if (role.work_model && role.work_model !== 'unknown') {
-        _metaParts.push(esc(role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1)));
+        const _rhWmMap2 = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+        _metaParts.push(esc(_rhWmMap2[role.work_model] || (role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1))));
       }
       if (role.engagement_type && role.engagement_type !== 'Unknown') {
         _metaParts.push(esc(role.engagement_type));
