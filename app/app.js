@@ -1643,6 +1643,11 @@
         if (_saveErr) throw _saveErr;
         console.log('[dev-reanalyse] saved jd_matches row', _newMatch?.id);
 
+        // Patch AI enrichment into DB when background AI call completes.
+        // Mirrors the _backgroundAIPatch call in _wsRunAnalysis so all three flows
+        // (URL ingestion, text paste, re-analyse) converge to the same AI-enriched result.
+        if (_newMatch?.id) _backgroundAIPatch(analysis, role.id, _newMatch.id);
+
         // Update in-memory role
         role.latest_match_output = analysis;
         role.latest_match_id     = _newMatch?.id || null;
