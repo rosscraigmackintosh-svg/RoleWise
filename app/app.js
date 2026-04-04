@@ -10480,18 +10480,28 @@
                 const _dsFit = Array.isArray(_dsOut.fit_reality_summary)
                   ? _dsOut.fit_reality_summary.filter(Boolean) : [];
 
-                // Outcome — exactly one of: Hard No | Likely Not Worth Pursuing | Worth Exploring | Strong Fit
+                // Outcome — exactly one of: Hard No | Unclear Fit | Worth Exploring | Strong Fit
+                // Routes through computeFitAssessment first for consistent vocabulary,
+                // then falls back to legacy text-matching for older stored analyses.
                 let _dsOutcome;
                 if (_dsOut.hard_no) {
                   _dsOutcome = 'Hard No';
                 } else {
-                  const _rvText = (_dsRV.outcome || '').toLowerCase();
-                  if (/strong\s*fit|excellent|great\s*fit/i.test(_rvText))         _dsOutcome = 'Strong Fit';
-                  else if (/worth\s*explor|worth\s*apply|likely\s*worth/i.test(_rvText)) _dsOutcome = 'Worth Exploring';
-                  else if (/not\s*worth|unlikely|skip|avoid/i.test(_rvText))       _dsOutcome = 'Likely Not Worth Pursuing';
-                  else if (_dsNS === 'Apply')                                       _dsOutcome = 'Strong Fit';
-                  else if (_dsNS === 'Skip')                                        _dsOutcome = 'Likely Not Worth Pursuing';
-                  else                                                              _dsOutcome = 'Worth Exploring';
+                  const _dsFa = computeFitAssessment(_dsOut);
+                  if (_dsFa && _dsFa.verdict === 'no') {
+                    _dsOutcome = 'Hard No';
+                  } else if (_dsFa && _dsFa.verdict === 'unclear') {
+                    _dsOutcome = 'Unclear Fit';
+                  } else if (_dsFa && _dsFa.verdict === 'yes') {
+                    _dsOutcome = 'Worth Exploring';
+                  } else {
+                    // Legacy fallback for stored analyses that pre-date computeFitAssessment
+                    const _rvText = (_dsRV.outcome || '').toLowerCase();
+                    if (/strong\s*fit|excellent|great\s*fit/i.test(_rvText))         _dsOutcome = 'Strong Fit';
+                    else if (/worth\s*explor|worth\s*apply|likely\s*worth/i.test(_rvText)) _dsOutcome = 'Worth Exploring';
+                    else if (_dsNS === 'Apply')                                       _dsOutcome = 'Strong Fit';
+                    else                                                              _dsOutcome = 'Worth Exploring';
+                  }
                 }
 
                 // Reason — short factual phrase from signals
@@ -10508,19 +10518,19 @@
 
                 // Suggested action — must match allowed values, derived from outcome
                 const _dsActionMap = {
-                  'Hard No':                   'Skip',
-                  'Likely Not Worth Pursuing': 'Investigate further',
-                  'Worth Exploring':           'Ask questions',
-                  'Strong Fit':                'Apply',
+                  'Hard No':        'Skip',
+                  'Unclear Fit':    'Clarify details first',
+                  'Worth Exploring': 'Ask questions',
+                  'Strong Fit':     'Apply',
                 };
-                const _dsAction = _dsActionMap[_dsOutcome] || 'Investigate further';
+                const _dsAction = _dsActionMap[_dsOutcome] || 'Clarify details first';
 
                 // Card colour class based on outcome
                 const _dsColorMap = {
-                  'Strong Fit':                'ds-green',
-                  'Hard No':                   'ds-red',
-                  'Worth Exploring':           'ds-amber',
-                  'Likely Not Worth Pursuing': 'ds-amber',
+                  'Strong Fit':     'ds-green',
+                  'Hard No':        'ds-red',
+                  'Worth Exploring': 'ds-amber',
+                  'Unclear Fit':    'ds-neutral',
                 };
                 const _dsColorClass = _dsColorMap[_dsOutcome] || '';
 
@@ -10576,10 +10586,10 @@
                   const _sdbEl = document.getElementById('sticky-decision-bar');
                   if (_sdbEl) {
                     const _sdbColorMap = {
-                      'Strong Fit':                'sdb-green',
-                      'Hard No':                   'sdb-red',
-                      'Worth Exploring':           'sdb-amber',
-                      'Likely Not Worth Pursuing': 'sdb-amber',
+                      'Strong Fit':     'sdb-green',
+                      'Hard No':        'sdb-red',
+                      'Worth Exploring': 'sdb-amber',
+                      'Unclear Fit':    'sdb-neutral',
                     };
                     const _sdbClass = _sdbColorMap[_dsOutcome] || '';
                     if (_sdbClass) _sdbEl.classList.add(_sdbClass);
@@ -19716,6 +19726,16 @@
     // ─────────────────────────────────────────────────────────────────────────
 
     // ── Work model ────────────────────────────────────────────────────────────
+    // Classification types:
+    //   Remote          — explicit remote signals
+    //   HARD_CONSTRAINT — 5 days / fully on-site / no remote
+    //   HYBRID_KNOWN    — hybrid with explicit office day count (hybrid_days set)
+    //   HYBRID_UNKNOWN  — hybrid stated but NO day count specified (NEVER infer days)
+    //   On-site         — office-based without hybrid keyword
+    //   Verification needed — location constraint but work model unclear
+    //
+    // CRITICAL: NEVER infer office days when none are stated.
+    //           HYBRID_UNKNOWN is a verification point, not a rejection.
     function _jdField_workModel(t, lines) {
       // Fully remote signals — highest confidence
       const fullyRemotePatterns = [
@@ -19724,40 +19744,67 @@
         'work from anywhere', 'wfa',
       ];
       for (const p of fullyRemotePatterns) {
-        if (t.includes(p)) return { raw: p, normalized: 'Remote', confidence: 'high' };
+        if (t.includes(p)) return { raw: p, normalized: 'Remote', confidence: 'high', hybrid_days: null, hybrid_type: null };
       }
-      // Hybrid — explicit keyword (check BEFORE on-site to handle "3 days in-office" correctly)
+
+      // ── Extract office day count once — used by both hybrid-keyword and implied-hybrid paths ──
+      const _dayCountPatterns = [
+        /(\d+)\s+days?\s+(?:a\s+week\s+)?(?:in|per\s+week)\s+(?:the\s+)?office/,
+        /(\d+)\s+days?\s+(?:per\s+week\s+)?in[- ]office/,
+        /(?:minimum|min\.?)\s+(\d+)\s+days?\s+(?:in[- ]?office|on[- ]?site|per\s+week)/,
+        /(\d+)\s+days?\s+(?:per\s+week\s+)?on[- ]?site/,
+        /(\d+)\s+days?\s+(?:per\s+week\s+)?(?:in\s+the\s+)?office/,
+      ];
+      let _extractedDays = null;
+      let _dayRaw = null;
+      for (const re of _dayCountPatterns) {
+        const m = t.match(re);
+        if (m) { _extractedDays = parseInt(m[1], 10); _dayRaw = m[0]; break; }
+      }
+
+      // ── Hard on-site constraint — 5 days / fully on-site / no remote ──
+      const hardOnsitePatterns = [
+        '5 days in the office', '5 days a week in the office',
+        'full time in office', 'fully on-site', 'no remote',
+        '5 days in office', '5 days on-site', '5 days on site',
+      ];
+      for (const p of hardOnsitePatterns) {
+        if (t.includes(p)) return { raw: p, normalized: 'On-site', confidence: 'high', hybrid_days: null, hybrid_type: 'HARD_CONSTRAINT' };
+      }
+
+      // ── Hybrid — explicit keyword ──
       if (t.includes('hybrid')) {
-        // Scan for a raw phrase to preserve
         const m = t.match(/hybrid\s+[^.;\n]{0,40}/);
-        return { raw: m ? m[0].trim() : 'hybrid', normalized: 'Hybrid', confidence: 'high' };
+        const rawPhrase = m ? m[0].trim() : 'hybrid';
+        if (_extractedDays !== null) {
+          // HYBRID_KNOWN — day count explicitly stated
+          return { raw: _dayRaw || rawPhrase, normalized: 'Hybrid', confidence: 'high', hybrid_days: _extractedDays, hybrid_type: 'HYBRID_KNOWN' };
+        }
+        // HYBRID_UNKNOWN — hybrid stated but no day count. DO NOT assume any number.
+        return { raw: rawPhrase, normalized: 'Hybrid', confidence: 'high', hybrid_days: null, hybrid_type: 'HYBRID_UNKNOWN' };
       }
-      // Hybrid — implied by office day count (before on-site, because "3 days in-office" = hybrid)
-      const dayCountRe = /(\d+)\s+days?\s+(?:a\s+week\s+)?(?:in|per\s+week)\s+(?:the\s+)?office/;
-      const dcm = t.match(dayCountRe);
-      if (dcm) return { raw: dcm[0], normalized: 'Hybrid', confidence: 'medium' };
-      // Hybrid — implied by "X days in-office" pattern (flexible arrangement)
-      const inOfficeFlexRe = /(\d+)\s+days?\s+(?:per\s+week\s+)?in[- ]office/;
-      const iofm = t.match(inOfficeFlexRe);
-      if (iofm) return { raw: iofm[0], normalized: 'Hybrid', confidence: 'medium' };
+
+      // ── Hybrid implied by office day count without "hybrid" keyword ──
+      if (_extractedDays !== null) {
+        return { raw: _dayRaw, normalized: 'Hybrid', confidence: 'medium', hybrid_days: _extractedDays, hybrid_type: 'HYBRID_KNOWN' };
+      }
+
       // On-site / office signals — only reached if no hybrid/remote detected
       const onsitePatterns = [
-        'on-site', 'onsite', 'office-based', 'office based', 'in-office',
-        'in office', 'fully on-site', 'full time in office', '5 days in the office',
-        '5 days a week in the office', 'no remote',
+        'on-site', 'onsite', 'office-based', 'office based', 'in-office', 'in office',
       ];
       for (const p of onsitePatterns) {
-        if (t.includes(p)) return { raw: p, normalized: 'On-site', confidence: 'high' };
+        if (t.includes(p)) return { raw: p, normalized: 'On-site', confidence: 'high', hybrid_days: null, hybrid_type: null };
       }
       // Remote implied by "UK-based" without office requirement
       if ((t.includes('remote in uk') || t.includes('remote, uk') || t.includes('uk remote'))) {
-        return { raw: 'remote in uk', normalized: 'Remote', confidence: 'medium' };
+        return { raw: 'remote in uk', normalized: 'Remote', confidence: 'medium', hybrid_days: null, hybrid_type: null };
       }
       // Weak signal — "must be london-based" without hybrid keyword → probably on-site or hybrid
       if (/must\s+be\s+(?:london|manchester|bristol|edinburgh|uk)[- ]based/.test(t)) {
-        return { raw: null, normalized: 'Verification needed', confidence: 'low' };
+        return { raw: null, normalized: 'Verification needed', confidence: 'low', hybrid_days: null, hybrid_type: null };
       }
-      return { raw: null, normalized: 'Not stated', confidence: null };
+      return { raw: null, normalized: 'Not stated', confidence: null, hybrid_days: null, hybrid_type: null };
     }
 
     // ── Visa / right to work ──────────────────────────────────────────────────
@@ -20519,10 +20566,14 @@
 
       // 2. Hybrid with known city
       if (isHybrid && city) {
-        // Try to extract the day count for richer context
+        // Only show day count if explicitly stated — NEVER fall back to invented "regular" frequency
         const dayMatch = wmLower.match(/(\d)\s*(?:days?|x)\s*(?:per\s+week|\/\s*week|in[- ]?office|on[- ]?site)/);
-        const dayPhrase = dayMatch ? `${dayMatch[1]} day${dayMatch[1] === '1' ? '' : 's'}/week` : 'regular';
-        pd.commute_reality = `Hybrid ${city}, ${dayPhrase} office presence. Factor in travel if not based nearby.`;
+        if (dayMatch) {
+          const dayPhrase = `${dayMatch[1]} day${dayMatch[1] === '1' ? '' : 's'}/week`;
+          pd.commute_reality = `Hybrid ${city} — ${dayPhrase} office presence. Factor in travel if not based nearby.`;
+        } else {
+          pd.commute_reality = `Hybrid ${city} — on-site expectation not specified. Confirm minimum office days before estimating commute burden.`;
+        }
         return pd;
       }
 
@@ -21845,6 +21896,35 @@
         analysis.seniority_authenticity  = (_v2.seniority_authenticity && _v2.seniority_authenticity !== 'unclear') ? _v2.seniority_authenticity : null;
       } catch (_v2Err) {
         console.warn('[normaliseAnalysis] _detectV2Signals threw — v2 fields left null', _v2Err);
+      }
+
+      // ── Hybrid validation: strip invented day counts when days are unknown ────
+      // If the deterministic extractor classified work model as HYBRID_UNKNOWN,
+      // the AI may have hallucinated a specific day count (e.g. "2-3 days").
+      // Strip it from working_pattern and commute_reality before the output is used.
+      try {
+        const _wmExtr = _jdExtract(jdText).work_model || {};
+        if (_wmExtr.hybrid_type === 'HYBRID_UNKNOWN' && analysis.practical_details) {
+          const _pd = analysis.practical_details;
+          if (_pd.working_pattern && /\d[-–]\d\s*days/.test(_pd.working_pattern)) {
+            _pd.working_pattern = 'Hybrid (on-site expectation not specified)';
+          }
+          if (_pd.commute_reality && /\d[-–]\d\s*days/.test(_pd.commute_reality)) {
+            _pd.commute_reality = _pd.commute_reality.replace(/\d[-–]\d\s*days?\/week\s*/g, '').trim();
+          }
+          // Add a clarification risk entry if none already mentions hybrid
+          const _hasHybridRisk = analysis.risks_and_unknowns.some(r =>
+            (typeof r === 'string' ? r : (r.text || '')).toLowerCase().includes('hybrid')
+          );
+          if (!_hasHybridRisk) {
+            analysis.risks_and_unknowns.push({
+              text: 'Work model is hybrid but minimum office days are not stated. Confirm the expectation before committing time.',
+              tag: 'Inferred — missing detail',
+            });
+          }
+        }
+      } catch (_hybridValErr) {
+        console.warn('[normaliseAnalysis] hybrid validation threw', _hybridValErr);
       }
 
       // ── Client-side salary break ──────────────────────────────────────────────

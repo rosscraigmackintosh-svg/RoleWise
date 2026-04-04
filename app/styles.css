@@ -3122,6 +3122,11 @@
       background: #fdf0f0;
       border-color: #e5aaaa;
     }
+    .rw-fa-verdict--unclear {
+      color: var(--text-muted);
+      background: var(--bg);
+      border-color: var(--border-light);
+    }
     .rw-fa-confidence {
       font-size: 12px;
       color: var(--text-muted);
@@ -5353,8 +5358,9 @@
     }
     /* Neutral / positive outcomes: no background tint, no border colour.
        Only the outcome text value itself carries the colour. */
-    .decision-summary.ds-green { background: var(--surface); border-color: var(--border-light); }
-    .decision-summary.ds-amber { background: var(--surface); border-color: var(--border-light); }
+    .decision-summary.ds-green   { background: var(--surface); border-color: var(--border-light); }
+    .decision-summary.ds-amber   { background: var(--surface); border-color: var(--border-light); }
+    .decision-summary.ds-neutral { background: var(--surface); border-color: var(--border-light); }
     .decision-summary-header {
       font-size: 10px;
       font-weight: 600;
@@ -5387,9 +5393,10 @@
       line-height: var(--leading-tight);
     }
     /* Colour only the outcome value — not the whole card */
-    .decision-summary.ds-green .decision-summary-row:first-child .decision-summary-val { color: var(--success); }
-    .decision-summary.ds-amber .decision-summary-row:first-child .decision-summary-val { color: var(--warning); }
-    .decision-summary.ds-red   .decision-summary-row:first-child .decision-summary-val { color: var(--error); }
+    .decision-summary.ds-green   .decision-summary-row:first-child .decision-summary-val { color: var(--success); }
+    .decision-summary.ds-amber   .decision-summary-row:first-child .decision-summary-val { color: var(--warning); }
+    .decision-summary.ds-red     .decision-summary-row:first-child .decision-summary-val { color: var(--error); }
+    .decision-summary.ds-neutral .decision-summary-row:first-child .decision-summary-val { color: var(--text-muted); }
     /* Secondary: when role has progressed past JD Review, DS card is context not primary */
     .decision-summary.ds-secondary {
       background: var(--bg);
@@ -6232,9 +6239,10 @@
       padding: 9px 40px;
     }
     /* Only Hard No gets a tinted sticky bar */
-    .sticky-decision-bar.sdb-green { background: var(--surface); border-bottom-color: var(--border-light); }
-    .sticky-decision-bar.sdb-amber { background: var(--surface); border-bottom-color: var(--border-light); }
-    .sticky-decision-bar.sdb-red   { background: var(--error-bg); border-bottom-color: var(--error-border); }
+    .sticky-decision-bar.sdb-green   { background: var(--surface); border-bottom-color: var(--border-light); }
+    .sticky-decision-bar.sdb-amber   { background: var(--surface); border-bottom-color: var(--border-light); }
+    .sticky-decision-bar.sdb-neutral { background: var(--surface); border-bottom-color: var(--border-light); }
+    .sticky-decision-bar.sdb-red     { background: var(--error-bg); border-bottom-color: var(--error-border); }
     .sticky-decision-inner {
       display: flex;
       align-items: baseline;
@@ -6247,9 +6255,10 @@
       font-weight: 600;
       color: var(--text);
     }
-    .sticky-decision-bar.sdb-green .sticky-decision-outcome { color: var(--success); }
-    .sticky-decision-bar.sdb-amber .sticky-decision-outcome { color: var(--warning); }
-    .sticky-decision-bar.sdb-red   .sticky-decision-outcome { color: var(--error); }
+    .sticky-decision-bar.sdb-green   .sticky-decision-outcome { color: var(--success); }
+    .sticky-decision-bar.sdb-amber   .sticky-decision-outcome { color: var(--warning); }
+    .sticky-decision-bar.sdb-red     .sticky-decision-outcome { color: var(--error); }
+    .sticky-decision-bar.sdb-neutral .sticky-decision-outcome { color: var(--text-muted); }
     .sticky-decision-meta {
       font-size: 12px;
       color: var(--text-muted);

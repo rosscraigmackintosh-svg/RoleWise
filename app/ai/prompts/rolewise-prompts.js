@@ -404,6 +404,13 @@ If the input begins with a STRUCTURED_METADATA block, those values are authorita
 - A work_model of "On-site" in metadata MUST appear as "On-site" in output — do NOT mark it "Not stated".
 - Same rule applies to location and employment_type.
 For fields absent from any metadata: extract only what is explicitly stated in the JD. If genuinely absent everywhere, use "Not stated".
+WORK MODEL CLASSIFICATION RULES (CRITICAL — follow exactly):
+A. If the JD says "on-site required", "5 days in office", or "full-time office" → classify as On-site.
+B. If the JD says "hybrid" AND specifies a number of office days (e.g. "3 days per week in office", "minimum 2 days") → classify as Hybrid and include the day count in working_pattern.
+C. If the JD says "hybrid" or "flexible hybrid" but does NOT specify a number of days → classify as Hybrid. Do NOT assume or infer any number of days. Do NOT write "2-3 days" or any number not explicitly stated.
+D. If the JD says "remote" or "fully remote" → classify as Remote.
+NEVER infer commute days or office frequency that are not explicitly stated in the JD.
+NEVER treat unspecified hybrid as a hard blocker. Surface it as a verification point.
 company_mismatch:
 - If a STRUCTURED_METADATA block provides a company_name AND the JD text references a clearly different company, set company_mismatch to the JD company name.
 - If names match or only one source has a company name, set company_mismatch to null.
