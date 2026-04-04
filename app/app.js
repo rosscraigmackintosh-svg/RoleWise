@@ -1295,6 +1295,7 @@
         'Worth exploring': 'background:#eef7f0;color:#2f6f44;border-color:#d6eadb;',
         'Unclear fit':     'background:#f4f5f7;color:#4b5563;border-color:#e5e7eb;',
         'Lower alignment': 'background:#fbefef;color:#7f3a3a;border-color:#f0d6d6;',
+        'Not viable':      'background:#fbefef;color:#7f3a3a;border-color:#f0d6d6;',
       };
       const style = styles[outcome] || 'background:#f4f5f7;color:#4b5563;border-color:#e5e7eb;';
       const cls   = small ? 'verdict-chip verdict-chip-sm' : 'verdict-chip';
@@ -15920,6 +15921,39 @@
         };
       }
 
+      // ── Salary minimum hard break ────────────────────────────────────────
+      // Parse user's minimum from profile (string like "around £110k for permanent roles").
+      const _parseMinSalary = (s) => {
+        if (!s) return null;
+        const m = String(s).match(/[£$€]\s*([\d,]+)\s*(k)?/i);
+        if (!m) return null;
+        const n = parseFloat(m[1].replace(/,/g, ''));
+        return isNaN(n) ? null : (m[2] ? n * 1000 : n);
+      };
+      const _userSalMin = _parseMinSalary(
+        (userProfile && userProfile.min_salary_perm) ||
+        (userProfile && userProfile.min_salary_permanent) ||
+        _ROLEWISE_USER_PROFILE.min_salary_permanent
+      );
+      // salary_max is the role's ceiling. If it's still below the user's floor, break hard.
+      const _roleSalTop = _pd.salary_max != null ? Number(_pd.salary_max)
+                        : _pd.salary_min != null ? Number(_pd.salary_min)
+                        : null;
+      const _salaryBelowMin = !!(_userSalMin && _roleSalTop != null && _roleSalTop < _userSalMin);
+      if (_salaryBelowMin) {
+        const _minStr = `£${Math.round(_userSalMin / 1000)}k`;
+        return {
+          verdict:    'no',
+          label:      'No — Below salary minimum',
+          summary:    `The stated salary is below your minimum of ${_minStr}. Do not progress without first confirming the range has flexibility.`,
+          mainReason: `Salary is below your minimum (${_minStr}).`,
+          confidence: 'high',
+          confLabel:  'High confidence',
+          bullets:    [`Salary is below your minimum of ${_minStr}.`],
+          watchouts:  [],
+        };
+      }
+
       // ── Work model ──────────────────────────────────────────────────────
       // Use startsWith — DB values can include qualifiers e.g. "Hybrid (frequency not specified)"
       if (_wm.startsWith('remote')) {
@@ -18626,13 +18660,31 @@
       //    $100/hr\nRemote\nMatches your job preferences…\nFull-time\nSave Title at Company\n
       //    Title\nCompany · Location (Remote)\nSave Title at Company\nAbout the job\n…"
       // The real JD starts AFTER "About the job". Strip everything before it.
+      // CRITICAL: Before stripping, extract any salary lines from the header block
+      // so they are not lost. Salary lines look like "£55K/yr - £75K/yr" and appear
+      // in the LinkedIn chrome before "About the job". We prepend them to the cleaned
+      // body so downstream extractors (_jdExtract) can find them.
       {
         const _aboutIdx = text.search(/^about the job\s*$/im);
         if (_aboutIdx !== -1) {
+          // Extract the header block (everything before "About the job")
+          const _headerBlock = text.slice(0, _aboutIdx);
+          // Find salary lines in the header — patterns like £55K/yr, $100/hr, €80k/yr etc.
+          const _headerLines = _headerBlock.split('\n');
+          const _salaryLineRx = /[£$€]\s*[\d,]+\s*[Kk]?\s*(?:\/\s*(?:yr|year|pa|annum|mo|month|hr|hour))?(?:\s*[-–—to]+\s*[£$€]?\s*[\d,]+\s*[Kk]?\s*(?:\/\s*(?:yr|year|pa|annum|mo|month|hr|hour))?)?/i;
+          const _extractedSalaryLines = _headerLines.filter(l => _salaryLineRx.test(l.trim()));
+
           // Find the newline after "About the job" and take everything after it
           const _afterAbout = text.indexOf('\n', _aboutIdx);
           if (_afterAbout !== -1) {
-            text = text.slice(_afterAbout + 1);
+            const _bodyText = text.slice(_afterAbout + 1);
+            // Prepend any extracted salary lines so they are visible to _jdExtract
+            if (_extractedSalaryLines.length > 0) {
+              console.log('[cleanJobDescription] preserved salary from LinkedIn header:', _extractedSalaryLines);
+              text = _extractedSalaryLines.join('\n') + '\n' + _bodyText;
+            } else {
+              text = _bodyText;
+            }
           }
         }
       }
@@ -21419,6 +21471,32 @@
         });
       }
 
+      // ── Salary source priority: deterministic > AI > fallback ───────────────
+      // Deterministic extractor is always authoritative when it found a real figure.
+      // AI strings like "Not disclosed", "Not stated", "Competitive" must NEVER
+      // overwrite a salary that was actually parsed from the JD text.
+      // Applies regardless of which weak label the AI returned.
+      const _detSal = _mergedPd.salary_annual;
+      const _detHasSalary = (_mergedPd.salary_min != null || _mergedPd.salary_max != null) ||
+        (_detSal && _detSal !== 'Not stated' && _detSal !== 'Not disclosed');
+      const _aiSalIsWeak = !salaryAnnual || ['not stated', 'not disclosed', 'not specified',
+        'competitive', 'tbc', 'doe', 'see jd'].some(w => (salaryAnnual || '').toLowerCase().includes(w));
+
+      if (_detHasSalary && _detSal && _detSal !== 'Not stated' && _detSal !== 'Not disclosed') {
+        // Deterministic wins — always use what the JD extractor found
+        salaryAnnual = _detSal;
+        console.log('[normaliseAnalysis] salary: deterministic wins →', salaryAnnual,
+          '| AI was:', _aiSalIsWeak ? `weak ("${_mergedPd.salary_annual || 'none'}")` : 'strong');
+      } else if (_aiSalIsWeak) {
+        // Neither source has a real figure
+        salaryAnnual  = 'Not disclosed';
+        salaryMonthly = null;
+        console.log('[normaliseAnalysis] salary: both weak → Not disclosed');
+      } else {
+        // AI had a valid value; deterministic found nothing — keep AI
+        console.log('[normaliseAnalysis] salary: AI value kept →', salaryAnnual);
+      }
+
       const practical_details = {
         location:        (() => { const raw = str(_mergedPd.location || pdRaw.location); return (raw && raw !== 'Not stated') ? (normaliseLocation(raw) || raw) : raw; })(),
         remote_model:    str(_mergedPd.remote_model || pdRaw.remote_model),
@@ -21767,6 +21845,36 @@
         analysis.seniority_authenticity  = (_v2.seniority_authenticity && _v2.seniority_authenticity !== 'unclear') ? _v2.seniority_authenticity : null;
       } catch (_v2Err) {
         console.warn('[normaliseAnalysis] _detectV2Signals threw — v2 fields left null', _v2Err);
+      }
+
+      // ── Client-side salary break ──────────────────────────────────────────────
+      // If the JD has a parsed salary below the user's minimum, override the AI
+      // verdict so the user is never sent down a dead-end application path.
+      const _parseMinSal = (s) => {
+        if (!s) return null;
+        const m = String(s).match(/[£$€]\s*([\d,]+)\s*(k)?/i);
+        if (!m) return null;
+        const n = parseFloat(m[1].replace(/,/g, ''));
+        return isNaN(n) ? null : (m[2] ? n * 1000 : n);
+      };
+      const _userSalFloor = _parseMinSal(
+        (userProfile && userProfile.min_salary_perm) ||
+        (userProfile && userProfile.min_salary_permanent) ||
+        _ROLEWISE_USER_PROFILE.min_salary_permanent
+      );
+      const _pdForSalChk    = analysis.practical_details;
+      const _roleSalCeiling = _pdForSalChk.salary_max != null ? Number(_pdForSalChk.salary_max)
+                            : _pdForSalChk.salary_min != null ? Number(_pdForSalChk.salary_min)
+                            : null;
+      if (_userSalFloor && _roleSalCeiling != null && _roleSalCeiling < _userSalFloor) {
+        const _salMinFmt = `£${Math.round(_userSalFloor / 1000)}k`;
+        analysis.rolewise_verdict = {
+          outcome:   'Not viable',
+          reasoning: `Salary (${_pdForSalChk.salary_annual}) is below your minimum of ${_salMinFmt}. Do not invest further time without first confirming the range has flexibility.`,
+        };
+        console.log('[normaliseAnalysis] salary break — verdict overridden to Not viable', {
+          roleSalary: _roleSalCeiling, userMin: _userSalFloor,
+        });
       }
 
       return analysis;

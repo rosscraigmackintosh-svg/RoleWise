@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "rolewise",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["serve", "-l", "4321", "app"],
+      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeArgs": ["/tmp/rw-serve.js", "app", "4321"],
       "port": 4321
     },
     {
