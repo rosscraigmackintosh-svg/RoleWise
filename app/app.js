@@ -1373,6 +1373,26 @@
     let _candidateLearning = null; // candidate_learning row from DB (loaded at boot)
     let _liSourceMeta      = null; // Set by _fetchLinkedInJD; consumed + cleared by saveRole
 
+    // ─── Salary display normaliser ──────────────────────────────────────────
+    // Stored output_json may contain legacy wording. This function normalises
+    // salary_annual to one of three canonical values before rendering.
+    // Call on any salary_annual value read from jd_matches or role_artifacts.
+    function _normaliseSalaryDisplay(val) {
+      if (!val) return 'Not disclosed';
+      var l = val.toLowerCase();
+      // Absent variants → canonical absent
+      if (l === 'not stated' || l === 'not specified' || l === 'not disclosed') return 'Not disclosed';
+      // Mentioned-but-no-figure variants → canonical mentioned
+      if (l.includes('salary mentioned')) return 'Salary mentioned \u2014 see JD for details';
+      // Competitive / TBD → treat as absent
+      if (l === 'competitive' || l === 'tbd' || l === 'negotiable') return 'Not disclosed';
+      // Garbage guard: £0, $0, £0 - £0, £1, $1 → treat as absent
+      var _firstNum = parseInt((val.match(/[\d,]+/) || ['0'])[0].replace(/,/g, ''), 10);
+      if (/^[£€$]/.test(val) && _firstNum <= 1) return 'Not disclosed';
+      // Actual value — pass through
+      return val;
+    }
+
     // ─── Analysis trace stages ────────────────────────────────────────────────
     // Shared between the workspace paste trace (_wsRunAnalysis), the Add JD modal
     // trace (saveRole), and the intake panel. Keep labels calm and factual.
@@ -1564,8 +1584,9 @@
             <div class="rh-added">${esc(_addedLabel)}<span class="rh-analysis-id" title="Role: ${esc(role.id)}${role.latest_match_id ? '\nAnalysis: ' + esc(role.latest_match_id) : ''}"> · ${esc(role.id.slice(0, 8))}${role.latest_match_id ? ' / ' + esc(role.latest_match_id.slice(0, 8)) : ''}</span><button class="rh-copy-id" title="Copy IDs" data-role-id="${esc(role.id)}" data-match-id="${esc(role.latest_match_id || '')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
           </div>
           <!-- Edit details + Reasoning Map moved to right panel (RW-SIDEBAR-BUTTONS) -->
-          <div class="rh-actions" style="display:none;">
+          <div class="rh-actions"${location.hostname !== 'localhost' ? ' style="display:none;"' : ''}>
             <button class="rw-btn rw-btn-sm" id="rh-btn-share-analysis" data-role-id="${esc(role.id)}" style="display:none;">Share analysis</button>
+            ${location.hostname === 'localhost' ? `<button class="rw-btn rw-btn-sm" id="rh-btn-reanalyse" data-role-id="${esc(role.id)}">Re-analyse</button>` : ''}
           </div>
         </div>`;
 
@@ -1576,6 +1597,67 @@
       const wrap     = document.querySelector('#col-overview-cards .rw-overview-wrap');
       const fallback = document.getElementById('col-overview-cards');
       (mainCol || wrap || fallback)?.prepend(headerEl);
+
+      // ── Dev-only: wire re-analyse button ─────────────────────────────────
+      headerEl.querySelector('#rh-btn-reanalyse')?.addEventListener('click', () => _devReanalyse(role));
+    }
+
+    // Dev-only: re-run the analysis pipeline on an existing role's JD.
+    // Only callable from localhost. Uses the standard callAnalysisAPI + jd_matches save path.
+    async function _devReanalyse(role) {
+      if (location.hostname !== 'localhost') return;
+      if (!role?.id || !role.job_description_raw) {
+        console.warn('[dev-reanalyse] role has no JD');
+        return;
+      }
+
+      const btn = document.getElementById('rh-btn-reanalyse');
+      if (btn) { btn.disabled = true; btn.textContent = 'Re-analysing\u2026'; }
+
+      try {
+        const jdRaw = role.job_description_raw;
+        const jdClean = (typeof cleanJobDescription === 'function') ? cleanJobDescription(jdRaw) : jdRaw;
+        const jd = jdClean || jdRaw;
+
+        console.log('[dev-reanalyse] calling callAnalysisAPI for', role.company_name);
+        const analysis = await callAnalysisAPI(jd);
+
+        // No post-analysis mutation — output must be identical regardless of flow.
+
+        // Save as new jd_matches row
+        const { data: _newMatch, error: _saveErr } = await db.from('jd_matches').insert({
+          role_id:             role.id,
+          job_description_raw: jdRaw,
+          jd_text_raw:         jdRaw,
+          jd_text:             jd,
+          jd_text_clean:       jdClean || null,
+          company_name:        role.company_name,
+          role_title:          role.role_title,
+          job_url:             role.job_url,
+          selected_cv_ids:     [],
+          cv_version_ids:      [],
+          output_json:         analysis,
+        }).select('id').single();
+
+        if (_saveErr) throw _saveErr;
+        console.log('[dev-reanalyse] saved jd_matches row', _newMatch?.id);
+
+        // Update in-memory role
+        role.latest_match_output = analysis;
+        role.latest_match_id     = _newMatch?.id || null;
+
+        // Re-render
+        if (btn) { btn.disabled = false; btn.textContent = 'Analysis refreshed'; }
+        setTimeout(() => {
+          if (btn) btn.textContent = 'Re-analyse';
+          renderRoleDoc(role);
+          renderRail(role);
+        }, 800);
+
+      } catch (err) {
+        console.error('[dev-reanalyse] failed', err);
+        if (btn) { btn.disabled = false; btn.textContent = 'Re-analyse (failed)'; }
+      }
     }
 
     function _clearRoleHeader() {
@@ -2469,8 +2551,10 @@
 
     // ─── Shared sort: outcome_at → latest_match_at → created_at ─────────────
     function roleSort(a, b) {
-      const ta = new Date(a.outcome_at || a.latest_match_at || a.created_at).getTime();
-      const tb = new Date(b.outcome_at || b.latest_match_at || b.created_at).getTime();
+      // Sort by when the role was added (newest first).
+      // Do not use latest_match_at — re-analysis timestamps should not reorder the list.
+      const ta = new Date(a.created_at).getTime();
+      const tb = new Date(b.created_at).getTime();
       return tb - ta;
     }
 
@@ -6272,32 +6356,13 @@
         // Log title extraction source for debugging
         console.log('[title-extract]', { title: _title, source: _titleSource });
 
-        // ── Platform metadata overrides (DATA PRECEDENCE RULE) ──────────────
-        // LinkedIn / Apify / Spiffy metadata is more reliable than AI inference
-        // from JD text. Apply as the authoritative source BEFORE Pass 2 so the
-        // narrative receives correct, grounded data.
-        // Priority: structured platform metadata > AI extraction > JD text inference.
-        if (analysis.practical_details) {
-          const _pd  = analysis.practical_details;
-          const _lm  = role._liMeta || {};
-
-          // Work model — LinkedIn Voyager provides this directly; never infer over it
-          if (role._liWorkModel && role._liWorkModel !== 'Not stated') {
-            _pd.remote_model = role._liWorkModel;
-          }
-          // Employment type — from Voyager metadata
-          if (role._liEmploymentType && role._liEmploymentType !== 'Not stated') {
-            _pd.employment_type = role._liEmploymentType;
-          }
-          // Location — only fill gap; AI may have a richer normalised form
-          if (role._liLocation && (!_pd.location || _pd.location === 'Not stated')) {
-            _pd.location = role._liLocation;
-          }
-          // Salary — structured platform data overrides "Not stated" gaps only
-          if (_lm.salary_text && (!_pd.salary_annual || _pd.salary_annual === 'Not stated' || _pd.salary_annual === 'Not disclosed')) {
-            _pd.salary_annual = _lm.salary_text;
-          }
-        }
+        // ── Platform metadata overrides REMOVED ─────────────────────────────
+        // Previously mutated analysis.practical_details after callAnalysisAPI.
+        // This caused the same JD to produce different output_json depending
+        // on ingestion flow. All metadata must be part of the JD text fed to
+        // the analysis — never patched onto the result after the fact.
+        // Platform data (work model, employment type, location) is still stored
+        // on the role record for display in inbox cards and role headers.
 
         // ── Attach LinkedIn metadata to analysis for rendering + persistence ──
         if (role._liMeta) {
@@ -8499,6 +8564,10 @@
               _refreshRoleContacts(role);
               // Fill prep panel in Applied tab (async — needs analysis data)
               _updateAsPrepPanel(_aJson, 'rp-prep-panel-slot');
+              // Clear stale enriching indicators for DB-loaded analyses with no live promise
+              if (_aJson._source !== 'ai' && !_aJson._aiPromise) {
+                _hideEnrichingIndicator();
+              }
             } catch (e) {
               _ovBody.innerHTML = '<div class="doc-empty">Could not load analysis</div>';
             }
@@ -8583,11 +8652,11 @@
           if (_hintAnalysis?.content) {
             try {
               const _hfo = JSON.parse(_hintAnalysis.content);
-              _hintSalary = _hfo.practical_details?.salary_annual || null;
+              _hintSalary = _normaliseSalaryDisplay(_hfo.practical_details?.salary_annual);
             } catch (_) {}
           }
           // Fall back to the raw salary field on the role row
-          if (!_hintSalary || _hintSalary === 'Not stated') {
+          if (!_hintSalary || _hintSalary === 'Not disclosed') {
             _hintSalary = role.salary_text_raw || null;
           }
 
@@ -10285,8 +10354,8 @@
             // Back-fill salary as line 4 below meta row
             const _salaryLineEl = document.getElementById('doc-meta-salary');
             if (_salaryLineEl) {
-              const _sal = match.output_json?.practical_details?.salary_annual;
-              if (_sal && _sal !== 'Not stated') {
+              const _sal = _normaliseSalaryDisplay(match.output_json?.practical_details?.salary_annual);
+              if (_sal !== 'Not disclosed') {
                 _salaryLineEl.textContent = _sal;
                 _salaryLineEl.style.display = '';
               }
@@ -16843,7 +16912,7 @@
               (_pd.location       && _pd.location       !== 'Not stated') ? ['Location',        _pd.location]        : null,
               (_pd.remote_model   && _pd.remote_model   !== 'Not stated') ? ['Work model',      _pd.remote_model]    : null,
               (_pd.employment_type && _pd.employment_type !== 'Not stated') ? ['Employment type', _pd.employment_type] : null,
-              ['Salary', (_pd.salary_annual && _pd.salary_annual !== 'Not stated' && _pd.salary_annual !== 'Not disclosed') ? _pd.salary_annual : 'Not disclosed'],
+              ['Salary', _normaliseSalaryDisplay(_pd.salary_annual)],
               (_pd.company_type   && _pd.company_type   !== 'Not stated') ? ['Company type',    _pd.company_type]    : null,
             ].filter(Boolean);
             // Append platform context items (adapt tuple format)
@@ -16949,9 +17018,11 @@
           // Resolve engagement_type: role-level (structured) → AI practical_details fallback
           var _engTypeForSignals = (function() {
             var _role = (typeof selectedRoleId !== 'undefined') ? allRoles.find(function(r) { return r.id === selectedRoleId; }) : null;
-            return (_role && _role.engagement_type && _role.engagement_type !== 'Unknown')
+            var _et = (_role && _role.engagement_type && _role.engagement_type !== 'Unknown')
               ? _role.engagement_type
               : (_dbPd.employment_type || null);
+            // Filter out "Not stated" — absence is not a value
+            return (_et && _et !== 'Not stated' && _et !== 'Not disclosed') ? _et : null;
           })();
 
           var _signals = classifySignals(output, _narr,
@@ -17124,10 +17195,9 @@
               _primaryRows.push(['Role type', _rtLabels[_rt] || _cap(_rt), null]);
             }
 
-            // Salary — show actual value, fall back to "Not disclosed"
+            // Salary — normalise stored value then display
             {
-              const _pdSal = output.practical_details?.salary_annual;
-              const _salDisplay = (_pdSal && _pdSal !== 'Not stated' && _pdSal !== 'Not disclosed') ? _pdSal : 'Not disclosed';
+              const _salDisplay = _normaliseSalaryDisplay(output.practical_details?.salary_annual);
               _primaryRows.push(['Salary', _salDisplay, null]);
             }
 
@@ -22410,13 +22480,18 @@
       if (hasSalaryCue) {
         const salFig = raw.match(/[£€$][\d,]+(?:k|K)?(?:\s*(?:[-–]\s*[£€$]?[\d,]+(?:k|K)?))?\s*(?:per\s+annum|p\.?a\.?|\/year|\/yr|per year|annually)?/i);
         if (salFig) {
-          salary_annual = salFig[0].replace(/\s+/g, ' ').trim();
-          const numStr = salFig[0].match(/[\d,]+/)?.[0]?.replace(/,/g, '');
-          if (numStr && salFig[0][0] === '£') {
-            let num = parseInt(numStr, 10);
-            if (/k/i.test(salFig[0])) num *= 1000;
-            if (num >= 10000 && num <= 1000000) {
-              salary_monthly = `~£${Math.round(num / 12).toLocaleString()} / month`;
+          const _salRaw = salFig[0].replace(/\s+/g, ' ').trim();
+          // Guard: reject garbage values like £0, $0, £0 - £0, £1, $1
+          const _salFirstNum = parseInt((_salRaw.match(/[\d,]+/) || ['0'])[0].replace(/,/g, ''), 10);
+          if (_salFirstNum > 1) {
+            salary_annual = _salRaw;
+            const numStr = _salRaw.match(/[\d,]+/)?.[0]?.replace(/,/g, '');
+            if (numStr && _salRaw[0] === '£') {
+              let num = parseInt(numStr, 10);
+              if (/k/i.test(_salRaw)) num *= 1000;
+              if (num >= 10000 && num <= 1000000) {
+                salary_monthly = `~£${Math.round(num / 12).toLocaleString()} / month`;
+              }
             }
           }
         }
@@ -22540,16 +22615,22 @@
         // Attempt to extract a stated figure
         const salFig = raw.match(/[£€$][\d,]+(?:k|K)?(?:\s*(?:[-–]\s*[£€$]?[\d,]+(?:k|K)?))?\s*(?:per\s+annum|p\.?a\.?|\/year|\/yr|per year|annually)?/i);
         if (salFig) {
-          salary_annual = salFig[0].replace(/\s+/g, ' ').trim();
-          // Rough monthly if we can parse
-          const numStr = salFig[0].match(/[\d,]+/)?.[0]?.replace(/,/g, '');
-          if (numStr && salFig[0][0] === '£') {
-            let num = parseInt(numStr, 10);
-            if (/k/i.test(salFig[0])) num *= 1000;
-            if (num >= 10000 && num <= 1000000) {
-              const mo = Math.round(num / 12);
-              salary_monthly = `~£${mo.toLocaleString()} / month`;
+          const _salRaw = salFig[0].replace(/\s+/g, ' ').trim();
+          // Guard: reject garbage values like £0, $0, £0 - £0, £1, $1
+          const _salFirstNum = parseInt((_salRaw.match(/[\d,]+/) || ['0'])[0].replace(/,/g, ''), 10);
+          if (_salFirstNum > 1) {
+            salary_annual = _salRaw;
+            const numStr = _salRaw.match(/[\d,]+/)?.[0]?.replace(/,/g, '');
+            if (numStr && _salRaw[0] === '£') {
+              let num = parseInt(numStr, 10);
+              if (/k/i.test(_salRaw)) num *= 1000;
+              if (num >= 10000 && num <= 1000000) {
+                const mo = Math.round(num / 12);
+                salary_monthly = `~£${mo.toLocaleString()} / month`;
+              }
             }
+          } else {
+            salary_annual = 'Salary mentioned \u2014 see JD for details';
           }
         } else {
           salary_annual = 'Salary mentioned \u2014 see JD for details';

@@ -93,19 +93,22 @@ function classifySignals(output, narrative, viability, userPrefs) {
 
   // ── Salary ───────────────────────────────────────────────────────
   var dbSalVal = (dbPd.salary_annual || '').toLowerCase();
-  var salUnclear = !dbPd.salary_annual || dbSalVal === 'not stated' || dbSalVal === 'not disclosed'
-    || dbSalVal.includes('not stated') || dbSalVal.includes('not disclosed') || dbSalVal.includes('competitive');
+  var salAbsent = !dbPd.salary_annual || dbSalVal === 'not stated' || dbSalVal === 'not disclosed'
+    || dbSalVal.includes('not stated') || dbSalVal.includes('not disclosed')
+    || dbSalVal === 'competitive' || dbSalVal === 'tbd' || dbSalVal === 'negotiable';
+  var salMentionedOnly = !salAbsent && dbSalVal.includes('salary mentioned');
 
-  if (salUnclear) {
+  if (salAbsent) {
     addSig('Salary not disclosed', 'NEEDS_CLARITY');
+  } else if (salMentionedOnly) {
+    addSig('Salary mentioned \u2014 see JD for details', 'NEEDS_CLARITY');
   } else {
-    // Prefer parsed minAnnual; fall back to extracting a number from text
+    // Actual salary value — compare against user minimum
     var jdSalNum = output.salary ? (output.salary.minAnnual || null) : null;
     if (jdSalNum === null && dbPd.salary_annual) {
       var _salMatch = dbPd.salary_annual.replace(/,/g, '').match(/[\u00a3$€]\s*([\d.]+)/);
       if (_salMatch) {
         var _parsed = parseFloat(_salMatch[1]);
-        // Normalise: values under 1000 are likely in thousands (e.g. "£48" from "£48,000")
         jdSalNum = _parsed < 1000 ? _parsed * 1000 : _parsed;
       }
     }
@@ -117,8 +120,7 @@ function classifySignals(output, narrative, viability, userPrefs) {
   }
 
   // ── Employment type ───────────────────────────────────────────────
-  // Compare role engagement type against user's accepted employment types.
-  // Only surface when there's a clear mismatch — no signal on match.
+  // Missing = NEEDS_CLARITY (not a break). Mismatch = BREAKS. Match = no signal.
   var _engType = (viability.engagementType || '').toLowerCase();
   if (_engType && upEmpTypes) {
     // Normalise: "contract-to-perm" counts as contract for matching
@@ -128,6 +130,8 @@ function classifySignals(output, narrative, viability, userPrefs) {
       var _engLabel = viability.engagementType; // preserve original casing
       addSig(_engLabel + ' role (you prefer ' + up.employment_types.join(' / ') + ')', 'BREAKS');
     }
+  } else if (!_engType && upEmpTypes) {
+    addSig('Role type not stated \u2014 worth confirming', 'NEEDS_CLARITY');
   }
 
   // ── Seniority ────────────────────────────────────────────────────
