@@ -29246,7 +29246,7 @@ If a field cannot be determined from the message, return null for that field.`,
         // Restore app sub-panel if recruiter view was active
         const _appPanel = document.getElementById('app-list-panel');
         const _rcPanel  = document.getElementById('rc-list-panel-wrapper');
-        if (_appPanel) _appPanel.style.display = '';
+        if (_appPanel) _appPanel.style.display = 'flex';
         if (_rcPanel)  _rcPanel.style.display = 'none';
         renderInbox(allRoles);
         if (!selectedRoleId) {
