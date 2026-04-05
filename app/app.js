@@ -22803,7 +22803,8 @@
       if (location && location !== 'Not stated') location = normaliseLocation(location) || location;
 
       // Salary
-      const hasSalaryCue = /[£€$]/.test(raw) ||
+      const _hasCurrencyInJD = /[£€$]/.test(raw);
+      const hasSalaryCue = _hasCurrencyInJD ||
         ['salary', 'compensation', 'per year', 'per annum', '/year', '/yr', 'ote'].some(p => t.includes(p));
       let salary_annual  = 'Not disclosed';
       let salary_monthly = null;
@@ -22829,7 +22830,16 @@
             salary_annual = 'Salary mentioned \u2014 see JD for details';
           }
         } else {
-          salary_annual = 'Salary mentioned \u2014 see JD for details';
+          // No extractable figure. Only emit "Salary mentioned" when there is a currency
+          // symbol (figure exists but couldn't be parsed by the above regex) or a
+          // meaningful employer-side salary phrase. Bare keywords ("salary",
+          // "compensation"), candidate-facing questions ("salary expectations"), and
+          // listing chrome do NOT qualify and must fall back to "Not disclosed".
+          const _hasMeaningfulSalaryMention =
+            _hasCurrencyInJD ||
+            /\b(?:per\s+annum|per\s+year|\/year|\/yr|ote)\b/i.test(raw) ||
+            /(?:competitive|attractive|excellent|generous|negotiable|tbc|tbd|commensurate|dependent\s+on\s+experience|market[\s-]?rate)\s+(?:salary|compensation|pay|remuneration)|(?:salary|compensation|pay|remuneration)\s+(?:range|package|band|bracket|scale|tbc|tbd|negotiable|discussed|competitive|attractive)/i.test(raw);
+          salary_annual = _hasMeaningfulSalaryMention ? 'Salary mentioned \u2014 see JD for details' : 'Not disclosed';
         }
       }
 
