@@ -7227,132 +7227,136 @@
           }
         }
 
-        // ── LinkedIn job URL → auto-fetch JD ───────────────────────────────────
-        // Intercept LinkedIn job posting URLs and fetch the JD via edge function.
-        // LinkedIn search pages are excluded (no single job to fetch).
-        if (_isLinkedInJobUrl(text) && !/linkedin\.com\/jobs\/search/i.test(text)) {
-          const _liStatusEl = _wsStatusLine(timelineEl, 'Fetching job description from LinkedIn…');
+        // ── Supported job URL → auto-fetch JD via router ──────────────────────
+        // Intercepts LinkedIn + Workable + Greenhouse + Lever + Ashby + generic
+        // URLs and fetches the JD via the multi-board ingestion router. LinkedIn
+        // search pages are excluded (no single job to fetch).
+        const _wsCls = _classifyJdUrl(text);
+        const _wsIsKnown = ['linkedin','workable','greenhouse','lever','ashby'].includes(_wsCls.source_type);
+        const _wsIsLiSearch = /linkedin\.com\/jobs\/search/i.test(text);
+        const _wsEligible = _wsIsKnown && !_wsIsLiSearch
+          && (_wsCls.source_type !== 'linkedin' || _isLinkedInJobUrl(text));
+
+        if (_wsEligible) {
+          const _srcLabel = _wsCls.source_label;
+          const _statusEl = _wsStatusLine(timelineEl, `Fetching job description from ${_srcLabel}\u2026`);
           _wsScrollIfNear(timelineEl);
           try {
-            const { data: _liProfiles } = await db.from('profiles').select('id').limit(1);
-            const _liUserId = _liProfiles?.[0]?.id || null;
-            // Normalise ?currentJobId= URLs (e.g. collections/recommended pages) to the
-            // canonical /jobs/view/ID/ page so the edge function can extract the JD HTML.
-            const _cjId = text.match(/[?&]currentJobId=(\d+)/)?.[1];
-            const _fetchUrl = _cjId ? `https://www.linkedin.com/jobs/view/${_cjId}/` : text;
-            let _liRes, _liPayload;
-            try {
-              _liRes = await fetch(`${SUPABASE_URL}/functions/v1/fetch-linkedin-jd`, {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
-                body:    JSON.stringify({ url: _fetchUrl, userId: _liUserId }),
-              });
-              _liPayload = await _liRes.json();
-            } catch (_netErr) {
-              console.warn('[linkedin-fetch] network error', _netErr);
-              if (_liStatusEl.isConnected) _liStatusEl.remove();
-              const _errMsg = 'Couldn\u2019t reach LinkedIn right now. Check your connection, or paste the job description directly.';
-              _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
-              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
+            const _result = await _ingestJdFromUrl(text, { role_id: role._isTemp ? null : role.id });
+
+            // ── Failure / unsupported ────────────────────────────────────────
+            if (!_result.success || !_result.description_text || _result.description_text.trim().length < 50) {
+              if (_statusEl.isConnected) _statusEl.remove();
+              const _msg = _result.success && _result.description_text
+                ? _ingestCopyFor('failed', _srcLabel, 'description_too_short')
+                : _ingestCopyFor(_result.fetch_status, _srcLabel, _result.failure_reason);
+              _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_msg)}</div>`);
+              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _msg).catch(() => {});
               return;
             }
-            if (!_liRes.ok || !_liPayload.success) {
-              if (_liStatusEl.isConnected) _liStatusEl.remove();
-              const _e = _liPayload?.error;
-              const _errMsg = _e === 'no_session'
-                ? 'LinkedIn session not set. Add it in Admin \u2192 LinkedIn to fetch jobs automatically, or paste the job description directly.'
-                : _e === 'session_expired'
-                ? 'Your LinkedIn session has expired. Update it in Admin \u2192 LinkedIn, or paste the job description directly.'
-                : 'Couldn\u2019t fetch that job description. Try pasting the text directly instead.';
-              _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
-              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
-              return;
-            }
-            const _liJob = _liPayload.job;
-            if (!_liJob?.description || _liJob.description.trim().length < 50) {
-              if (_liStatusEl.isConnected) _liStatusEl.remove();
-              const _errMsg = 'LinkedIn returned this page but the job description was empty or too short. Try pasting it directly.';
-              _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
-              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
-              return;
-            }
-            // Success — mark the fetch status as done (dots hide, line fades but stays visible)
-            if (_liStatusEl.isConnected) _liStatusEl.classList.add('ws-status-done');
-            const _liCleaned = cleanLinkedInJD(_liJob.description);
-            // Store URL (and any metadata) on the role
+
+            // Success / partial — mark the fetch status as done.
+            if (_statusEl.isConnected) _statusEl.classList.add('ws-status-done');
+
+            const _desc = _result.description_text;
+
+            // Store URL and any top-line metadata on the role.
             if (!role._isTemp) {
-              const _liMeta = {};
-              if (!role.job_url)                        _liMeta.job_url  = text;
-              if (!role.company && _liJob.company)      _liMeta.company  = _liJob.company;
-              if (!role.title   && _liJob.title)        _liMeta.title    = _liJob.title;
-              if (!role.location && _liJob.location)    _liMeta.location = _liJob.location;
-              if (Object.keys(_liMeta).length) {
-                db.from('roles').update(_liMeta).eq('id', role.id).then(() => {
-                  Object.assign(role, _liMeta);
+              const _meta = {};
+              if (!role.job_url)                           _meta.job_url  = text;
+              if (!role.company  && _result.company)       _meta.company  = _result.company;
+              if (!role.title    && _result.title)         _meta.title    = _result.title;
+              if (!role.location && _result.location)      _meta.location = _result.location;
+              if (Object.keys(_meta).length) {
+                db.from('roles').update(_meta).eq('id', role.id).then(() => {
+                  Object.assign(role, _meta);
                   const _arEntry = allRoles.find(r => r.id === role.id);
-                  if (_arEntry && _arEntry !== role) Object.assign(_arEntry, _liMeta);
+                  if (_arEntry && _arEntry !== role) Object.assign(_arEntry, _meta);
                 }).catch(() => {});
               }
             } else {
               role.job_url = text;
-              if (!role.company && _liJob.company) role.company = _liJob.company;
-              if (!role.title   && _liJob.title)   role.title   = _liJob.title;
+              if (!role.company && _result.company) role.company = _result.company;
+              if (!role.title   && _result.title)   role.title   = _result.title;
             }
-            // Store authoritative LinkedIn metadata on role so _wsRunAnalysis can
-            // use it as the primary source (overrides AI inference).
-            // These fields come directly from the LinkedIn Voyager API and are
-            // more reliable than anything extracted from the JD text.
-            if (_liJob.work_remote)     role._liWorkModel      = _liJob.work_remote;
-            if (_liJob.employment_type) role._liEmploymentType = _liJob.employment_type;
-            if (_liJob.location)        role._liLocation       = _liJob.location;
-            if (_liJob.company)         role._liCompany        = _liJob.company;
 
-            // ── Expanded LinkedIn metadata (structured fields) ────────────────
-            // Stored on role._liMeta for in-session use and persisted to
-            // roles.source_meta for cross-session availability.
-            role._liMeta = {
-              work_remote:       _liJob.work_remote       || null,
-              employment_type:   _liJob.employment_type   || null,
-              location:          _liJob.location           || null,
-              company:           _liJob.company            || null,
-              posted_date:       _liJob.posted_date        || null,
-              posted_at_raw:     _liJob.posted_at_raw      || null,
-              applicants_count:  _liJob.applicants_count   ?? null,
-              easy_apply:        _liJob.easy_apply         ?? null,
-              apply_url:         _liJob.apply_url          || null,
-              seniority_level:   _liJob.seniority_level    || null,
-              salary_text:       _liJob.salary_text        || null,
-              job_functions:     _liJob.job_functions      || null,
-              industries:        _liJob.industries         || null,
-              company_meta:      _liJob.company_meta       || null,
-              poster:            _liJob.poster             || null,
-              job_id:            _liJob.job_id             || null,
-            };
-            // Hydrate _liCompanyMeta immediately so _ensureCompanyLogo /
-            // _companyAssetKey can read it without waiting for the DB write.
-            if (role._liMeta.company_meta) role._liCompanyMeta = role._liMeta.company_meta;
-            // Persist to DB and trigger logo pipeline once written
-            if (!role._isTemp) {
-              db.from('roles').update({ source_meta: role._liMeta }).eq('id', role.id).then(() => {
-                role.source_meta = role._liMeta;
-                const _arE = allRoles.find(r => r.id === role.id);
-                if (_arE && _arE !== role) _arE.source_meta = role._liMeta;
-                // ── Trigger logo resolution now that source_meta is persisted ──
-                // Previously _ensureCompanyLogo was never called here, so the
-                // trusted logo_url and website from LinkedIn were never used.
-                _ensureCompanyLogo(role);
-              }).catch(() => {});
+            // ── LinkedIn-specific path: preserve rich Voyager metadata + logo pipeline ──
+            if (_result.source_type === 'linkedin' && _result._liJob) {
+              const _liJob = _result._liJob;
+              if (_liJob.work_remote)     role._liWorkModel      = _liJob.work_remote;
+              if (_liJob.employment_type) role._liEmploymentType = _liJob.employment_type;
+              if (_liJob.location)        role._liLocation       = _liJob.location;
+              if (_liJob.company)         role._liCompany        = _liJob.company;
+
+              role._liMeta = {
+                work_remote:       _liJob.work_remote       || null,
+                employment_type:   _liJob.employment_type   || null,
+                location:          _liJob.location           || null,
+                company:           _liJob.company            || null,
+                posted_date:       _liJob.posted_date        || null,
+                posted_at_raw:     _liJob.posted_at_raw      || null,
+                applicants_count:  _liJob.applicants_count   ?? null,
+                easy_apply:        _liJob.easy_apply         ?? null,
+                apply_url:         _liJob.apply_url          || null,
+                seniority_level:   _liJob.seniority_level    || null,
+                salary_text:       _liJob.salary_text        || null,
+                job_functions:     _liJob.job_functions      || null,
+                industries:        _liJob.industries         || null,
+                company_meta:      _liJob.company_meta       || null,
+                poster:            _liJob.poster             || null,
+                job_id:            _liJob.job_id             || null,
+              };
+              if (role._liMeta.company_meta) role._liCompanyMeta = role._liMeta.company_meta;
+              if (!role._isTemp) {
+                db.from('roles').update({ source_meta: role._liMeta }).eq('id', role.id).then(() => {
+                  role.source_meta = role._liMeta;
+                  const _arE = allRoles.find(r => r.id === role.id);
+                  if (_arE && _arE !== role) _arE.source_meta = role._liMeta;
+                  _ensureCompanyLogo(role);
+                }).catch(() => {});
+              }
+              // LinkedIn truncation warning
+              if (!_isLinkedInJDComplete(_desc)) {
+                const _warn = 'Heads up. This job description may be cut off. You can paste the full version if needed.';
+                _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_warn)}</div>`);
+                if (!role._isTemp) wsAddMessage(role.id, 'assistant', _warn).catch(() => {});
+              }
+            } else {
+              // Non-LinkedIn supported source: persist a minimal source_meta
+              // envelope so source_type + source_url are recoverable later.
+              const _srcMeta = {
+                source_type:     _result.source_type,
+                source_url:      text,
+                employment_type: _result.employment_type || null,
+                work_model:      _result.work_model || null,
+                location:        _result.location || null,
+                company:         _result.company || null,
+                salary_text:     _result.salary || null,
+              };
+              if (!role._isTemp) {
+                db.from('roles').update({ source_meta: _srcMeta }).eq('id', role.id).then(() => {
+                  role.source_meta = _srcMeta;
+                  const _arE = allRoles.find(r => r.id === role.id);
+                  if (_arE && _arE !== role) _arE.source_meta = _srcMeta;
+                  _ensureCompanyLogo(role);
+                }).catch(() => {});
+              } else {
+                role.source_meta = _srcMeta;
+              }
+              // Partial confidence warning for non-LinkedIn sources
+              if (_result.fetch_status === 'partial') {
+                const _partialMsg = _ingestCopyFor('partial', _srcLabel, _result.failure_reason);
+                _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_partialMsg)}</div>`);
+                if (!role._isTemp) wsAddMessage(role.id, 'assistant', _partialMsg).catch(() => {});
+              }
             }
-            // Warn if the fetched JD looks truncated
-            if (!_isLinkedInJDComplete(_liCleaned)) {
-              const _warnMsg = 'Heads up. This job description may be cut off. You can paste the full version if needed.';
-              _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_warnMsg)}</div>`);
-              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _warnMsg).catch(() => {});
-            }
+
             // Hand off to the normal JD paste path (analysis, mismatch detection, etc.)
-            await _wsHandlePaste(role, _liCleaned, timelineEl);
-          } catch (_liErr) {
-            const _errMsg = 'Something went wrong fetching from LinkedIn. Try pasting the job description directly.';
+            await _wsHandlePaste(role, _desc, timelineEl);
+          } catch (_err) {
+            console.warn('[url-ingest] ws chat fetch error', _err);
+            if (_statusEl.isConnected) _statusEl.remove();
+            const _errMsg = _ingestCopyFor('failed', _srcLabel, 'unexpected_error');
             _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
             if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
           }
@@ -8210,6 +8214,9 @@
       'boards.greenhouse.io': { name: 'Greenhouse', canEnrich: true  },
       'jobs.lever.co':        { name: 'Lever',       canEnrich: true  },
       'jobs.ashbyhq.com':     { name: 'Ashby',       canEnrich: true  },
+      'apply.workable.com':   { name: 'Workable',    canEnrich: true  },
+      'jobs.workable.com':    { name: 'Workable',    canEnrich: true  },
+      'workable.com':         { name: 'Workable',    canEnrich: true  },
       'linkedin.com':         { name: 'LinkedIn',    canEnrich: false },
       'www.linkedin.com':     { name: 'LinkedIn',    canEnrich: false },
     };
@@ -13389,12 +13396,21 @@
       _ingestionTimerStop(_overlay);
       _ingestionTimerReset();
 
-      // Show/hide submit row based on whether textarea starts with content
+      // Enable/disable Analyse based on whether textarea has content.
+      // The submit row itself stays visible so the action hierarchy is
+      // preserved (Cancel + Analyse always on one row). Primary action
+      // is disabled-not-hidden so there is no layout shift.
       const _updateSubmitRow = () => {
         const hasContent = _textarea.value.trim().length > 0;
-        if (_submitRow) {
-          if (hasContent) _submitRow.removeAttribute('hidden');
-          else _submitRow.setAttribute('hidden', '');
+        if (_submitRow) _submitRow.removeAttribute('hidden'); // guard: always visible
+        if (_submitBtn) {
+          if (hasContent) {
+            _submitBtn.removeAttribute('disabled');
+            _submitBtn.setAttribute('aria-disabled', 'false');
+          } else {
+            _submitBtn.setAttribute('disabled', '');
+            _submitBtn.setAttribute('aria-disabled', 'true');
+          }
         }
       };
       _updateSubmitRow();
@@ -13588,38 +13604,32 @@
         }
 
         // ── If a URL was provided, attempt to fetch the JD content first ──────
-        let _fetchedMeta = null; // { company, title, location } from LinkedIn fetch
+        // Uses the multi-board router: LinkedIn stays wrapped as-is; Workable,
+        // Greenhouse, Lever, Ashby and generic URLs all go through enrich-role.
+        let _fetchedMeta = null; // { company, title, location, _sourceMeta? }
         if (url) {
-          _addLine('Fetching job description from URL…');
-          const _isLinkedIn = /linkedin\.com/i.test(url);
-          if (_isLinkedIn) {
-            // Use existing LinkedIn fetch edge function
-            const { data: profiles } = await db.from('profiles').select('id').limit(1);
-            const _userId = profiles?.[0]?.id || null;
-            console.log('[li-fetch] Starting fetch for URL:', url, '| userId:', _userId);
-            const _fetchRes = await fetch(`${SUPABASE_URL}/functions/v1/fetch-linkedin-jd`, {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
-              body:    JSON.stringify({ url, userId: _userId }),
-            });
-            const _payload = await _fetchRes.json();
-            console.log('[li-fetch] Response status:', _fetchRes.status, '| ok:', _fetchRes.ok,
-              '| error:', _payload?.error || 'none',
-              '| success:', _payload?.success,
-              '| has description:', !!_payload?.job?.description,
-              '| description length:', _payload?.job?.description?.trim?.()?.length ?? 0);
-            if (_fetchRes.ok && _payload.success && _payload.job?.description && _payload.job.description.trim().length >= 50) {
-              text = (typeof cleanLinkedInJD === 'function') ? cleanLinkedInJD(_payload.job.description) : _payload.job.description;
-              _fetchedMeta = {
-                company:  _payload.job.company  || null,
-                title:    _payload.job.title    || null,
-                location: _payload.job.location || null,
-              };
-              // ── Capture full LinkedIn metadata for source_meta persistence ──
-              // This mirrors the workspace chat path (line ~7237) which already
-              // builds _liMeta. Without this, company_meta (logo_url, website)
-              // is discarded and the logo pipeline never receives trusted data.
-              const _liJob = _payload.job;
+          const _cls = _classifyJdUrl(url);
+          _addLine(`Fetching job description from ${_cls.source_label}\u2026`);
+          console.log('[url-ingest] Starting fetch for URL:', url, '| source_type:', _cls.source_type);
+
+          const _result = await _ingestJdFromUrl(url, { role_id: null });
+          console.log('[url-ingest] Result:', _result?.fetch_status,
+            '| confidence:', _result?.extraction_confidence,
+            '| failure_reason:', _result?.failure_reason,
+            '| title:', _result?.title, '| company:', _result?.company,
+            '| description length:', (_result?.description_text || '').length);
+
+          if (_result.success && _result.description_text && _result.description_text.trim().length >= 50) {
+            text = _result.description_text;
+            _fetchedMeta = {
+              company:  _result.company  || null,
+              title:    _result.title    || null,
+              location: _result.location || null,
+            };
+            // LinkedIn: capture the full metadata envelope used by saveRole +
+            // the logo pipeline. Other sources don't produce this shape.
+            if (_result.source_type === 'linkedin' && _result._liJob) {
+              const _liJob = _result._liJob;
               _fetchedMeta._sourceMeta = {
                 work_remote:       _liJob.work_remote       || null,
                 employment_type:   _liJob.employment_type   || null,
@@ -13638,64 +13648,21 @@
                 poster:            _liJob.poster             || null,
                 job_id:            _liJob.job_id             || null,
               };
-              console.log('[li-fetch] Success — JD extracted, length:', text.length,
-                '| company:', _fetchedMeta.company, '| title:', _fetchedMeta.title,
-                '| has company_meta:', !!_liJob.company_meta,
-                '| logo_url:', _liJob.company_meta?.logo_url ? 'yes' : 'no',
-                '| website:', _liJob.company_meta?.website || 'none');
             } else {
-              // ── Diagnose the specific failure ──────────────────────────────────
-              const _e = _payload?.error;
-              console.warn('[li-fetch] FAILED — error code:', _e || '(none)',
-                '| HTTP:', _fetchRes.status,
-                '| message:', _payload?.message || '(none)',
-                '| fetchRes.ok:', _fetchRes.ok,
-                '| payload.success:', _payload?.success,
-                '| desc present:', !!_payload?.job?.description,
-                '| desc length:', _payload?.job?.description?.trim?.()?.length ?? 0);
-
-              // Session-related failures
-              if (_e === 'no_session') {
-                throw new Error('LinkedIn session not set. Add it in Admin \u2192 LinkedIn to fetch jobs automatically, or paste the job description directly.');
-              }
-              if (_e === 'session_expired') {
-                throw new Error('Your LinkedIn session has expired. Update it in Admin \u2192 LinkedIn, or paste the job description directly.');
-              }
-              if (_e === 'csrf_failed') {
-                throw new Error('LinkedIn couldn\u2019t verify your saved session. Update it in Admin \u2192 LinkedIn and try again, or paste the job description directly.');
-              }
-
-              // Server / network failures from edge function
-              if (_e === 'fetch_failed') {
-                console.warn('[li-fetch] Upstream status:', _payload?.status || _fetchRes.status);
-                throw new Error('LinkedIn couldn\u2019t return this job listing. It may have been removed or may no longer be available. Try again or paste the job description directly.');
-              }
-              if (_e === 'network_error') {
-                throw new Error('Couldn\u2019t reach LinkedIn right now. Try again in a moment, or paste the job description directly.');
-              }
-
-              // URL validation failures from edge function
-              if (_fetchRes.status === 400) {
-                throw new Error(_payload?.error === 'url is required'
-                  ? 'No URL was sent to the fetch service. This is a bug \u2014 please report it.'
-                  : 'Couldn\u2019t extract a job ID from that LinkedIn URL. Make sure it\u2019s a direct job link (e.g. linkedin.com/jobs/view/12345).');
-              }
-
-              // Edge function returned 200 + success but description was empty or too short
-              if (_fetchRes.ok && _payload?.success) {
-                const _descLen = _payload?.job?.description?.trim?.()?.length ?? 0;
-                console.warn('[li-fetch] Description too short or empty — length:', _descLen);
-                throw new Error(_descLen > 0
-                  ? 'LinkedIn returned this job but with very little description text \u2014 not enough to analyse. Paste the full job description text instead.'
-                  : 'LinkedIn returned this job but with no description text. The listing may be incomplete, expired, or region-locked. Paste the job description directly instead.');
-              }
-
-              // Truly unknown failure
-              throw new Error('Couldn\u2019t fetch that job listing (unexpected response). Try pasting the job description text directly instead.');
+              // Non-LinkedIn sources: attach a minimal source_meta so source_url
+              // and source_type are persisted consistently.
+              _fetchedMeta._sourceMeta = {
+                source_type:     _result.source_type,
+                source_url:      url,
+                employment_type: _result.employment_type || null,
+                location:        _result.location || null,
+                company:         _result.company || null,
+                salary_text:     _result.salary || null,
+              };
             }
           } else {
-            // Non-LinkedIn URL — no scraper available
-            throw new Error('URL detected, but automatic fetching is only available for LinkedIn. Paste the job description text directly instead.');
+            // Failure path — surface the unified user-facing copy.
+            throw new Error(_ingestCopyFor(_result.fetch_status, _cls.source_label, _result.failure_reason));
           }
           _completeLine();
         }
@@ -13855,8 +13822,18 @@
         if (_idleEl) _idleEl.removeAttribute('hidden');
         // Preserve the pasted input — do NOT clear the textarea.
         // The user can see what they entered, clear it themselves, and paste JD text.
-        // Show the submit row so they can retry immediately after editing.
-        if (_submitRow && _textarea?.value.trim()) _submitRow.removeAttribute('hidden');
+        // Submit row is always visible; re-enable Analyse if content is present.
+        if (_submitRow) _submitRow.removeAttribute('hidden');
+        const _submitBtnRetry = document.getElementById('rw-ing-submit');
+        if (_submitBtnRetry) {
+          if (_textarea?.value.trim()) {
+            _submitBtnRetry.removeAttribute('disabled');
+            _submitBtnRetry.setAttribute('aria-disabled', 'false');
+          } else {
+            _submitBtnRetry.setAttribute('disabled', '');
+            _submitBtnRetry.setAttribute('aria-disabled', 'true');
+          }
+        }
         if (_textarea) setTimeout(() => _textarea.focus(), 60);
         if (_errorEl) {
           _errorEl.textContent = err.message || 'Something went wrong. Please try again.';
@@ -15400,18 +15377,32 @@
       // Optimistic update on the in-memory role object
       const role = allRoles.find(r => r.id === roleId);
       if (role) role.section_context = clean;
-      // Fire-and-forget DB write
+      // Persist to DB — log failures clearly but don't block UI
       try {
         db.from('roles')
           .update({ section_context: clean })
           .eq('id', roleId)
-          .then(null, () => {}); // silent on failure — in-memory is already updated
-      } catch (_) {}
+          .then(({ error }) => {
+            if (error) console.warn('[SectionContext] DB write failed for role', roleId, '—', error.message || error);
+          }, (err) => {
+            console.warn('[SectionContext] DB write rejected for role', roleId, '—', err);
+          });
+      } catch (e) {
+        console.warn('[SectionContext] DB write threw for role', roleId, '—', e);
+      }
     }
 
     function _scGet(roleId, sectionId) {
       const all = _scLoadAll(roleId);
       return all[sectionId] || null;
+    }
+
+    // Role-specific context only (note or correction). Excludes preferences.
+    function _scGetRoleOnly(roleId, sectionId) {
+      if (!roleId) return null;
+      const role = allRoles.find(r => r.id === roleId);
+      const dbCtx = (role && role.section_context) || {};
+      return dbCtx[sectionId] || null;
     }
 
     function _scSet(roleId, sectionId, entry) {
@@ -15492,26 +15483,34 @@
       const role = allRoles.find(r => r.id === roleId);
       if (role) role.re_eval_requested_at = now;
       try {
-        await db.from('roles')
+        const { error } = await db.from('roles')
           .update({ re_eval_requested_at: now })
           .eq('id', roleId);
-      } catch (_) {}
+        if (error) console.warn('[SectionContext] re_eval_requested_at write failed for role', roleId, '—', error.message || error);
+      } catch (e) {
+        console.warn('[SectionContext] re_eval_requested_at write threw for role', roleId, '—', e);
+      }
     }
 
     // ── Inline display block (rendered under section content) ──
     function _scInlineHtml(sectionId, roleId) {
-      const entry = _scGet(roleId, sectionId);
-      if (!entry || !entry.text) return '';
-      const typeLabel = _SC_TYPE_LABELS[entry.type] || 'Note';
+      // Only notes display inline under sections.
+      // Corrections are applied to behaviour (not shown as annotations).
+      // Preferences are stored only (not displayed inline).
+      const entry = _scGetRoleOnly(roleId, sectionId);
+      if (!entry || !entry.text || entry.type !== 'note') return '';
       return `<div class="rw-sc-inline" data-sc-section="${sectionId}" data-sc-role="${roleId}">` +
-        `<span class="rw-sc-inline-type">${esc(typeLabel)}</span>` +
+        `<span class="rw-sc-inline-type">${esc(_SC_TYPE_LABELS.note)}</span>` +
         `<span class="rw-sc-inline-text">${esc(entry.text)}</span>` +
       `</div>`;
     }
 
     // ── Heading icon HTML ──
     function _scIconHtml(sectionId, roleId) {
-      const hasCtx = !!_scGet(roleId, sectionId);
+      // Only highlight the icon for notes (the only type that shows inline).
+      // Corrections and preferences should not imply the section was edited.
+      const entry = _scGetRoleOnly(roleId, sectionId);
+      const hasCtx = !!(entry && entry.type === 'note');
       return `<button class="rw-sc-icon${hasCtx ? ' rw-sc-icon--has' : ''}" ` +
         `data-sc-trigger="${sectionId}" data-sc-role="${roleId}" ` +
         `title="Add context" aria-label="Add context to this section">` +
@@ -15542,12 +15541,27 @@
         `<div class="rw-sc-panel-header">Add context</div>` +
         `<div class="rw-sc-type-selector">${typeOptions}</div>` +
         `<textarea class="rw-sc-textarea" placeholder="${esc(placeholder)}" rows="3">${esc(text)}</textarea>` +
+        `<div class="rw-sc-validation" data-sc-validation hidden></div>` +
         `<div class="rw-sc-actions">` +
           `<button class="rw-sc-btn rw-sc-btn--save" data-sc-action="save" disabled>${saveBtnLabel}</button>` +
           `<button class="rw-sc-btn rw-sc-btn--cancel" data-sc-action="cancel">Cancel</button>` +
           `${deleteBtn}` +
         `</div>` +
       `</div>`;
+    }
+
+    // ── Commute origin validator ──
+    // STRICT: only accepts a valid UK postcode. Arbitrary prose is NOT
+    // inferred as a location. Returns the uppercased/normalized postcode,
+    // or null if no valid postcode is present.
+    function _scExtractValidCommuteOrigin(text) {
+      if (!text || typeof text !== 'string') return null;
+      // Full UK postcode (outward + inward): e.g. "KT22 9NT", "EH1 1BB",
+      // "SW1A 1AA", "E1W 3SS". Whitespace between halves is optional.
+      const fullRe = /\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/i;
+      const m = text.match(fullRe);
+      if (m) return (m[1] + ' ' + m[2]).toUpperCase();
+      return null;
     }
 
     // ── Wire up the context panel for a given section ──
@@ -15576,11 +15590,47 @@
         saveBtn.textContent = t === 'preference' ? 'Save preference' : 'Save';
       }));
 
+      // Show/clear inline validation message inside the panel
+      function _scSetValidation(msg) {
+        const el = panelEl.querySelector('[data-sc-validation]');
+        if (!el) return;
+        if (msg) { el.textContent = msg; el.hidden = false; }
+        else { el.textContent = ''; el.hidden = true; }
+      }
+      // Clear validation when the user edits the text or changes type
+      textarea.addEventListener('input', () => _scSetValidation(''));
+      typeRadios.forEach(r => r.addEventListener('change', () => _scSetValidation('')));
+
       // Save
       saveBtn.addEventListener('click', () => {
         const trimmed = (textarea.value || '').trim();
         if (!trimmed) return;
         const selectedType = panelEl.querySelector('input[type="radio"]:checked')?.value || 'note';
+
+        // ── Commute correction: STRICT validation + immediate re-render ──
+        // Corrections on the commute section are only accepted if the text
+        // contains a clearly valid UK postcode. Arbitrary prose is NOT
+        // inferred as a location.
+        if (sectionId === 'commute' && selectedType === 'correction') {
+          const _newOrigin = _scExtractValidCommuteOrigin(trimmed);
+          if (!_newOrigin) {
+            // Invalid input — do NOT update origin, do NOT persist.
+            // Keep the panel open and show a validation message.
+            _scSetValidation('Enter a valid UK postcode (e.g. KT22 9NT) to update your commute origin.');
+            return;
+          }
+          // Valid postcode → update canonical location and re-render.
+          if (userProfile) userProfile.location = _newOrigin;
+          if (typeof _savePreferencePatch === 'function') _savePreferencePatch({ location: _newOrigin });
+          _scSetValidation('');
+          _scClosePanel(sectionId);
+          const _role = allRoles.find(r => r.id === roleId);
+          if (_role && typeof renderRoleDoc === 'function') renderRoleDoc(_role);
+          return; // do not persist a role-specific correction entry for commute;
+                  // the origin update is the canonical effect.
+        }
+
+        // All other save paths: build the entry and persist
         const now = new Date().toISOString();
         const existing = _scGet(roleId, sectionId);
         const entry = {
@@ -15656,11 +15706,12 @@
       const sectionEl = domId ? document.getElementById(domId) : null;
       if (!sectionEl) return;
 
-      // Update icon state
+      // Update icon state — highlight only for notes
       const iconBtn = sectionEl.querySelector(`[data-sc-trigger="${sectionId}"]`);
       if (iconBtn) {
-        const hasCtx = !!_scGet(roleId, sectionId);
-        iconBtn.classList.toggle('rw-sc-icon--has', hasCtx);
+        const entry = _scGetRoleOnly(roleId, sectionId);
+        const hasNote = !!(entry && entry.type === 'note');
+        iconBtn.classList.toggle('rw-sc-icon--has', hasNote);
       }
 
       // Update inline display
@@ -18274,193 +18325,13 @@
               }, 0);
             }
 
-            // ── Inline origin editor (shown when user location is known) ──
-            const _originEditorId = 'rw-commute-origin-' + Date.now();
-            let _originEditorHtml = '';
-            if (_hasUserLoc) {
-              const _fromShort = _userLoc.split(',')[0].trim();
-              _originEditorHtml = `<div id="${_originEditorId}" class="rw-commute-origin">` +
-                `<span class="rw-commute-origin-label">From:</span> ` +
-                `<span class="rw-commute-origin-value">${esc(_fromShort)}</span> ` +
-                `<button class="rw-commute-origin-edit" data-action="edit">Edit</button>` +
-              `</div>`;
-
-              // Wire up origin editor after DOM paint
-              setTimeout(function() {
-                var _oAttempts = 0;
-                var _oPoll = function() {
-                  var _oEl = document.getElementById(_originEditorId);
-                  if (!_oEl) { if (++_oAttempts < 20) setTimeout(_oPoll, 100); return; }
-
-                  _oEl.addEventListener('click', function(e) {
-                    var btn = e.target.closest('[data-action]');
-                    if (!btn) return;
-                    var action = btn.dataset.action;
-
-                    if (action === 'edit') {
-                      var _prevVal = (userProfile && userProfile.location) ? userProfile.location.trim() : '';
-                      _oEl.innerHTML =
-                        '<span class="rw-commute-origin-label">From:</span> ' +
-                        '<input class="rw-commute-loc-input" type="text" value="' + esc(_prevVal) + '" placeholder="e.g. EH1 1BB or town name"> ' +
-                        '<button class="rw-commute-origin-save" data-action="save">Save</button> ' +
-                        '<button class="rw-commute-origin-cancel" data-action="cancel">Cancel</button>' +
-                        '<span class="rw-commute-origin-error" style="display:none;"></span>';
-                      var _inp = _oEl.querySelector('input');
-                      if (_inp) {
-                        _inp.focus();
-                        _inp.select();
-                        _inp.addEventListener('keydown', function(ev) {
-                          if (ev.key === 'Enter') { ev.preventDefault(); _oEl.querySelector('[data-action="save"]').click(); }
-                          if (ev.key === 'Escape') { ev.preventDefault(); _oEl.querySelector('[data-action="cancel"]').click(); }
-                        });
-                      }
-                    }
-
-                    if (action === 'cancel') {
-                      var _restoreVal = (userProfile && userProfile.location) ? userProfile.location.trim() : '';
-                      var _short = _restoreVal.split(',')[0].trim();
-                      if (_restoreVal) {
-                        _oEl.innerHTML =
-                          '<span class="rw-commute-origin-label">From:</span> ' +
-                          '<span class="rw-commute-origin-value">' + esc(_short) + '</span> ' +
-                          '<button class="rw-commute-origin-edit" data-action="edit">Edit</button>';
-                      } else {
-                        _oEl.innerHTML =
-                          '<span class="rw-commute-origin-label">From:</span> ' +
-                          '<span class="rw-commute-origin-value">Not set</span> ' +
-                          '<button class="rw-commute-origin-edit" data-action="edit">Edit</button>';
-                      }
-                    }
-
-                    if (action === 'save') {
-                      var _inp = _oEl.querySelector('input');
-                      var _errEl = _oEl.querySelector('.rw-commute-origin-error');
-                      var _newVal = _inp ? _inp.value.trim() : '';
-
-                      if (!_newVal) {
-                        // Clear saved origin → reset to "add your location" prompt
-                        if (typeof _savePreferencePatch === 'function') _savePreferencePatch({ location: '' });
-                        if (userProfile) userProfile.location = '';
-                        // Re-render: replace prose + origin editor with static text + location prompt
-                        var textEl = document.getElementById(_commuteTextId);
-                        if (textEl) textEl.textContent = _commParts.join(' ');
-                        // Replace origin editor with a fresh location prompt
-                        var _newPromptId = 'rw-commute-loc-prompt-' + Date.now();
-                        _oEl.outerHTML =
-                          '<div id="' + _newPromptId + '" class="rw-commute-loc-prompt">' +
-                          '<span class="rw-commute-loc-prompt-text">To estimate the commute, add your location.</span>' +
-                          '<button class="rw-commute-loc-btn" data-action="geolocate">Use current location</button>' +
-                          '<button class="rw-commute-loc-btn" data-action="postcode">Enter postcode</button>' +
-                          '</div>';
-                        // Wire up the new prompt using the existing _applyUserLocation flow
-                        var _npAttempts = 0;
-                        var _npPoll = function() {
-                          var _npEl = document.getElementById(_newPromptId);
-                          if (!_npEl) { if (++_npAttempts < 20) setTimeout(_npPoll, 100); return; }
-                          _npEl.addEventListener('click', function(ev) {
-                            var _b = ev.target.closest('[data-action]');
-                            if (!_b) return;
-                            if (_b.dataset.action === 'postcode') {
-                              _npEl.innerHTML = '<input class="rw-commute-loc-input" type="text" placeholder="e.g. GU10 1AA or town name" autofocus>'
-                                + ' <button class="rw-commute-loc-btn" data-action="submit-postcode">Go</button>';
-                              var _i = _npEl.querySelector('input');
-                              if (_i) { _i.focus(); _i.addEventListener('keydown', function(kv) { if (kv.key === 'Enter') { kv.preventDefault(); _npEl.querySelector('[data-action="submit-postcode"]').click(); } }); }
-                            } else if (_b.dataset.action === 'geolocate') {
-                              _b.textContent = 'Locating\u2026'; _b.disabled = true;
-                              if (!navigator.geolocation) { _npEl.querySelector('[data-action="postcode"]').click(); return; }
-                              navigator.geolocation.getCurrentPosition(
-                                function(pos) {
-                                  var _loc = pos.coords.latitude.toFixed(4) + ',' + pos.coords.longitude.toFixed(4);
-                                  var _fnUrl = (typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : '') + '/functions/v1/commute-estimate';
-                                  var _ak = (typeof SUPABASE_ANON_KEY !== 'undefined') ? SUPABASE_ANON_KEY : '';
-                                  fetch(_fnUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _ak, 'apikey': _ak }, body: JSON.stringify({ action: 'reverse_geocode', latlng: _loc }) })
-                                    .then(function(r) { return r.json(); })
-                                    .then(function(d) { var _addr = (d.results && d.results[0]) ? d.results[0].formatted_address : _loc; _applyAndRefresh(_addr); })
-                                    .catch(function() { _applyAndRefresh(_loc); });
-                                },
-                                function() { _npEl.querySelector('[data-action="postcode"]').click(); }
-                              );
-                            } else if (_b.dataset.action === 'submit-postcode') {
-                              var _i = _npEl.querySelector('.rw-commute-loc-input');
-                              if (_i && _i.value.trim().length >= 3) _applyAndRefresh(_i.value.trim());
-                            }
-                          });
-                          function _applyAndRefresh(loc) {
-                            if (typeof _savePreferencePatch === 'function') _savePreferencePatch({ location: loc });
-                            if (userProfile) userProfile.location = loc;
-                            _npEl.innerHTML = '<span class="rw-commute-loc-prompt-text">Estimating from ' + esc(loc) + '\u2026</span>';
-                            var _cGen = _commuteRenderGen;
-                            _getCommuteEstimate(loc, _locText, _transportPref).then(function(est) {
-                              if (window._rwCommuteGen !== _cGen) return;
-                              var _tEl = document.getElementById(_commuteTextId);
-                              if (!_tEl) return;
-                              var _es = '';
-                              if (est) { var _fs = loc.split(',')[0].trim(); _es = 'From ' + _fs + ', it is roughly ' + est.distanceMiles + ' miles and would usually take around ' + est.durationText + ' ' + _modeLabel(est.mode) + '.'; }
-                              var _p = _commParts.slice(); if (_es) _p.push(_es);
-                              _tEl.textContent = _p.join(' ');
-                              // Replace prompt with origin editor
-                              var _fs2 = loc.split(',')[0].trim();
-                              _npEl.outerHTML =
-                                '<div id="' + _originEditorId + '" class="rw-commute-origin">' +
-                                '<span class="rw-commute-origin-label">From:</span> ' +
-                                '<span class="rw-commute-origin-value">' + esc(_fs2) + '</span> ' +
-                                '<button class="rw-commute-origin-edit" data-action="edit">Edit</button>' +
-                                '</div>';
-                              // Re-wire the origin editor
-                              var _reEl = document.getElementById(_originEditorId);
-                              if (_reEl) _reEl.addEventListener('click', _oEl._rwHandler);
-                            });
-                          }
-                        };
-                        setTimeout(_npPoll, 0);
-                        return;
-                      }
-
-                      // Non-empty save: persist + re-estimate
-                      var _saveBtn = _oEl.querySelector('[data-action="save"]');
-                      if (_saveBtn) { _saveBtn.textContent = 'Saving\u2026'; _saveBtn.disabled = true; }
-                      if (typeof _savePreferencePatch === 'function') _savePreferencePatch({ location: _newVal });
-                      if (userProfile) userProfile.location = _newVal;
-
-                      var _capturedGen = _commuteRenderGen;
-                      _getCommuteEstimate(_newVal, _locText, _transportPref).then(function(est) {
-                        if (window._rwCommuteGen !== _capturedGen) return;
-                        // Update prose
-                        var _tEl = document.getElementById(_commuteTextId);
-                        if (_tEl) {
-                          var _es = '';
-                          if (est) {
-                            var _fs = _newVal.split(',')[0].trim();
-                            _es = 'From ' + _fs + ', it is roughly ' + est.distanceMiles + ' miles and would usually take around ' + est.durationText + ' ' + _modeLabel(est.mode) + '.';
-                          }
-                          var _p = _commParts.slice();
-                          if (_es) _p.push(_es);
-                          _tEl.textContent = _p.join(' ');
-                        }
-                        // Exit edit mode — show updated origin
-                        var _short = _newVal.split(',')[0].trim();
-                        _oEl.innerHTML =
-                          '<span class="rw-commute-origin-label">From:</span> ' +
-                          '<span class="rw-commute-origin-value">' + esc(_short) + '</span> ' +
-                          '<button class="rw-commute-origin-edit" data-action="edit">Edit</button>';
-                      }).catch(function() {
-                        // Estimate failed — show error, keep editor open, revert profile
-                        if (typeof _savePreferencePatch === 'function') _savePreferencePatch({ location: _newVal });
-                        if (_errEl) { _errEl.textContent = 'Could not estimate commute. Check the location and try again.'; _errEl.style.display = ''; }
-                        if (_saveBtn) { _saveBtn.textContent = 'Save'; _saveBtn.disabled = false; }
-                      });
-                    }
-                  });
-                  // Store handler reference for re-wiring after prompt→editor transition
-                  _oEl._rwHandler = _oEl.onclick;
-                };
-                _oPoll();
-              }, 0);
-            }
+            // ── Inline origin editor REMOVED ──
+            // Origin editing is now handled via the Section Context icon (correction type).
+            // The old inline "From: <postcode> [Edit]" row has been replaced by that flow.
 
             // ── Initial prose text (may be updated async when estimate arrives) ──
             const _proseText = _commParts.join(' ');
-            const _proseHtml = `<div class="rw-doc-prose" id="${_commuteTextId}">${esc(_proseText)}</div>${_locationPromptHtml}${_originEditorHtml}`;
+            const _proseHtml = `<div class="rw-doc-prose" id="${_commuteTextId}">${esc(_proseText)}</div>${_locationPromptHtml}`;
 
             // ── Map tile (OSM, geocoded via Nominatim) ──
             const _mapHtml = `<a id="${_mapId}" href="https://www.google.com/maps/search/?api=1&query=${_mapQ}" target="_blank" rel="noopener" class="rw-commute-map" title="View ${esc(_locText)} on Google Maps" style="background:#eef2f7;display:flex;align-items:center;justify-content:center;"><span style="font-size:11px;color:#9ca3af;">Loading map</span></a>`;
@@ -18486,7 +18357,7 @@
                 .then(function(d) {
                   if (!d || !d.length) { _removeMap(_el); return; }
                   var lat = parseFloat(d[0].lat), lon = parseFloat(d[0].lon);
-                  var z = 13, n = Math.pow(2, z);
+                  var z = 14, n = Math.pow(2, z);
                   var tx = Math.floor((lon + 180) / 360 * n);
                   var ty = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
                   var _img = document.createElement('img');
@@ -31213,119 +31084,369 @@ If a field cannot be determined from the message, return null for that field.`,
       if (_liStatus && !show) _liStatus.textContent = '';
     }
 
-    // Show fetch bar when a LinkedIn URL is typed/pasted into the URL field
+    // ─── JD URL ingestion router (Phase 1 multi-board) ─────────────────────
+    // Classifies a URL into linkedin | workable | greenhouse | lever | ashby |
+    // generic | unknown, and routes to the appropriate fetcher. Returns a
+    // normalized contract so every caller can render consistent UI regardless
+    // of which backend handled the fetch.
+    const _SUPPORTED_URL_SOURCES = {
+      linkedin:   { label: 'LinkedIn',   host: /(^|\.)linkedin\.com$/i },
+      workable:   { label: 'Workable',   host: /(^|\.)workable\.com$/i },
+      greenhouse: { label: 'Greenhouse', host: /(^|\.)greenhouse\.io$/i },
+      lever:      { label: 'Lever',      host: /(^|\.)lever\.co$/i },
+      ashby:      { label: 'Ashby',      host: /(^|\.)ashbyhq\.com$/i },
+    };
+
+    function _classifyJdUrl(url) {
+      const fallback = { source_type: 'unknown', source_label: 'the page', domain: '' };
+      if (!url || typeof url !== 'string') return fallback;
+      let host = '';
+      try { host = new URL(url.trim()).hostname.toLowerCase(); }
+      catch { return fallback; }
+      for (const [key, spec] of Object.entries(_SUPPORTED_URL_SOURCES)) {
+        if (spec.host.test(host)) return { source_type: key, source_label: spec.label, domain: host };
+      }
+      return { source_type: 'generic', source_label: host || 'the page', domain: host };
+    }
+
+    // Returns the classification iff the URL should trigger the fetch bar.
+    // LinkedIn requires a specific job URL shape; other supported sources just
+    // need to match the host.
+    function _supportedFetchUrlMeta(url) {
+      const cls = _classifyJdUrl(url);
+      if (cls.source_type === 'linkedin') return _isLinkedInJobUrl(url) ? cls : null;
+      if (['workable','greenhouse','lever','ashby'].includes(cls.source_type)) return cls;
+      return null;
+    }
+
+    function _ingestCopyFor(status, source_label, failure_reason) {
+      switch (status) {
+        case 'success':
+          return `JD loaded from ${source_label}.`;
+        case 'partial':
+          return `Loaded what we could from ${source_label}. Some details may be missing \u2014 paste the full job description if anything looks thin.`;
+        case 'unsupported':
+          return `We can\u2019t auto-fetch from ${source_label} yet. Paste the job description below to continue.`;
+        case 'failed':
+          if (failure_reason === 'no_session')
+            return `LinkedIn session not set. Add it in Admin \u2192 LinkedIn, or paste the job description below.`;
+          if (failure_reason === 'session_expired')
+            return `Your LinkedIn session has expired. Update it in Admin \u2192 LinkedIn, or paste the job description below.`;
+          if (failure_reason === 'csrf_failed')
+            return `LinkedIn couldn\u2019t verify your saved session. Update it in Admin \u2192 LinkedIn, or paste the job description below.`;
+          if (failure_reason === 'network_error' || failure_reason === 'timeout')
+            return `Couldn\u2019t reach ${source_label} right now. Try again, or paste the job description below.`;
+          if (failure_reason === 'description_too_short')
+            return `${source_label} returned the page but the job description was empty or too short. Paste the full version below.`;
+          return `Couldn\u2019t fetch a job description from ${source_label}. Paste the job description below to continue.`;
+        default:
+          return `Couldn\u2019t fetch a job description from ${source_label}.`;
+      }
+    }
+
+    function _buildEmptyContract(source_type, source_label, url, domain, status, reason) {
+      return {
+        success: false,
+        source_type, source_label, source_url: url, domain,
+        fetch_status: status,
+        extraction_confidence: 'none',
+        failure_reason: reason || null,
+        title: null, company: null, location: null, work_model: null,
+        employment_type: null, salary: null, day_rate: null,
+        description_text: null,
+        _raw: null,
+      };
+    }
+
+    // Fire-and-forget log writer for unsupported/failed URLs (and for attempts
+    // that happened entirely client-side, e.g. LinkedIn network errors). The
+    // edge function already logs its own attempts; this is a safety net for
+    // paths the edge function never saw.
+    function _logIngestionAttempt(url, outcome, meta) {
+      try {
+        meta = meta || {};
+        const cls = _classifyJdUrl(url);
+        db.from('profiles').select('id').limit(1).then(({ data: profiles }) => {
+          const user_id = profiles?.[0]?.id || null;
+          const body = {
+            url, log_only: true, outcome,
+            user_id,
+            role_id: meta.role_id || null,
+            failure_reason: meta.failure_reason || null,
+            http_status: meta.http_status || null,
+            extraction_confidence: meta.extraction_confidence || null,
+            source_type: cls.source_type,
+            domain: cls.domain,
+          };
+          fetch(`${SUPABASE_URL}/functions/v1/enrich-role`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+            body: JSON.stringify(body),
+          }).catch(err => console.warn('[url-ingest] log failed', err?.message || err));
+        }).catch(err => console.warn('[url-ingest] log profile lookup failed', err?.message || err));
+      } catch (err) {
+        console.warn('[url-ingest] log setup failed', err?.message || err);
+      }
+    }
+
+    // Wrap the LinkedIn edge function response into the normalized contract.
+    // LinkedIn path is preserved untouched at the network layer — this just
+    // maps its shape into the unified contract the UI consumes.
+    function _wrapLinkedInResult(url, res, payload) {
+      const source_type = 'linkedin', source_label = 'LinkedIn';
+      let domain = '';
+      try { domain = new URL(url).hostname.toLowerCase(); } catch (_) { /* noop */ }
+
+      if (!res || !res.ok || !payload?.success) {
+        const err = payload?.error;
+        const failure_reason = err || (res && res.status === 400 ? 'bad_request' : 'fetch_failed');
+        return {
+          success: false,
+          source_type, source_label, source_url: url, domain,
+          fetch_status: 'failed',
+          extraction_confidence: 'none',
+          failure_reason,
+          title: null, company: null, location: null, work_model: null,
+          employment_type: null, salary: null, day_rate: null,
+          description_text: null,
+          _raw: payload || null,
+        };
+      }
+
+      const job = payload.job || {};
+      const rawDesc = job.description || '';
+      const cleaned = rawDesc ? ((typeof cleanLinkedInJD === 'function') ? cleanLinkedInJD(rawDesc) : rawDesc) : '';
+      const tooShort = !cleaned || cleaned.trim().length < 50;
+
+      if (tooShort) {
+        return {
+          success: false,
+          source_type, source_label, source_url: url, domain,
+          fetch_status: 'failed',
+          extraction_confidence: 'none',
+          failure_reason: 'description_too_short',
+          title: job.title || null,
+          company: job.company || null,
+          location: job.location || null,
+          work_model: job.work_remote || null,
+          employment_type: job.employment_type || null,
+          salary: job.salary_text || null,
+          day_rate: null,
+          description_text: cleaned || null,
+          _liJob: job,
+          _raw: payload,
+        };
+      }
+
+      const complete = (typeof _isLinkedInJDComplete === 'function') ? _isLinkedInJDComplete(cleaned) : true;
+      return {
+        success: true,
+        source_type, source_label, source_url: url, domain,
+        fetch_status: complete ? 'success' : 'partial',
+        extraction_confidence: complete ? 'high' : 'medium',
+        failure_reason: complete ? null : 'truncated',
+        title: job.title || null,
+        company: job.company || null,
+        location: job.location || null,
+        work_model: job.work_remote || null,
+        employment_type: job.employment_type || null,
+        salary: job.salary_text || null,
+        day_rate: null,
+        description_text: cleaned,
+        _liJob: job,
+        _raw: payload,
+      };
+    }
+
+    async function _ingestJdFromUrl(url, opts) {
+      opts = opts || {};
+      const role_id = opts.role_id || null;
+      const cls = _classifyJdUrl(url);
+      const source_type = cls.source_type, source_label = cls.source_label, domain = cls.domain;
+
+      // ── LinkedIn: wrap the dedicated fetcher (do not rewrite it) ─────────
+      if (source_type === 'linkedin') {
+        if (!_isLinkedInJobUrl(url)) {
+          _logIngestionAttempt(url, 'unsupported', { role_id, failure_reason: 'linkedin_not_job_url' });
+          return _buildEmptyContract(source_type, source_label, url, domain, 'unsupported', 'linkedin_not_job_url');
+        }
+        try {
+          const { data: profiles } = await db.from('profiles').select('id').limit(1);
+          const userId = profiles?.[0]?.id || null;
+          const cjId = url.match(/[?&]currentJobId=(\d+)/)?.[1];
+          const fetchUrl = cjId ? `https://www.linkedin.com/jobs/view/${cjId}/` : url;
+          let res, payload;
+          try {
+            res = await fetch(`${SUPABASE_URL}/functions/v1/fetch-linkedin-jd`, {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+              body:    JSON.stringify({ url: fetchUrl, userId }),
+            });
+            payload = await res.json();
+          } catch (netErr) {
+            console.warn('[url-ingest] linkedin network error', netErr?.message || netErr);
+            _logIngestionAttempt(url, 'failed', { role_id, failure_reason: 'network_error' });
+            return _buildEmptyContract(source_type, source_label, url, domain, 'failed', 'network_error');
+          }
+          const wrapped = _wrapLinkedInResult(fetchUrl, res, payload);
+          _logIngestionAttempt(url, wrapped.fetch_status, {
+            role_id,
+            failure_reason: wrapped.failure_reason,
+            http_status: res?.status || null,
+            extraction_confidence: wrapped.extraction_confidence,
+          });
+          return wrapped;
+        } catch (err) {
+          console.warn('[url-ingest] linkedin unexpected error', err?.message || err);
+          _logIngestionAttempt(url, 'failed', { role_id, failure_reason: 'unexpected_error' });
+          return _buildEmptyContract(source_type, source_label, url, domain, 'failed', 'unexpected_error');
+        }
+      }
+
+      // ── Workable / Greenhouse / Lever / Ashby / generic → enrich-role ────
+      try {
+        const { data: profiles } = await db.from('profiles').select('id').limit(1);
+        const user_id = profiles?.[0]?.id || null;
+        let res, payload;
+        try {
+          res = await fetch(`${SUPABASE_URL}/functions/v1/enrich-role`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+            body:    JSON.stringify({ url, role_id, user_id }),
+          });
+          payload = await res.json();
+        } catch (netErr) {
+          console.warn('[url-ingest] enrich-role network error', netErr?.message || netErr);
+          _logIngestionAttempt(url, 'failed', { role_id, failure_reason: 'network_error' });
+          return _buildEmptyContract(source_type, source_label, url, domain, 'failed', 'network_error');
+        }
+
+        // Edge function handles its own logging for every outcome, so don't
+        // duplicate here. Map its response into the unified contract.
+        return {
+          success: !!payload?.success,
+          source_type: payload?.source_type || source_type,
+          source_label: payload?.source_name || source_label,
+          source_url: url,
+          domain,
+          fetch_status: payload?.fetch_status || (payload?.success ? 'success' : 'failed'),
+          extraction_confidence: payload?.extraction_confidence || 'none',
+          failure_reason: payload?.failure_reason || payload?.error || null,
+          title:           payload?.title           ?? payload?.extracted?.role_title   ?? null,
+          company:         payload?.company         ?? payload?.extracted?.company_name ?? null,
+          location:        payload?.location        ?? payload?.extracted?.location     ?? null,
+          work_model:      payload?.work_model      ?? payload?.extracted?.work_model   ?? null,
+          employment_type: payload?.employment_type ?? payload?.extracted?.employment_type ?? null,
+          salary:          payload?.salary          ?? payload?.extracted?.salary       ?? null,
+          day_rate:        payload?.day_rate        ?? payload?.extracted?.day_rate     ?? null,
+          description_text: payload?.description_text || null,
+          enrichment_id:   payload?.enrichment_id || null,
+          extracted:       payload?.extracted || null,
+          fields_found:    payload?.fields_found || null,
+          _raw: payload,
+        };
+      } catch (err) {
+        console.warn('[url-ingest] unexpected error', err?.message || err);
+        _logIngestionAttempt(url, 'failed', { role_id, failure_reason: 'unexpected_error' });
+        return _buildEmptyContract(source_type, source_label, url, domain, 'failed', 'unexpected_error');
+      }
+    }
+    // ─── End JD URL ingestion router ───────────────────────────────────────
+
+    // Show fetch bar when a supported JD URL is typed/pasted into the URL field.
+    // Button label is set dynamically so the user sees which source will be hit.
     document.getElementById('add-url')?.addEventListener('input', (e) => {
-      _showLinkedInFetchBar(_isLinkedInJobUrl(e.target.value.trim()));
+      const meta = _supportedFetchUrlMeta(e.target.value.trim());
+      _showLinkedInFetchBar(!!meta);
+      if (meta && _liBtn) _liBtn.textContent = `Fetch JD from ${meta.source_label}`;
     });
 
-    // Also detect if a LinkedIn URL is pasted directly into the JD textarea
+    // Also detect if a supported JD URL is pasted directly into the JD textarea
     if (_addJdTextarea) {
       _addJdTextarea.addEventListener('paste', (e) => {
-        const pasted = (e.clipboardData || window.clipboardData)?.getData('text') || '';
-        if (_isLinkedInJobUrl(pasted.trim())) {
+        const pasted = ((e.clipboardData || window.clipboardData)?.getData('text') || '').trim();
+        const meta = _supportedFetchUrlMeta(pasted);
+        if (meta) {
           e.preventDefault();
           const _urlEl = document.getElementById('add-url');
-          if (_urlEl && !_urlEl.value.trim()) _urlEl.value = pasted.trim();
+          if (_urlEl && !_urlEl.value.trim()) _urlEl.value = pasted;
           _showLinkedInFetchBar(true);
-          if (_liStatus) _liStatus.textContent = 'LinkedIn URL detected. Click Fetch JD to load it.';
+          if (_liBtn) _liBtn.textContent = `Fetch JD from ${meta.source_label}`;
+          if (_liStatus) _liStatus.textContent = `${meta.source_label} URL detected. Click Fetch JD to load it.`;
         }
       });
     }
 
     async function _fetchLinkedInJD() {
       const url = document.getElementById('add-url')?.value.trim();
-      if (!url || !_isLinkedInJobUrl(url)) return;
+      if (!url) return;
+      const meta = _supportedFetchUrlMeta(url);
+      if (!meta) return;
 
-      if (_liBtn)    { _liBtn.disabled = true; _liBtn.textContent = 'Fetching from LinkedIn…'; }
+      const sourceLabel = meta.source_label;
+      if (_liBtn)    { _liBtn.disabled = true; _liBtn.textContent = `Fetching from ${sourceLabel}\u2026`; }
       if (_liStatus) { _liStatus.textContent = ''; }
 
       try {
-        // ── Network call ──────────────────────────────────────────────────────
-        const { data: profiles } = await db.from('profiles').select('id').limit(1);
-        const userId = profiles?.[0]?.id || null;
+        const result = await _ingestJdFromUrl(url, { role_id: null });
+        const { fetch_status, failure_reason } = result;
 
-        let res, payload;
-        try {
-          res     = await fetch(`${SUPABASE_URL}/functions/v1/fetch-linkedin-jd`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
-            body:    JSON.stringify({ url, userId }),
-          });
-          payload = await res.json();
-        } catch (_netErr) {
-          console.warn('[linkedin-fetch] network error', _netErr);
-          if (_liStatus) _liStatus.textContent = 'Couldn\u2019t reach LinkedIn right now. Check your connection, or paste the job description directly.';
+        // ── Failure / unsupported / too-short states ─────────────────────────
+        if (!result.success) {
+          if (_liStatus) _liStatus.textContent = _ingestCopyFor(fetch_status, sourceLabel, failure_reason);
           return;
         }
 
-        // ── Failure states ────────────────────────────────────────────────────
-        if (!res.ok || !payload.success) {
-          const _e = payload?.error;
-          if (_liStatus) _liStatus.textContent =
-            _e === 'no_session'
-              ? 'LinkedIn session not set. Add it in Admin \u2192 LinkedIn.'
-              : (_e === 'session_expired')
-              ? 'Your LinkedIn session has expired. Update it in Admin \u2192 LinkedIn.'
-              : 'Couldn\u2019t fetch that job description. Try pasting the text directly instead.';
-          return;
-        }
-
-        const job = payload.job;
-
-        // ── Empty / unusable JD ───────────────────────────────────────────────
-        if (!job?.description || job.description.trim().length < 50) {
-          if (_liStatus) _liStatus.textContent = 'LinkedIn returned this page but the job description was empty or too short. Try pasting it directly.';
-          return;
-        }
-
-        // ── Clean JD text ─────────────────────────────────────────────────────
-        const _cleaned = cleanLinkedInJD(job.description);
-
-        // ── Pre-fill JD textarea ──────────────────────────────────────────────
+        // ── Pre-fill JD textarea ─────────────────────────────────────────────
         const _jdEl = document.getElementById('add-jd');
-        if (_jdEl) {
-          _jdEl.value = _cleaned;
+        const _descText = result.description_text || '';
+        if (_jdEl && _descText) {
+          _jdEl.value = _descText;
           _jdEl.dispatchEvent(new Event('input'));   // triggers autofill + truncation check
         }
 
-        // ── Pre-fill metadata fields (non-destructive) ────────────────────────
+        // ── Pre-fill metadata fields (non-destructive) ───────────────────────
         const compEl   = document.getElementById('add-company');
         const titleEl  = document.getElementById('add-title');
         const locEl    = document.getElementById('add-location');
         const sourceEl = document.getElementById('add-source');
-        if (compEl  && !compEl.value.trim()  && job.company)  compEl.value  = job.company;
-        if (titleEl && !titleEl.value.trim() && job.title)    titleEl.value = job.title;
-        if (locEl   && !locEl.value.trim()   && job.location) locEl.value   = job.location;
-        if (sourceEl && !sourceEl.value)                      sourceEl.value = 'LinkedIn';
+        if (compEl  && !compEl.value.trim()  && result.company)  compEl.value  = result.company;
+        if (titleEl && !titleEl.value.trim() && result.title)    titleEl.value = result.title;
+        if (locEl   && !locEl.value.trim()   && result.location) locEl.value   = result.location;
+        if (sourceEl && !sourceEl.value)                          sourceEl.value = sourceLabel;
 
-        // ── Source metadata — consumed by saveRole ────────────────────────────
-        const _isIntermediary = !job.company || _recruiterTypeLabel(job.company) === 'Agency';
-        _liSourceMeta = {
-          captured_via:           'auto_fetch',
-          source_type:            'linkedin',
-          source_url:             url,
-          recruiter_intermediary: _isIntermediary,
-        };
-
-        // ── Truncation / completeness check ──────────────────────────────────
-        if (!_isLinkedInJDComplete(_cleaned)) {
-          if (_liStatus) _liStatus.textContent = 'This job description may be incomplete. Consider opening LinkedIn and copying the full version.';
+        // ── Source metadata — consumed by saveRole ───────────────────────────
+        // Preserve legacy LinkedIn-specific shape so downstream saveRole keeps
+        // working; add source_type so non-LinkedIn sources persist correctly.
+        if (meta.source_type === 'linkedin') {
+          const _job = result._liJob || {};
+          const _isIntermediary = !_job.company || _recruiterTypeLabel(_job.company) === 'Agency';
+          _liSourceMeta = {
+            captured_via:           'auto_fetch',
+            source_type:            'linkedin',
+            source_url:             url,
+            recruiter_intermediary: _isIntermediary,
+          };
         } else {
-          if (_liStatus) _liStatus.textContent = 'JD loaded';
+          _liSourceMeta = {
+            captured_via: 'auto_fetch',
+            source_type:  meta.source_type,
+            source_url:   url,
+          };
         }
+
+        // ── Status copy + button ─────────────────────────────────────────────
+        if (_liStatus) _liStatus.textContent = _ingestCopyFor(fetch_status, sourceLabel, failure_reason);
         if (_liBtn) _liBtn.textContent = 'Refetch';
 
-        // ── Auto-analyse: trigger full save+analyse pipeline if JD is complete ─
-        // Delay is UX-only: gives the user a moment to see "JD loaded" before
-        // the form body is replaced by the analysis trace. Not required for
-        // correctness — all DOM writes and _liSourceMeta are already set above.
-        if (_cleaned.length > 900) {
+        // ── Auto-analyse: trigger full save+analyse pipeline if JD is long ───
+        if (_descText && _descText.length > 900 && fetch_status === 'success') {
           setTimeout(() => { saveRole(); }, 800);
         }
 
       } catch (_err) {
-        console.warn('[linkedin-fetch] unexpected error', _err);
-        if (_liStatus) _liStatus.textContent = 'Something went wrong fetching that job. Try pasting the description directly.';
+        console.warn('[url-ingest] unexpected error in _fetchLinkedInJD', _err);
+        if (_liStatus) _liStatus.textContent = _ingestCopyFor('failed', sourceLabel, 'unexpected_error');
       } finally {
         if (_liBtn) _liBtn.disabled = false;
       }

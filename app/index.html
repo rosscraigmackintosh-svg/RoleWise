@@ -531,15 +531,16 @@
           autocomplete="off"
           spellcheck="false"
         ></textarea>
+
+        <div id="rw-ing-error" class="rw-ing-error" hidden></div>
+
+        <div class="rw-ing-actions">
+          <button type="button" id="rw-ing-cancel" class="rw-ing-cancel-btn">Cancel</button>
+          <div id="rw-ing-submit-row" class="rw-ing-submit-row">
+            <button type="button" id="rw-ing-submit" class="rw-ing-submit-btn" disabled aria-disabled="true">Analyse</button>
+          </div>
+        </div>
       </div>
-
-      <div id="rw-ing-submit-row" class="rw-ing-submit-row" hidden>
-        <button id="rw-ing-submit" class="rw-ing-submit-btn">Analyse</button>
-      </div>
-
-      <div id="rw-ing-error" class="rw-ing-error" hidden></div>
-
-      <button id="rw-ing-cancel" class="rw-ing-cancel-btn">Cancel</button>
     </div>
 
     <!-- ── State: processing ────────────────────────────────── -->
@@ -647,7 +648,7 @@
             <label class="field-label" for="add-url">URL <span class="opt">(optional)</span></label>
             <input class="field-input" id="add-url" type="url" placeholder="https://...">
             <div id="linkedin-fetch-bar" class="linkedin-fetch-bar hidden">
-              <button type="button" id="btn-linkedin-fetch" class="linkedin-fetch-btn">Fetch JD from LinkedIn</button>
+              <button type="button" id="btn-linkedin-fetch" class="linkedin-fetch-btn">Fetch JD</button>
               <span id="linkedin-fetch-status" class="linkedin-fetch-status"></span>
             </div>
           </div>

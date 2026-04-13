@@ -979,6 +979,11 @@ See `app/REASONING-MAP-LOG.md` for detailed task breakdown.
 | SYS-01 | Extract `state-store.js` — Global state management + navigation | Planned |
 | SYS-01 | Extract `salary-utils.js` — Compensation parsing + display | Planned |
 
+### URL Ingestion Follow-ups (logged for later)
+| ID | Subtask | Status |
+|----|---------|--------|
+| ING-01 | Structured-data vs JD-text work-model mismatch handling — when board metadata (e.g. Workable `jobLocationType: TELECOMMUTE`) conflicts with visible JD body copy describing hybrid or office attendance, surface a "Needs verification" flag on `work_model` rather than confidently classifying as remote/hybrid/on-site. | Planned |
+
 ---
 
 ## 8. Ongoing Rules

@@ -3459,6 +3459,7 @@
       display: block;
       width: 96px;
       height: 96px;
+      border: 4px solid #fff;
       border-radius: 10px;
       overflow: hidden;
       transform: rotate(-5deg);
@@ -3523,55 +3524,6 @@
       box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
     }
 
-    /* ── Inline origin editor ────────────────────────────────────── */
-    .rw-commute-origin {
-      margin-top: 8px;
-      font-size: 13px;
-      color: var(--text-secondary, #6b7280);
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
-    }
-    .rw-commute-origin-label {
-      font-weight: 500;
-      color: var(--text-secondary, #6b7280);
-    }
-    .rw-commute-origin-value {
-      font-weight: 500;
-      color: var(--text-primary, #374151);
-    }
-    .rw-commute-origin-edit,
-    .rw-commute-origin-save,
-    .rw-commute-origin-cancel {
-      display: inline-flex;
-      align-items: center;
-      padding: 2px 8px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text-secondary, #6b7280);
-      background: none;
-      border: 1px solid var(--border-light, #e3e8ef);
-      border-radius: 5px;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-    }
-    .rw-commute-origin-edit:hover,
-    .rw-commute-origin-save:hover,
-    .rw-commute-origin-cancel:hover {
-      background: var(--bg-surface, #f3f4f6);
-      color: var(--text-primary, #374151);
-    }
-    .rw-commute-origin-save {
-      color: var(--accent, #6366f1);
-      border-color: var(--accent, #6366f1);
-    }
-    .rw-commute-origin-error {
-      font-size: 12px;
-      color: var(--danger, #ef4444);
-      margin-left: 4px;
-    }
-
     /* ── Section Context — icons, panel, inline display ──────────── */
 
     /* Heading icon */
@@ -3590,10 +3542,20 @@
       border-radius: 4px;
       color: var(--text-tertiary, #9ca3af);
       cursor: pointer;
-      opacity: 0.45;
-      transition: opacity 0.15s, color 0.15s, background 0.15s;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(1px);
+      transition: opacity 0.18s ease, color 0.15s, background 0.15s, transform 0.18s ease;
     }
-    .rw-sc-icon:hover {
+    /* Reveal on section hover or focus-within */
+    .rw-doc-section:hover .rw-sc-icon,
+    .rw-doc-section:focus-within .rw-sc-icon {
+      opacity: 0.45;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+    .rw-doc-section:hover .rw-sc-icon:hover,
+    .rw-doc-section:focus-within .rw-sc-icon:hover {
       opacity: 1;
       color: var(--text-secondary, #6b7280);
       background: var(--bg-surface, #f3f4f6);
@@ -3602,9 +3564,14 @@
       outline: 2px solid var(--accent, #6366f1);
       outline-offset: 1px;
       opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
     }
+    /* Icons with existing context stay visible */
     .rw-sc-icon--has {
       opacity: 0.75;
+      pointer-events: auto;
+      transform: translateY(0);
       color: var(--accent, #6366f1);
     }
     .rw-sc-icon--has:hover {
@@ -3679,6 +3646,19 @@
     .rw-sc-textarea::placeholder {
       color: var(--text-tertiary, #9ca3af);
     }
+
+    /* Inline validation message (shown below textarea on save errors) */
+    .rw-sc-validation {
+      margin-top: 8px;
+      padding: 7px 10px;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--danger, #b91c1c);
+      background: rgba(239, 68, 68, 0.06);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: 6px;
+    }
+    .rw-sc-validation[hidden] { display: none; }
 
     /* Action buttons */
     .rw-sc-actions {
@@ -4984,28 +4964,37 @@
     /* URL row — shown when user clicks "Add a URL" */
     /* URL row, action buttons removed — single unified input (RW-INGESTION-SIMPLIFY) */
 
-    /* Cancel button */
+    /* Action row — Cancel (secondary) + Analyse (primary), right-aligned,
+       width matches the input area so the hierarchy feels tied to the field. */
+    .rw-ing-actions {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+      margin-top: 2px;
+    }
+
+    /* Cancel button (secondary) */
     .rw-ing-cancel-btn {
       background: none;
       border: none;
-      padding: 6px 16px;
+      padding: 10px 16px;
       font-size: 13px;
       font-weight: 500;
       color: var(--text-muted, #6b7280);
       cursor: pointer;
       font-family: inherit;
       transition: color 0.15s ease;
-      margin-top: 4px;
     }
     .rw-ing-cancel-btn:hover {
       color: var(--text, #181d27);
     }
 
-    /* Submit row — revealed when textarea has content */
+    /* Submit row wrapper — revealed when textarea has content. Sits inside
+       the action row so Analyse anchors to the far right next to Cancel. */
     .rw-ing-submit-row {
       display: flex;
       align-items: center;
-      margin-top: 4px;
     }
     .rw-ing-submit-row[hidden] { display: none; }
 
@@ -5020,15 +5009,26 @@
       cursor: pointer;
       font-family: inherit;
       letter-spacing: 0.01em;
-      transition: opacity 0.15s ease;
+      transition: opacity 0.15s ease, background-color 0.15s ease;
     }
-    .rw-ing-submit-btn:hover { opacity: 0.8; }
+    .rw-ing-submit-btn:not(:disabled):hover { opacity: 0.8; }
 
-    /* Error line */
+    /* Disabled primary — stays in place, visually de-emphasised, no hover feedback.
+       The button remains visible so the action row retains its hierarchy; only its
+       interactivity and affordance change. No layout shift between states. */
+    .rw-ing-submit-btn:disabled,
+    .rw-ing-submit-btn[aria-disabled="true"] {
+      opacity: 0.4;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    /* Status / error line — sits directly under the textarea, tied to it */
     .rw-ing-error {
       font-size: 13px;
+      line-height: 1.4;
       color: var(--error, #b42318);
-      margin-top: -8px;
+      margin: 0;
     }
     .rw-ing-error[hidden] { display: none; }
 
