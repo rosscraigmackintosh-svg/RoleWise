@@ -19184,51 +19184,10 @@
         }
       }
 
-      // ── Hard Constraints ────────────────────────────────────────────────────
-      {
-        const _hc = Array.isArray(output.hard_constraints) ? output.hard_constraints : [];
-        if (_hc.length > 0) {
-          const _hcItems = _hc.map(c => `
-            <div class="hc-item">
-              <div class="hc-item-label">${esc(c.label)}</div>
-              <div class="hc-item-reason">${esc(c.reason)}</div>
-              <div class="hc-item-note">You previously marked this as a non-negotiable.</div>
-            </div>
-          `).join('');
-          const _hcHtml = `
-            <div class="hc-block">
-              ${_hcItems}
-            </div>
-            <style>
-              .hc-block { display:flex; flex-direction:column; gap:10px; }
-              .hc-item {
-                padding: 14px 16px;
-                background: var(--bg-subtle, #fafaf9);
-                border-left: 3px solid var(--signal-red, #c0392b);
-                border-radius: 4px;
-              }
-              .hc-item-label {
-                font-size: 13.5px;
-                font-weight: 600;
-                color: var(--signal-red, #c0392b);
-                margin-bottom: 4px;
-              }
-              .hc-item-reason {
-                font-size: 13px;
-                color: var(--text);
-                line-height: 1.5;
-                margin-bottom: 6px;
-              }
-              .hc-item-note {
-                font-size: 12px;
-                color: var(--text-muted);
-                line-height: 1.4;
-              }
-            </style>
-          `;
-          html += card('Hard Constraints', _hcHtml, 'section-hard-constraints', false, 'rw-card--action');
-        }
-      }
+      // Hard Constraints — lower duplicate section removed.
+      // The canonical hard-constraint treatment is the top red constraint box only.
+      // The underlying output.hard_constraints data is preserved and still consumed
+      // by the top red box and other logic (decision block, prompt context, etc.).
 
       // Risks & Unknowns — standalone section removed.
       // All risk/clarity signals are now unified inside the decision block.
