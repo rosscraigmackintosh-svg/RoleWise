@@ -61,7 +61,7 @@ serve(async (req) => {
   if (!liAt) {
     return new Response(JSON.stringify({
       error: 'no_session',
-      message: 'LinkedIn session not set. Add your li_at cookie in Settings → LinkedIn Session.',
+      message: 'LinkedIn session not set. Add your li_at cookie in Admin → LinkedIn.',
     }), { status: 401, headers: CORS_HEADERS })
   }
 
@@ -116,7 +116,7 @@ serve(async (req) => {
     if (apiRes.status === 401 || apiRes.status === 403) {
       return new Response(JSON.stringify({
         error: 'session_expired',
-        message: 'LinkedIn session has expired. Please update your li_at cookie in Settings.',
+        message: 'LinkedIn session has expired. Update your li_at cookie in Admin → LinkedIn.',
       }), { status: 401, headers: CORS_HEADERS })
     }
     if (!apiRes.ok) {
@@ -211,6 +211,8 @@ function parseVoyagerJob(
       const uName = item.universalName as string | undefined
       companyMeta.linkedin_url  = uName ? `https://www.linkedin.com/company/${uName}/` : null
       companyMeta.linkedin_id   = (item.entityUrn as string) || null
+      // Extract company logo — LinkedIn includes logo as vectorImage or miniCompany image
+      companyMeta.logo_url      = _extractCompanyLogoUrl(item)
       break
     }
   }
@@ -310,6 +312,62 @@ function parseVoyagerJob(
 }
 
 // ── Voyager included-object helpers ────────────────────────────────────────────
+
+// Extract the best company logo URL from a LinkedIn Voyager company object.
+// LinkedIn stores logos in several shapes:
+//   - logo.image.com.linkedin.common.VectorImage (has rootUrl + artifacts)
+//   - logo.vectorImage  (same structure, different path)
+//   - logoV2.original   (direct URL, newer format)
+//   - squareLogoUrl / logoUrl (legacy string fields, rare)
+function _extractCompanyLogoUrl(company: Record<string, unknown>): string | null {
+  // 1. Try vectorImage format (most common in Voyager responses)
+  const logo = company.logo as Record<string, unknown> | undefined
+  if (logo) {
+    const vi = (logo.image as Record<string, unknown>)
+      || (logo.vectorImage as Record<string, unknown>)
+      || (logo['com.linkedin.common.VectorImage'] as Record<string, unknown>)
+    const url = _vectorImageUrl(vi)
+    if (url) return url
+  }
+
+  // 2. Try top-level logoV2
+  const logoV2 = company.logoV2 as Record<string, unknown> | undefined
+  if (logoV2) {
+    const orig = (logoV2.original as string)
+    if (orig && orig.startsWith('http')) return orig
+    const vi = (logoV2['com.linkedin.common.VectorImage'] as Record<string, unknown>)
+      || (logoV2.vectorImage as Record<string, unknown>)
+    const url = _vectorImageUrl(vi)
+    if (url) return url
+  }
+
+  // 3. Legacy direct URL fields
+  for (const field of ['squareLogoUrl', 'logoUrl', 'squareLogo', 'companyLogoUrl']) {
+    const val = company[field]
+    if (typeof val === 'string' && val.startsWith('http')) return val
+  }
+
+  return null
+}
+
+// Resolve a LinkedIn VectorImage to a usable URL (rootUrl + largest artifact)
+function _vectorImageUrl(vi: Record<string, unknown> | undefined): string | null {
+  if (!vi) return null
+  const rootUrl = vi.rootUrl as string | undefined
+  const artifacts = vi.artifacts as Array<Record<string, unknown>> | undefined
+  if (rootUrl && Array.isArray(artifacts) && artifacts.length) {
+    // Pick the largest artifact (last in array, typically 200x200 or 400x400)
+    const best = artifacts[artifacts.length - 1]
+    const segment = (best.fileIdentifyingUrlPathSegment as string)
+      || (best.expiringUrl as string)
+    if (segment) {
+      // If segment is a full URL, use it directly
+      if (segment.startsWith('http')) return segment
+      return rootUrl + segment
+    }
+  }
+  return null
+}
 
 function _staffRangeLabel(range: Record<string, unknown> | undefined): string | null {
   if (!range) return null

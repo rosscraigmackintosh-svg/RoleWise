@@ -96,25 +96,54 @@ function classifySignals(output, narrative, viability, userPrefs) {
   var salAbsent = !dbPd.salary_annual || dbSalVal === 'not stated' || dbSalVal === 'not disclosed'
     || dbSalVal.includes('not stated') || dbSalVal.includes('not disclosed')
     || dbSalVal === 'competitive' || dbSalVal === 'tbd' || dbSalVal === 'negotiable';
-  var salMentionedOnly = !salAbsent && dbSalVal.includes('salary mentioned');
+  var salMentionedOnly = !salAbsent && (dbSalVal.includes('salary mentioned') || dbSalVal.includes('mentioned but not specified'));
 
   if (salAbsent) {
     addSig('Salary not disclosed', 'NEEDS_CLARITY');
   } else if (salMentionedOnly) {
-    addSig('Salary mentioned \u2014 see JD for details', 'NEEDS_CLARITY');
+    addSig('Salary mentioned but not specified', 'NEEDS_CLARITY');
   } else {
-    // Actual salary value — compare against user minimum
-    var jdSalNum = output.salary ? (output.salary.minAnnual || null) : null;
-    if (jdSalNum === null && dbPd.salary_annual) {
-      var _salMatch = dbPd.salary_annual.replace(/,/g, '').match(/[\u00a3$€]\s*([\d.]+)/);
-      if (_salMatch) {
-        var _parsed = parseFloat(_salMatch[1]);
-        jdSalNum = _parsed < 1000 ? _parsed * 1000 : _parsed;
+    // Actual salary value — compare against user minimum using range logic.
+    // Use parsed salary_min / salary_max from practical_details when available
+    // (these are numeric, set by the salary parser). Fall back to regex extraction
+    // from the salary_annual display string only when the parsed fields are absent.
+    var jdSalMin = dbPd.salary_min != null ? Number(dbPd.salary_min) : null;
+    var jdSalMax = dbPd.salary_max != null ? Number(dbPd.salary_max) : null;
+
+    // Legacy fallback: extract first number from salary_annual string
+    if (jdSalMin === null && jdSalMax === null) {
+      var _salNums = dbPd.salary_annual.replace(/,/g, '').match(/[\u00a3$€]\s*([\d.]+)/g);
+      if (_salNums) {
+        var _parsedNums = _salNums.map(function(m) {
+          var v = parseFloat(m.replace(/[^\d.]/g, ''));
+          return v < 1000 ? v * 1000 : v;
+        });
+        jdSalMin = _parsedNums[0] || null;
+        jdSalMax = _parsedNums.length > 1 ? _parsedNums[_parsedNums.length - 1] : null;
       }
     }
-    if (jdSalNum !== null && upSalaryMin !== null && jdSalNum < upSalaryMin) {
-      addSig('Salary \u00a3' + Math.round(jdSalNum / 1000) + 'k below your minimum (\u00a3' + Math.round(upSalaryMin / 1000) + 'k)', 'BREAKS');
+
+    // Also check output.salary for AI-extracted values
+    if (jdSalMin === null && output.salary && output.salary.minAnnual) {
+      jdSalMin = output.salary.minAnnual;
+    }
+    if (jdSalMax === null && output.salary && output.salary.maxAnnual) {
+      jdSalMax = output.salary.maxAnnual;
+    }
+
+    // The ceiling is the best number to compare against the user's floor.
+    // If only a single value exists (no range), treat it as both min and max.
+    var _salCeiling = jdSalMax || jdSalMin;
+    var _salFloor   = jdSalMin || jdSalMax;
+
+    if (_salCeiling !== null && upSalaryMin !== null && _salCeiling < upSalaryMin) {
+      // Case 1: entire range is below user minimum → true fail
+      addSig('Salary \u00a3' + Math.round(_salCeiling / 1000) + 'k below your minimum (\u00a3' + Math.round(upSalaryMin / 1000) + 'k)', 'BREAKS');
+    } else if (_salFloor !== null && upSalaryMin !== null && _salFloor < upSalaryMin && _salCeiling >= upSalaryMin) {
+      // Case 2: range overlaps — lower band below, upper band meets minimum → caution
+      addSig('Compensation: ' + dbPd.salary_annual + ' \u2014 lower band below your \u00a3' + Math.round(upSalaryMin / 1000) + 'k minimum, upper band meets it', 'NEEDS_CLARITY');
     } else {
+      // Case 3: salary meets or exceeds minimum, or no user minimum set → positive
       addSig('Compensation: ' + dbPd.salary_annual, 'POSITIVE');
     }
   }

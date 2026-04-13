@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RoleWise — Detail Section Layout Test</title>
+<style>
+/* ── Token subset (from tokens.css) ── */
+:root {
+  --gray-modern-25: #fcfcfd;
+  --gray-modern-200: #e3e8ef;
+  --gray-modern-300: #cdd5df;
+  --gray-modern-500: #697586;
+  --gray-25: #fdfdfd;
+  --gray-600: #535862;
+  --gray-700: #414651;
+  --gray-900: #181d27;
+  --bg: var(--gray-modern-25);
+  --surface: #ffffff;
+  --text: var(--gray-900);
+  --text-primary: var(--gray-900);
+  --text-secondary: var(--gray-700);
+  --text-muted: var(--gray-600);
+  --text-light: var(--gray-modern-500);
+  --border: var(--gray-modern-300);
+  --border-light: var(--gray-modern-200);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-head: 'Inter Tight', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --space-section: 32px;
+  --space-block: 16px;
+  --space-tight: 8px;
+  --leading-tight: 1.3;
+  --leading-relaxed: 1.6;
+}
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 40px;
+}
+.test-container {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.test-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: #7f56d9;
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: 12px;
+  letter-spacing: 0.04em;
+}
+
+/* ── Exact copies from styles.css ── */
+
+.rw-doc-view {
+  max-width: 720px;
+  margin-bottom: var(--space-section, 32px);
+}
+.rw-doc-section {
+  margin-top: var(--space-section, 32px);
+}
+.rw-doc-section:first-child {
+  margin-top: 0;
+}
+.rw-doc-view > .rw-doc-section + .rw-doc-section {
+  margin-top: 48px;
+}
+
+.rw-doc-h2 {
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  letter-spacing: 0.2px;
+  margin: 0 0 12px 0;
+  line-height: var(--leading-tight);
+}
+
+.rw-doc-prose {
+  font-size: 14px;
+  color: #374151;
+  line-height: var(--leading-relaxed);
+  margin: 0;
+}
+.rw-doc-prose--muted {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Prose rhythm */
+.rw-doc-section .rw-doc-prose + .rw-doc-prose     { margin-top: 12px; }
+.rw-doc-section .rw-doc-dl + .rw-doc-prose         { margin-top: var(--space-block, 16px); }
+.rw-doc-section .rw-doc-prose + .rw-doc-dl         { margin-top: 12px; }
+
+/* ── Key Details meta list — vertical stacked layout ── */
+.rw-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.rw-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.5;
+}
+.rw-meta-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #6b7280);
+}
+.rw-meta-value {
+  font-size: 14px;
+  color: var(--text-primary, #1f2937);
+}
+
+/* ── Practical details: definition list — vertical stacked layout ── */
+.rw-doc-dl {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.rw-doc-dl dt {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-secondary, #6b7280);
+  margin: 0 0 2px 0;
+}
+.rw-doc-dl dt + dd + dt {
+  margin-top: 16px;
+}
+.rw-doc-dl dd {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Decision block sub-labels ── */
+.rw-decision-block {
+  padding: 24px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.rw-decision-block-section { margin-top: 10px; }
+.rw-decision-block-section-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-secondary, #6b7280);
+  display: block;
+  margin-bottom: 3px;
+}
+.rw-decision-block-reasons {
+  list-style: disc;
+  padding-left: 16px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+}
+.rw-decision-block-reasons li { margin-bottom: 4px; }
+
+/* ── Spacing guide overlay ── */
+.spacing-guide {
+  position: relative;
+}
+.spacing-guide::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: repeating-linear-gradient(to bottom, #e9d7fe 0, #e9d7fe 16px, transparent 16px, transparent 32px);
+}
+</style>
+</head>
+<body>
+<div class="test-container">
+
+<!-- ═══════ TEST 1: Key Details — mixed short values ═══════ -->
+<div class="test-label">TEST 1 — Key details (short values)</div>
+<div class="rw-doc-view">
+  <div class="rw-doc-section" style="margin-top:0">
+    <h2 class="rw-doc-h2">Key details</h2>
+    <div class="rw-meta-list">
+      <div class="rw-meta-row"><span class="rw-meta-label">Work model:</span><span class="rw-meta-value">Hybrid</span></div>
+      <div class="rw-meta-row"><span class="rw-meta-label">Role type:</span><span class="rw-meta-value">Permanent</span></div>
+      <div class="rw-meta-row"><span class="rw-meta-label">Salary:</span><span class="rw-meta-value">£80k to £100k</span></div>
+      <div class="rw-meta-row"><span class="rw-meta-label">Craft vs strategy:</span><span class="rw-meta-value">Craft heavy</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ TEST 2: Key Details — several "Not stated" ═══════ -->
+<div class="test-label">TEST 2 — Key details (mostly Not stated)</div>
+<div class="rw-doc-view">
+  <div class="rw-doc-section" style="margin-top:0">
+    <h2 class="rw-doc-h2">Key details</h2>
+    <div class="rw-meta-list">
+      <div class="rw-meta-row"><span class="rw-meta-label">Work model:</span><span class="rw-meta-value">Remote</span></div>
+      <div class="rw-meta-row"><span class="rw-meta-label">Role type:</span><span class="rw-meta-value">Not stated</span></div>
+      <div class="rw-meta-row"><span class="rw-meta-label">Salary:</span><span class="rw-meta-value">Not stated</span></div>
+      <div class="rw-meta-row"><span class="rw-meta-label">Craft vs strategy:</span><span class="rw-meta-value">Not stated</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ TEST 3: Practical Details — long values ═══════ -->
+<div class="test-label">TEST 3 — Practical details (long values wrapping)</div>
+<div class="rw-doc-view">
+  <div class="rw-doc-section" style="margin-top:0">
+    <h2 class="rw-doc-h2">Practical details</h2>
+    <dl class="rw-doc-dl">
+      <dt>Reporting to:</dt>
+      <dd>Not stated. Implied reporting to Product or Engineering leadership, possibly Head of Design or VP of Product depending on team structure.</dd>
+      <dt>Visa:</dt>
+      <dd>Not stated. The role is EU based, so visa support may be possible but is not confirmed. Worth clarifying early if relevant to your situation.</dd>
+      <dt>Company type:</dt>
+      <dd>Series B fintech startup focused on embedded payments infrastructure for enterprise clients across Europe and North America.</dd>
+      <dt>Recommended CV:</dt>
+      <dd>Product design CV. This role emphasises end to end ownership of complex workflows, so a portfolio highlighting systems thinking and cross functional collaboration will land best.</dd>
+      <dt>Posted:</dt>
+      <dd>3 days ago</dd>
+      <dt>Applicants:</dt>
+      <dd>47</dd>
+      <dt>Easy Apply:</dt>
+      <dd>Yes</dd>
+    </dl>
+    <p class="rw-doc-prose rw-doc-prose--muted" style="font-size:13px;">Posted by Sarah Chen · Senior Talent Partner</p>
+  </div>
+</div>
+
+<!-- ═══════ TEST 4: Practical Details — all Not stated ═══════ -->
+<div class="test-label">TEST 4 — Practical details (all Not stated)</div>
+<div class="rw-doc-view">
+  <div class="rw-doc-section" style="margin-top:0">
+    <h2 class="rw-doc-h2">Practical details</h2>
+    <dl class="rw-doc-dl">
+      <dt>Reporting to:</dt>
+      <dd>Not stated.</dd>
+      <dt>Visa:</dt>
+      <dd>Not stated.</dd>
+      <dt>Company type:</dt>
+      <dd>Not stated.</dd>
+    </dl>
+  </div>
+</div>
+
+<!-- ═══════ TEST 5: Company Context — mixed ═══════ -->
+<div class="test-label">TEST 5 — Company context</div>
+<div class="rw-doc-view">
+  <div class="rw-doc-section" style="margin-top:0">
+    <h2 class="rw-doc-h2">Company context</h2>
+    <dl class="rw-doc-dl">
+      <dt>Industry:</dt>
+      <dd>Financial Services</dd>
+      <dt>Size:</dt>
+      <dd>1200 employees</dd>
+      <dt>Type:</dt>
+      <dd>Privately Held</dd>
+      <dt>HQ:</dt>
+      <dd>London, United Kingdom</dd>
+      <dt>Founded:</dt>
+      <dd>2018</dd>
+      <dt>Website:</dt>
+      <dd>https://example-fintech.com</dd>
+    </dl>
+  </div>
+</div>
+
+<!-- ═══════ TEST 6: Decision block sub-sections ═══════ -->
+<div class="test-label">TEST 6 — Decision block sub-labels</div>
+<div class="rw-doc-view">
+  <div class="rw-doc-section" style="margin-top:0">
+    <div class="rw-decision-block">
+      <div style="font-weight:600;font-size:14px;margin-bottom:8px;">✓ Fit reality</div>
+      <p class="rw-doc-prose" style="margin-bottom:0;">Strong alignment with your preference for craft heavy product design roles. The scope is clear and the team appears well structured.</p>
+      <div class="rw-decision-block-section">
+        <span class="rw-decision-block-section-label">Worth exploring</span>
+        <ul class="rw-decision-block-reasons">
+          <li>Direct access to users and research participants</li>
+          <li>Clear ownership at the product area level with defined boundaries</li>
+          <li>Sustainable delivery pace with room for considered design work</li>
+        </ul>
+      </div>
+      <div class="rw-decision-block-section">
+        <span class="rw-decision-block-section-label">Risks &amp; unknowns</span>
+        <ul class="rw-decision-block-reasons">
+          <li>Reporting line not stated. Worth confirming whether this sits under Product or Engineering.</li>
+          <li>Salary not disclosed. The company stage and location suggest a competitive range but this needs verifying.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ TEST 7: Full page flow — multiple sections stacked ═══════ -->
+<div class="test-label">TEST 7 — Full page flow (sections stacked with 48px gaps)</div>
+<div class="rw-doc-view">
+  <div class="rw-doc-section" style="margin-top:0">
+    <h2 class="rw-doc-h2">Key details</h2>
+    <div class="rw-meta-list">
+      <div class="rw-meta-row"><span class="rw-meta-label">Work model:</span><span class="rw-meta-value">On site</span></div>
+      <div class="rw-meta-row"><span class="rw-meta-label">Role type:</span><span class="rw-meta-value">Contract</span></div>
+      <div class="rw-meta-row"><span class="rw-meta-label">Salary:</span><span class="rw-meta-value">£450 to £550 per day</span></div>
+      <div class="rw-meta-row"><span class="rw-meta-label">Craft vs strategy:</span><span class="rw-meta-value">Balanced</span></div>
+    </div>
+  </div>
+
+  <div class="rw-doc-section">
+    <h2 class="rw-doc-h2">Practical details</h2>
+    <dl class="rw-doc-dl">
+      <dt>Reporting to:</dt>
+      <dd>Head of Design</dd>
+      <dt>Visa:</dt>
+      <dd>Right to work required. No sponsorship available.</dd>
+      <dt>Company type:</dt>
+      <dd>Enterprise SaaS</dd>
+      <dt>Posted:</dt>
+      <dd>Today</dd>
+      <dt>Applicants:</dt>
+      <dd>200+</dd>
+    </dl>
+  </div>
+
+  <div class="rw-doc-section">
+    <h2 class="rw-doc-h2">Company context</h2>
+    <dl class="rw-doc-dl">
+      <dt>Industry:</dt>
+      <dd>Technology</dd>
+      <dt>Size:</dt>
+      <dd>5000 employees</dd>
+      <dt>HQ:</dt>
+      <dd>Manchester, United Kingdom</dd>
+    </dl>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

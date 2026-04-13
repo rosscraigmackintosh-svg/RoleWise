@@ -821,7 +821,6 @@
           ideal:              profile.work_model_ideal || '',
           hard_limit:         profile.work_model_hard_limit || '',
           commute_tolerance:  profile.commute_tolerance || '',
-          transport_preference: profile.transport_preference || 'none',
           location_base:      profile.location || '',
         },
         hard_blockers:    Array.isArray(profile.hard_blockers) ? profile.hard_blockers : [],
@@ -881,7 +880,7 @@
       'Clear roadmap / defined scope',
     ];
     const _SETUP_HARD_NOS = [
-      'On site more than 2 days',
+      'On-site more than 2 days',
       'Salary not stated',
       'Production coding required',
       'Contract type mismatch',
@@ -1320,31 +1319,6 @@
       return _fixPunct(String(s))
         .replace(/&/g, '&amp;').replace(/</g, '&lt;')
         .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
-    // ── UI text sanitiser — enforces the no-dash writing rule ──────────────
-    // Replaces em/en dashes with ". ", removes hyphens between words where
-    // they form compound modifiers (e.g. "fast-paced" → "fast paced"),
-    // and cleans up resulting punctuation artefacts.
-    // Applied as a safety net on dynamic/AI text before rendering.
-    function _sanitizeUiText(s) {
-      if (s == null) return '';
-      var t = String(s);
-      // 1. Replace em dash (— or \u2014) and en dash (– or \u2013) with ". "
-      t = t.replace(/[\u2014\u2013]/g, '.');
-      // 2. Replace hyphen between word characters (compound modifiers)
-      //    but NOT inside URLs, emails, CSS tokens, hex codes, or numbers
-      //    Run twice to catch overlapping single-char segments (e.g. a-b-c)
-      t = t.replace(/([a-zA-Z])-([a-zA-Z])/g, '$1 $2');
-      t = t.replace(/([a-zA-Z])-([a-zA-Z])/g, '$1 $2');
-      // 3. Clean up punctuation artefacts
-      t = t.replace(/\s+\./g, '.');             // remove whitespace before period
-      t = t.replace(/\.\s*\./g, '.');           // collapse double periods
-      t = t.replace(/,\s*\./g, '.');            // comma then period → period
-      t = t.replace(/\.\s*,/g, '.');            // period then comma → period
-      t = t.replace(/\.(\S)/g, '. $1');          // ensure space after period
-      t = t.replace(/\s{2,}/g, ' ');            // collapse multiple spaces
-      return t.trim();
     }
 
     // Guard against section headings or JD marketing copy stored as company name.
@@ -1865,7 +1839,7 @@
       const parts = [];
       if (role.location_text) parts.push(esc(role.location_text));
       if (role.work_model && role.work_model !== 'unknown') {
-        const _shdWmMap = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On site' };
+        const _shdWmMap = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
         const _shdWmLabel = _shdWmMap[role.work_model] || (role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1));
         parts.push(esc(_shdWmLabel));
       }
@@ -1937,11 +1911,11 @@
       const _metaParts = [];
       if (role.location_text) {
         const _wmRaw   = role.work_model && role.work_model !== 'unknown' ? role.work_model : null;
-        const _rhWmMap = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On site' };
+        const _rhWmMap = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
         const _wmLabel = _wmRaw ? (_rhWmMap[_wmRaw] || (_wmRaw.charAt(0).toUpperCase() + _wmRaw.slice(1))) : null;
         _metaParts.push(esc(_wmLabel ? `${role.location_text} (${_wmLabel})` : role.location_text));
       } else if (role.work_model && role.work_model !== 'unknown') {
-        const _rhWmMap2 = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On site' };
+        const _rhWmMap2 = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
         _metaParts.push(esc(_rhWmMap2[role.work_model] || (role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1))));
       }
       if (role.engagement_type && role.engagement_type !== 'Unknown') {
@@ -2373,7 +2347,7 @@
                    fit_assessment, fit_reasons, fit_assessed_at,
                    decision_state, verdict_state, nudge_snoozed_until,
                    outcome_state, outcome_reason, outcome_at, current_stage, source_meta,
-                   company_domain, company_logo_asset_id, section_context, re_eval_requested_at,
+                   company_domain, company_logo_asset_id,
                    role_updates(id, status, event_type, stage_reached, outcome_state, note, created_at),
                    role_recruiters(id, recruiter_id, link_source, contact_type, created_at,
                      recruiters(id, name, company, email, linkedin_url, recruiter_type, office_phone, mobile_phone, website_url, notes, notes_log, created_at, updated_at))`)
@@ -2638,7 +2612,7 @@
         const _others = _wmEntries.filter(([k]) => k !== _best[0]);
         const _othersAvg = _others.reduce((s, [, v]) => s + v.responded / v.applied, 0) / _others.length;
         if (_bestRate >= 0.5 && _othersAvg < 0.3) {
-          const _labels = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On site' };
+          const _labels = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
           _obs.push(`${_labels[_best[0]]} roles have led to more responses so far`);
         }
       }
@@ -2660,7 +2634,7 @@
               (r.outcome_state === 'rejected' && !r._firstResponseDate)
             );
             if (_stalled.length >= Math.ceil(_similar.length * 0.7)) {
-              const _labels = { remote: 'remote', hybrid: 'hybrid', onsite: 'office based' };
+              const _labels = { remote: 'remote', hybrid: 'hybrid', onsite: 'on-site' };
               _obs.push(`${_stalled.length} of ${_similar.length} similar ${_labels[_curBucket]} roles have not progressed past application`);
             }
           }
@@ -5528,7 +5502,7 @@
       }
       // Commute reality as concern when it looks heavy
       if (commuteReality && /5 days|daily|full.?time on.?site/i.test(commuteReality)) {
-        concerns_to_prepare.push(`Commute note: ${commuteReality}`);
+        concerns_to_prepare.push(`Commute note: ${commuteReality}. Confirm whether this is negotiable.`);
       }
       // Lens tensions as preparation topics
       if (lensComparison && lensComparison.tensions && lensComparison.tensions.length > 0) {
@@ -5615,7 +5589,7 @@
       else if (fo.role_summary) _contextParts.push(fo.role_summary);
       if (pd.work_model && pd.work_model !== 'Not stated') _contextParts.push(`Work model: ${pd.work_model}.`);
       if (salaryReality) _contextParts.push(`Salary: ${salaryReality}.`);
-      if (commuteReality) _contextParts.push(`Commute: ${commuteReality.replace(/\.\s*$/, '')}.`);
+      if (commuteReality) _contextParts.push(`Commute: ${commuteReality}.`);
       if (pd.company_type) _contextParts.push(`Company type: ${pd.company_type}.`);
       const context_notes = _contextParts.length ? _contextParts.join(' ') : null;
 
@@ -6245,7 +6219,6 @@
       hard_constraints:     'avoid roles requiring production-level coding',
       hybrid_tolerance:     'hybrid or remote preferred',
       commute_tolerance:    'roughly 60 minutes',
-      transport_preference: 'train',           // car | train | public_transport | cycling | walking | none
       min_salary_permanent: 'around £110k for permanent roles',
     };
 
@@ -7345,14 +7318,14 @@
             }
             // Warn if the fetched JD looks truncated
             if (!_isLinkedInJDComplete(_liCleaned)) {
-              const _warnMsg = 'Heads up. This job description may be cut off. You can paste the full version if needed.';
+              const _warnMsg = 'Heads up — this job description may be cut off. You can paste the full version if needed.';
               _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_warnMsg)}</div>`);
               if (!role._isTemp) wsAddMessage(role.id, 'assistant', _warnMsg).catch(() => {});
             }
             // Hand off to the normal JD paste path (analysis, mismatch detection, etc.)
             await _wsHandlePaste(role, _liCleaned, timelineEl);
           } catch (_liErr) {
-            const _errMsg = 'Something went wrong fetching from LinkedIn. Try pasting the job description directly.';
+            const _errMsg = 'Something went wrong fetching from LinkedIn — try pasting the job description directly.';
             _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
             if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
           }
@@ -9209,10 +9182,6 @@
               if (_aJson._source !== 'ai' && !_aJson._aiPromise) {
                 _hideEnrichingIndicator();
               }
-              // ── Section Context: decorate supported headings with icons + inline notes ──
-              if (typeof _scDecorateRenderedSections === 'function') {
-                _scDecorateRenderedSections(role.id);
-              }
             } catch (e) {
               _ovBody.innerHTML = '<div class="doc-empty">Could not load analysis</div>';
             }
@@ -10397,7 +10366,7 @@
               </div>`;
             } else {
               _resultEl.innerHTML = `<div class="as-rejection-result">
-                <div class="as-rejection-takeaway">Couldn't analyse the feedback. You can still note it below.</div>
+                <div class="as-rejection-takeaway">Couldn't analyse the feedback — you can still note it below.</div>
               </div>`;
             }
           }
@@ -11482,11 +11451,6 @@
                 // If no strong pattern → nothing rendered, panel unchanged
               }
             }
-
-            // ── Section Context: decorate supported headings with icons + inline notes ──
-            if (typeof _scDecorateRenderedSections === 'function') {
-              _scDecorateRenderedSections(role.id);
-            }
           } else {
             // No saved analysis — open the unified ingestion overlay immediately.
             // If the role already has a JD, pre-fill the textarea so the user
@@ -12494,7 +12458,7 @@
     const BLOCKER_DEFS = {
       production_coding: 'Production coding required',
       salary_missing:    'Salary not stated',
-      hybrid_onsite:     'Hybrid / office based requirement',
+      hybrid_onsite:     'Hybrid / on-site requirement',
       scope_unclear:     'Scope unclear',
       domain_concern:    'Domain or product concern',
       marketing_heavy:   'Marketing-heavy',
@@ -14869,7 +14833,7 @@
                 <div class="pref-check-group pref-checkbox-grid">
                   <label class="pref-check"><input type="checkbox" name="pref-wm" value="remote"> Remote</label>
                   <label class="pref-check"><input type="checkbox" name="pref-wm" value="hybrid"> Hybrid</label>
-                  <label class="pref-check"><input type="checkbox" name="pref-wm" value="on-site"> On site</label>
+                  <label class="pref-check"><input type="checkbox" name="pref-wm" value="on-site"> On-site</label>
                 </div>
               </div>
 
@@ -14928,7 +14892,7 @@
             <!-- Boundaries and Deal-Breakers -->
             <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
               <div class="doc-section-heading">Boundaries and Deal-Breakers</div>
-              <p class="pref-context-note" style="margin-bottom:16px;">What would make a role an automatic no? Add anything here. Requirements, conditions, or working styles you won&#39;t accept.</p>
+              <p class="pref-context-note" style="margin-bottom:16px;">What would make a role an automatic no? Add anything here — requirements, conditions, or working styles you won&#39;t accept.</p>
               <div id="pref-deal-breaker-list" class="pref-deal-breaker-list"></div>
               <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
                 <input class="field-input" id="pref-deal-breaker-input" type="text" placeholder="e.g. Requires production coding" style="flex:1;max-width:340px;" autocomplete="off">
@@ -15155,7 +15119,7 @@
         if (Array.isArray(p.company_stages)) {
           var idealStages = p.company_stages.filter(function(s) { return s.strength === 'ideal'; });
           if (idealStages.length) {
-            var _STAGE_SHORT = { 'early-startup':'Early stage', 'growth':'Growth', 'scale-up':'Scaleup', 'enterprise':'Enterprise', 'nfp':'NFP', 'agency':'Agency' };
+            var _STAGE_SHORT = { 'early-startup':'Early-stage', 'growth':'Growth', 'scale-up':'Scale-up', 'enterprise':'Enterprise', 'nfp':'NFP', 'agency':'Agency' };
             pills.push(idealStages.map(function(s) { return _STAGE_SHORT[s.stage] || s.stage; }).join(', '));
           }
         }
@@ -15166,7 +15130,7 @@
         }
         strip.innerHTML = pills.length
           ? pills.map(function(t) { return '<span class="pref-summary-pill">' + esc(t) + '</span>'; }).join('')
-          : '<span style="font-size:12px;color:var(--text-light);">No preferences saved yet. Fill in the sections below.</span>';
+          : '<span style="font-size:12px;color:var(--text-light);">No preferences saved yet — fill in the sections below.</span>';
       }
 
       // Live-update profile page avatar as name is typed
@@ -15245,7 +15209,7 @@
           salary_annual, salary_monthly: null, reporting_line: 'Not stated', visa: 'Not stated',
         },
         risks_and_unknowns: [
-          { text: 'Record saved with legacy engine. Rerun analysis from Match a JD for full detail.', tag: 'Inferred' },
+          { text: 'Record saved with legacy engine. Re-run analysis from Match a JD for full detail.', tag: 'Inferred' },
         ],
         questions_worth_asking: questions.length ? questions : [
           'What does success look like in the first 6 months?',
@@ -15330,408 +15294,6 @@
       };
       return _sectionDefaults[sectionKey] || 'Signal';
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SECTION CONTEXT — per-section notes, corrections, and preferences
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Data model: one entry per section per role.
-    // Shape: { type: 'note'|'correction'|'preference', text: string,
-    //          created_at: ISO, updated_at: ISO }
-    // Storage:
-    //   - Notes and corrections → roles.section_context (JSONB, DB-persisted)
-    //   - Preferences → profiles.preferences_json.section_preferences[]
-    //   - Legacy localStorage entries are lazy-migrated on first render
-    //
-    // Supported section IDs (stable keys):
-    const _SC_SECTIONS = {
-      'fit-reality':     'Fit reality',
-      'what-they-need':  'What they really need from you',
-      'hiring-reality':  'Hiring reality',
-      'commute':         'Commute',
-      'risks-unknowns':  'Risks & unknowns',
-    };
-    const _SC_SECTION_TO_DOM = {
-      'fit-reality':     'section-fit-reality',
-      'what-they-need':  'section-what-they-need',
-      'hiring-reality':  'section-hiring-reality',
-      'commute':         'section-commute-detail',
-      'risks-unknowns':  'section-risks-unknowns',
-    };
-    const _SC_TYPE_LABELS = { note: 'Note', correction: 'Correction', preference: 'Preference' };
-    const _SC_PLACEHOLDERS = {
-      note:       'Add a private note about this section',
-      correction: 'Describe what should be interpreted differently for this role',
-      preference: 'Describe a rule or preference you want RoleWise to apply going forward',
-    };
-
-    // ── Persistence helpers (DB-backed, in-memory cache via allRoles) ──
-    // localStorage key — used only for lazy migration from V1
-    function _scStorageKey(roleId) { return 'rw_section_ctx_' + roleId; }
-
-    // Read all section context for a role from the in-memory role object.
-    // Notes + corrections come from role.section_context (DB-backed JSONB).
-    // Preferences come from userProfile.section_preferences (already DB-backed).
-    // Returns a merged object keyed by section ID.
-    function _scLoadAll(roleId) {
-      if (!roleId) return {};
-      const role = allRoles.find(r => r.id === roleId);
-      const dbCtx = (role && role.section_context) || {};
-      // Merge in active preferences from user profile so the UI sees them
-      const prefs = (userProfile && userProfile.section_preferences) || [];
-      const merged = { ...dbCtx };
-      for (const p of prefs) {
-        if (p.section && !merged[p.section]) {
-          merged[p.section] = { type: 'preference', text: p.text, created_at: p.created_at, updated_at: p.updated_at };
-        }
-      }
-      return merged;
-    }
-
-    // Persist the full section_context object to the DB for a role.
-    // Only notes + corrections go here — preferences are handled separately.
-    function _scPersistToDb(roleId, ctx) {
-      if (!roleId) return;
-      // Filter out any preferences that may have leaked in — role.section_context
-      // must only contain notes and corrections.
-      const clean = {};
-      for (const [k, v] of Object.entries(ctx)) {
-        if (v && v.type !== 'preference') clean[k] = v;
-      }
-      // Optimistic update on the in-memory role object
-      const role = allRoles.find(r => r.id === roleId);
-      if (role) role.section_context = clean;
-      // Fire-and-forget DB write
-      try {
-        db.from('roles')
-          .update({ section_context: clean })
-          .eq('id', roleId)
-          .then(null, () => {}); // silent on failure — in-memory is already updated
-      } catch (_) {}
-    }
-
-    function _scGet(roleId, sectionId) {
-      const all = _scLoadAll(roleId);
-      return all[sectionId] || null;
-    }
-
-    function _scSet(roleId, sectionId, entry) {
-      if (entry.type === 'preference') {
-        // Preferences do NOT go into role.section_context — they go to userProfile
-        // (handled by the save handler's existing _savePreferencePatch call)
-        return;
-      }
-      const role = allRoles.find(r => r.id === roleId);
-      const dbCtx = (role && role.section_context) ? { ...role.section_context } : {};
-      dbCtx[sectionId] = entry;
-      _scPersistToDb(roleId, dbCtx);
-    }
-
-    function _scDelete(roleId, sectionId) {
-      const role = allRoles.find(r => r.id === roleId);
-      const dbCtx = (role && role.section_context) ? { ...role.section_context } : {};
-      delete dbCtx[sectionId];
-      _scPersistToDb(roleId, dbCtx);
-    }
-
-    // ── Lazy migration from localStorage (V1 → DB) ──
-    // Called once per role on render. Moves any localStorage entries to the DB
-    // and clears the localStorage key. DB wins on conflict.
-    function _scMigrateFromLocalStorage(roleId) {
-      if (!roleId) return;
-      const lsKey = _scStorageKey(roleId);
-      let lsData;
-      try {
-        const raw = localStorage.getItem(lsKey);
-        if (!raw) return; // nothing to migrate
-        lsData = JSON.parse(raw);
-        if (!lsData || typeof lsData !== 'object' || Object.keys(lsData).length === 0) {
-          localStorage.removeItem(lsKey);
-          return;
-        }
-      } catch (_) { return; }
-
-      const role = allRoles.find(r => r.id === roleId);
-      const dbCtx = (role && role.section_context) ? { ...role.section_context } : {};
-      let changed = false;
-
-      for (const [secId, entry] of Object.entries(lsData)) {
-        if (!entry || !entry.text) continue;
-
-        if (entry.type === 'preference') {
-          // Migrate preferences to userProfile.section_preferences (if not already there)
-          const prefs = (userProfile && userProfile.section_preferences) || [];
-          const existing = prefs.find(p => p.section === secId);
-          if (!existing && typeof _savePreferencePatch === 'function') {
-            prefs.push({ section: secId, text: entry.text, created_at: entry.created_at, updated_at: entry.updated_at });
-            _savePreferencePatch({ section_preferences: prefs });
-          }
-        } else {
-          // Notes + corrections → role.section_context (DB wins on conflict)
-          if (!dbCtx[secId]) {
-            dbCtx[secId] = entry;
-            changed = true;
-          }
-        }
-      }
-
-      if (changed) {
-        _scPersistToDb(roleId, dbCtx);
-      }
-
-      // Clear localStorage for this role — migration complete
-      try { localStorage.removeItem(lsKey); } catch (_) {}
-    }
-
-    // ── Re-evaluation request helper (Phase 3 preparation) ──
-    // Marks a role as needing re-evaluation. Does NOT trigger analysis —
-    // just sets the timestamp so a future "re-evaluate" action can pick it up.
-    // Not wired to any UI yet.
-    async function _scMarkReEvalRequested(roleId) {
-      if (!roleId) return;
-      const now = new Date().toISOString();
-      const role = allRoles.find(r => r.id === roleId);
-      if (role) role.re_eval_requested_at = now;
-      try {
-        await db.from('roles')
-          .update({ re_eval_requested_at: now })
-          .eq('id', roleId);
-      } catch (_) {}
-    }
-
-    // ── Inline display block (rendered under section content) ──
-    function _scInlineHtml(sectionId, roleId) {
-      const entry = _scGet(roleId, sectionId);
-      if (!entry || !entry.text) return '';
-      const typeLabel = _SC_TYPE_LABELS[entry.type] || 'Note';
-      return `<div class="rw-sc-inline" data-sc-section="${sectionId}" data-sc-role="${roleId}">` +
-        `<span class="rw-sc-inline-type">${esc(typeLabel)}</span>` +
-        `<span class="rw-sc-inline-text">${esc(entry.text)}</span>` +
-      `</div>`;
-    }
-
-    // ── Heading icon HTML ──
-    function _scIconHtml(sectionId, roleId) {
-      const hasCtx = !!_scGet(roleId, sectionId);
-      return `<button class="rw-sc-icon${hasCtx ? ' rw-sc-icon--has' : ''}" ` +
-        `data-sc-trigger="${sectionId}" data-sc-role="${roleId}" ` +
-        `title="Add context" aria-label="Add context to this section">` +
-        `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">` +
-        `<path d="M13 2.5l.5.5M9 7l-6 6v2h2l6-6m-2-2l1.5-1.5a.7.7 0 011 0l1 1a.7.7 0 010 1L11 9m-2-2l2 2"/>` +
-        `</svg></button>`;
-    }
-
-    // ── Panel HTML (anchored popover) ──
-    function _scPanelHtml(sectionId, roleId) {
-      const entry = _scGet(roleId, sectionId);
-      const hasEntry = !!(entry && entry.text);
-      const activeType = (entry && entry.type) || 'note';
-      const text = (entry && entry.text) || '';
-      const sectionLabel = _SC_SECTIONS[sectionId] || sectionId;
-
-      const typeOptions = ['note', 'correction', 'preference'].map(t => {
-        const checked = t === activeType ? ' checked' : '';
-        const label = t === 'preference' ? 'Preference for future roles' : _SC_TYPE_LABELS[t];
-        return `<label class="rw-sc-type-option"><input type="radio" name="rw-sc-type-${sectionId}" value="${t}"${checked}><span>${label}</span></label>`;
-      }).join('');
-
-      const placeholder = _SC_PLACEHOLDERS[activeType];
-      const saveBtnLabel = activeType === 'preference' ? 'Save preference' : 'Save';
-      const deleteBtn = hasEntry ? `<button class="rw-sc-btn rw-sc-btn--delete" data-sc-action="delete">Delete context</button>` : '';
-
-      return `<div class="rw-sc-panel" data-sc-panel="${sectionId}" data-sc-role="${roleId}">` +
-        `<div class="rw-sc-panel-header">Add context</div>` +
-        `<div class="rw-sc-type-selector">${typeOptions}</div>` +
-        `<textarea class="rw-sc-textarea" placeholder="${esc(placeholder)}" rows="3">${esc(text)}</textarea>` +
-        `<div class="rw-sc-actions">` +
-          `<button class="rw-sc-btn rw-sc-btn--save" data-sc-action="save" disabled>${saveBtnLabel}</button>` +
-          `<button class="rw-sc-btn rw-sc-btn--cancel" data-sc-action="cancel">Cancel</button>` +
-          `${deleteBtn}` +
-        `</div>` +
-      `</div>`;
-    }
-
-    // ── Wire up the context panel for a given section ──
-    function _scWirePanel(panelEl) {
-      if (!panelEl) return;
-      const sectionId = panelEl.dataset.scPanel;
-      const roleId = panelEl.dataset.scRole;
-      const textarea = panelEl.querySelector('.rw-sc-textarea');
-      const saveBtn = panelEl.querySelector('[data-sc-action="save"]');
-      const cancelBtn = panelEl.querySelector('[data-sc-action="cancel"]');
-      const deleteBtn = panelEl.querySelector('[data-sc-action="delete"]');
-      const typeRadios = panelEl.querySelectorAll('input[type="radio"]');
-
-      // Enable/disable save based on content
-      function _updateSaveState() {
-        const trimmed = (textarea.value || '').trim();
-        saveBtn.disabled = !trimmed;
-      }
-      textarea.addEventListener('input', _updateSaveState);
-      _updateSaveState();
-
-      // Update placeholder and save label when type changes
-      typeRadios.forEach(r => r.addEventListener('change', () => {
-        const t = r.value;
-        textarea.placeholder = _SC_PLACEHOLDERS[t] || '';
-        saveBtn.textContent = t === 'preference' ? 'Save preference' : 'Save';
-      }));
-
-      // Save
-      saveBtn.addEventListener('click', () => {
-        const trimmed = (textarea.value || '').trim();
-        if (!trimmed) return;
-        const selectedType = panelEl.querySelector('input[type="radio"]:checked')?.value || 'note';
-        const now = new Date().toISOString();
-        const existing = _scGet(roleId, sectionId);
-        const entry = {
-          type: selectedType,
-          text: trimmed,
-          created_at: (existing && existing.created_at) || now,
-          updated_at: now,
-        };
-        _scSet(roleId, sectionId, entry);
-
-        // If preference, also persist to user profile
-        if (selectedType === 'preference' && typeof _savePreferencePatch === 'function') {
-          const prefs = (userProfile && userProfile.section_preferences) || [];
-          // Upsert: replace existing entry for this section, or append
-          const idx = prefs.findIndex(p => p.section === sectionId);
-          const prefEntry = { section: sectionId, text: trimmed, created_at: entry.created_at, updated_at: now };
-          if (idx >= 0) prefs[idx] = prefEntry; else prefs.push(prefEntry);
-          _savePreferencePatch({ section_preferences: prefs });
-        }
-
-        _scClosePanel(sectionId);
-        _scRefreshSection(sectionId, roleId);
-      });
-
-      // Cancel
-      cancelBtn.addEventListener('click', () => _scClosePanel(sectionId));
-
-      // Delete
-      if (deleteBtn) {
-        deleteBtn.addEventListener('click', () => {
-          // If it was a preference, also remove from profile
-          const existing = _scGet(roleId, sectionId);
-          if (existing && existing.type === 'preference' && typeof _savePreferencePatch === 'function') {
-            const prefs = (userProfile && userProfile.section_preferences) || [];
-            const filtered = prefs.filter(p => p.section !== sectionId);
-            _savePreferencePatch({ section_preferences: filtered });
-          }
-          _scDelete(roleId, sectionId);
-          _scClosePanel(sectionId);
-          _scRefreshSection(sectionId, roleId);
-        });
-      }
-    }
-
-    // ── Close an open panel ──
-    function _scClosePanel(sectionId) {
-      const existing = document.querySelector(`[data-sc-panel="${sectionId}"]`);
-      if (existing) existing.remove();
-    }
-
-    // ── Toggle panel open/close ──
-    function _scTogglePanel(sectionId, roleId, anchorEl) {
-      const existingPanel = document.querySelector(`[data-sc-panel="${sectionId}"]`);
-      if (existingPanel) {
-        existingPanel.remove();
-        return;
-      }
-      // Close any other open panels
-      document.querySelectorAll('.rw-sc-panel').forEach(p => p.remove());
-
-      const html = _scPanelHtml(sectionId, roleId);
-      anchorEl.insertAdjacentHTML('afterend', html);
-      const panel = document.querySelector(`[data-sc-panel="${sectionId}"]`);
-      _scWirePanel(panel);
-      // Focus textarea
-      const ta = panel.querySelector('.rw-sc-textarea');
-      if (ta) setTimeout(() => ta.focus(), 50);
-    }
-
-    // ── Refresh section icon + inline display after save/delete ──
-    function _scRefreshSection(sectionId, roleId) {
-      const domId = _SC_SECTION_TO_DOM[sectionId];
-      const sectionEl = domId ? document.getElementById(domId) : null;
-      if (!sectionEl) return;
-
-      // Update icon state
-      const iconBtn = sectionEl.querySelector(`[data-sc-trigger="${sectionId}"]`);
-      if (iconBtn) {
-        const hasCtx = !!_scGet(roleId, sectionId);
-        iconBtn.classList.toggle('rw-sc-icon--has', hasCtx);
-      }
-
-      // Update inline display
-      const existingInline = sectionEl.querySelector(`.rw-sc-inline[data-sc-section="${sectionId}"]`);
-      if (existingInline) existingInline.remove();
-      const newInlineHtml = _scInlineHtml(sectionId, roleId);
-      if (newInlineHtml) {
-        // Insert before any enriching indicator or at end of section
-        const enriching = sectionEl.querySelector('.rw-section-enriching');
-        if (enriching) {
-          enriching.insertAdjacentHTML('beforebegin', newInlineHtml);
-        } else {
-          sectionEl.insertAdjacentHTML('beforeend', newInlineHtml);
-        }
-      }
-    }
-
-    // ── Global click handler for context icons ──
-    // Delegated from the detail panel container.
-    function _scInitGlobalHandler() {
-      document.addEventListener('click', (e) => {
-        const trigger = e.target.closest('[data-sc-trigger]');
-        if (trigger) {
-          e.preventDefault();
-          e.stopPropagation();
-          const sectionId = trigger.dataset.scTrigger;
-          const roleId = trigger.dataset.scRole;
-          const heading = trigger.closest('.rw-doc-h2') || trigger.parentElement;
-          _scTogglePanel(sectionId, roleId, heading);
-          return;
-        }
-        // Close panels on outside click
-        if (!e.target.closest('.rw-sc-panel') && !e.target.closest('[data-sc-trigger]')) {
-          document.querySelectorAll('.rw-sc-panel').forEach(p => p.remove());
-        }
-      });
-    }
-    _scInitGlobalHandler();
-
-    // ── Inject context icons + inline blocks into rendered sections ──
-    // Called after renderRoleDoc completes and DOM is ready.
-    function _scDecorateRenderedSections(roleId) {
-      if (!roleId) return;
-      // Lazy-migrate any V1 localStorage data to DB on first render
-      _scMigrateFromLocalStorage(roleId);
-      for (const [secId, _label] of Object.entries(_SC_SECTIONS)) {
-        const domId = _SC_SECTION_TO_DOM[secId];
-        const sectionEl = domId ? document.getElementById(domId) : null;
-        if (!sectionEl) continue;
-
-        // Add icon to heading (if not already present)
-        const h2 = sectionEl.querySelector('.rw-doc-h2');
-        if (h2 && !h2.querySelector('[data-sc-trigger]')) {
-          h2.insertAdjacentHTML('beforeend', ' ' + _scIconHtml(secId, roleId));
-        }
-
-        // Add inline display (if context exists)
-        if (!sectionEl.querySelector(`.rw-sc-inline[data-sc-section="${secId}"]`)) {
-          const inlineHtml = _scInlineHtml(secId, roleId);
-          if (inlineHtml) {
-            const enriching = sectionEl.querySelector('.rw-section-enriching');
-            if (enriching) {
-              enriching.insertAdjacentHTML('beforebegin', inlineHtml);
-            } else {
-              sectionEl.insertAdjacentHTML('beforeend', inlineHtml);
-            }
-          }
-        }
-      }
-    }
-    // ═══════════════════════════════════════════════════════════════════════════
 
     // ── Preference patch ──────────────────────────────────────────────────────
     // Fire-and-forget: merges a partial update into preferences_json in the DB.
@@ -16092,7 +15654,7 @@
       }
       const topStage = Object.entries(stageCounts).sort((a, b) => b[1] - a[1])[0];
       if (topStage && topStage[1] >= Math.ceil(analysedRoles.length * 0.35)) {
-        const stageLabels = { scaleup: 'scaleup', startup: 'startup', enterprise: 'enterprise' };
+        const stageLabels = { scaleup: 'scale-up', startup: 'start-up', enterprise: 'enterprise' };
         const label = stageLabels[topStage[0]] || topStage[0];
         signals.push(`Across the roles you've analysed so far, ${label} companies appear most frequently. Making up around ${Math.round(topStage[1] / analysedRoles.length * 100)}% of your explored roles.`);
       }
@@ -16105,7 +15667,7 @@
       }
       const topBal = Object.entries(craftCounts).sort((a, b) => b[1] - a[1])[0];
       if (topBal && topBal[1] >= Math.ceil(analysedRoles.length * 0.4)) {
-        const balLabels = { craft_heavy: 'craft heavy', strategy_heavy: 'strategy focused', balanced: 'balanced craft and strategy' };
+        const balLabels = { craft_heavy: 'craft-heavy', strategy_heavy: 'strategy-focused', balanced: 'balanced craft and strategy' };
         const label = balLabels[topBal[0]] || topBal[0];
         signals.push(`A pattern emerging across your explored roles is a lean toward ${label} environments. This may reflect the types of organisations you tend to explore.`);
       }
@@ -16118,7 +15680,7 @@
       }
       const topWm = Object.entries(wmCounts).sort((a, b) => b[1] - a[1])[0];
       if (topWm && topWm[1] >= Math.ceil(analysedRoles.length * 0.45)) {
-        const wmLabels = { remote: 'fully remote', hybrid: 'hybrid', onsite: 'office based' };
+        const wmLabels = { remote: 'fully remote', hybrid: 'hybrid', onsite: 'on-site' };
         const label = wmLabels[topWm[0]] || topWm[0];
         signals.push(`The majority of roles you've explored appear to be ${label}. This may explain the types of environments you're gravitating toward.`);
       }
@@ -16560,8 +16122,8 @@
         }
         const topWm = Object.entries(wmCounts).sort((a, b) => b[1] - a[1])[0];
         if (topWm && topWm[1] >= Math.ceil(n * 0.5)) {
-          const wmLabels = { remote: 'fully remote', hybrid: 'hybrid', onsite: 'office based',
-            fullyremote: 'fully remote', officebased: 'office based', remoteonly: 'remote only' };
+          const wmLabels = { remote: 'remote-first', hybrid: 'hybrid', onsite: 'on-site',
+            fullyremote: 'remote-first', officebased: 'office-based', remoteonly: 'remote-only' };
           const label = wmLabels[topWm[0]] || topWm[0];
           obs.push(`Most of the roles reviewed so far are ${label} positions. A recurring characteristic across the search to date.`);
         }
@@ -16576,7 +16138,7 @@
         }
         const topStage = Object.entries(stageCounts).sort((a, b) => b[1] - a[1])[0];
         if (topStage && topStage[1] >= Math.ceil(n * 0.4)) {
-          const stageLabels = { scaleup: 'scaleup', startup: 'startup', enterprise: 'enterprise', sme: 'SME' };
+          const stageLabels = { scaleup: 'scale-up', startup: 'start-up', enterprise: 'enterprise', sme: 'SME' };
           const label = stageLabels[topStage[0]] || topStage[0];
           const pct   = Math.round(topStage[1] / n * 100);
           obs.push(`A recurring theme across the roles reviewed so far is the ${label} environment. Around ${pct}% of the search fits this profile.`);
@@ -16644,7 +16206,7 @@
           if (!byStage[stage]) byStage[stage] = [];
           byStage[stage].push(r);
         }
-        const stageLabels = { scaleup: 'scaleup companies', startup: 'startups', enterprise: 'enterprise organisations' };
+        const stageLabels = { scaleup: 'scale-up companies', startup: 'start-ups', enterprise: 'enterprise organisations' };
         let bestStage = null, bestStageRate = -1;
         for (const [stage, roles] of Object.entries(byStage)) {
           if (roles.length < 4) continue;
@@ -16720,8 +16282,8 @@
           byStage[stage].push(r);
         }
         const stageLabels = {
-          scaleup:    'scaleup companies',
-          startup:    'early stage startups',
+          scaleup:    'scale-up companies',
+          startup:    'early-stage start-ups',
           enterprise: 'large enterprise organisations',
         };
         const { best, worst } = bestWorstBuckets(byStage);
@@ -16745,7 +16307,7 @@
           if (!byWm[wm]) byWm[wm] = [];
           byWm[wm].push(r);
         }
-        const wmLabels = { remote: 'fully remote roles', hybrid: 'hybrid roles', onsite: 'office based roles' };
+        const wmLabels = { remote: 'fully remote roles', hybrid: 'hybrid roles', onsite: 'on-site roles' };
         const { best, worst } = bestWorstBuckets(byWm);
         if (best && worst && best.label !== worst.label && (best.rate - worst.rate) >= 0.15) {
           const bestLabel  = wmLabels[best.label]  || best.label;
@@ -16764,8 +16326,8 @@
           byBal[bal].push(r);
         }
         const balLabels = {
-          craft_heavy:     'craft heavy roles',
-          strategy_heavy:  'strategy focused roles',
+          craft_heavy:     'craft-heavy roles',
+          strategy_heavy:  'strategy-focused roles',
           balanced:        'roles with balanced craft and strategy',
         };
         const { best, worst } = bestWorstBuckets(byBal);
@@ -16849,83 +16411,49 @@
     //   }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // ── Commute estimate via Google Maps Distance Matrix API ─────────────────
-    // Returns a promise that resolves to:
-    //   { distanceKm, distanceMiles, durationMins, durationText, mode, source }
-    // or null on failure.  Results are cached in-memory for the session.
+    // ── v1: Local heuristic estimate ─────────────────────────────────────────
+    // Returns { minMins, maxMins, source: 'heuristic' } or null if unrecognised.
     //
-    // `mode` is one of: driving | transit | bicycling | walking
-    // Maps the profile transport_preference to a Google Maps travel mode.
-
-    const _commuteCache = {};
-
-    function _transportPrefToMode(pref) {
-      const map = {
-        car:              'driving',
-        train:            'transit',
-        public_transport: 'transit',
-        cycling:          'bicycling',
-        walking:          'walking',
-      };
-      return map[(pref || '').toLowerCase()] || 'driving';
-    }
-
-    function _modeLabel(mode) {
-      return { driving: 'by car', transit: 'by public transport', bicycling: 'by bike', walking: 'on foot' }[mode] || '';
-    }
-
-    async function _getCommuteEstimate(from, to, transportPref) {
-      if (!from || !to) return null;
-      const mode = _transportPrefToMode(transportPref);
-      const cacheKey = `${from}|${to}|${mode}`;
-      if (_commuteCache[cacheKey] !== undefined) return _commuteCache[cacheKey];
-
-      // Route through Supabase edge function so the API key stays server-side.
-      const _fnUrl = (typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : '') + '/functions/v1/commute-estimate';
-      const _anonKey = (typeof SUPABASE_ANON_KEY !== 'undefined') ? SUPABASE_ANON_KEY : '';
-      if (!_fnUrl || !_anonKey) { _commuteCache[cacheKey] = null; return null; }
-
-      try {
-        const resp = await fetch(_fnUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + _anonKey,
-            'apikey': _anonKey,
-          },
-          body: JSON.stringify({ action: 'distance', origin: from, destination: to, mode: mode }),
-        });
-        const data = await resp.json();
-        if (data.status !== 'OK') { _commuteCache[cacheKey] = null; return null; }
-
-        const el = data.rows && data.rows[0] && data.rows[0].elements && data.rows[0].elements[0];
-        if (!el || el.status !== 'OK') { _commuteCache[cacheKey] = null; return null; }
-
-        const distMetres = el.distance.value;
-        const durationSecs = el.duration.value;
-        const result = {
-          distanceKm:    Math.round(distMetres / 1000),
-          distanceMiles: Math.round(distMetres / 1609.34),
-          durationMins:  Math.round(durationSecs / 60),
-          durationText:  el.duration.text,
-          mode:          mode,
-          source:        'google_maps',
-        };
-        _commuteCache[cacheKey] = result;
-        return result;
-      } catch (_e) {
-        console.warn('[_getCommuteEstimate] commute-estimate edge fn error', _e);
-        _commuteCache[cacheKey] = null;
-        return null;
+    // TO REPLACE WITH GOOGLE MAPS:
+    //   async function _getCommuteEstimate(from, to) {
+    //     const result = await googleMapsDistanceMatrix(from, to, 'transit');
+    //     if (!result) return null;
+    //     return { minMins: result.durationMins, maxMins: result.durationMins, source: 'google_maps' };
+    //   }
+    //
+    function _getCommuteEstimate(from, to) {
+      // Lookup keyed on tokens expected in the job location string (lowercase).
+      // Approximate transit/rail times from the Surrey commuter belt.
+      // Times are one-way, door-to-door including walk/wait.
+      const _table = [
+        { tokens: ['london', 'canary wharf', 'city of london', 'shoreditch', 'clerkenwell',
+                   'soho', 'south bank', 'victoria', 'paddington', 'waterloo',
+                   'liverpool street', 'old street', 'bermondsey', 'farringdon',
+                   'greenwich', 'richmond', 'kingston upon thames'],  min: 50, max: 75 },
+        { tokens: ['reading'],                                         min: 30, max: 45 },
+        { tokens: ['slough'],                                          min: 25, max: 40 },
+        { tokens: ['windsor'],                                         min: 25, max: 40 },
+        { tokens: ['guildford'],                                       min: 20, max: 35 },
+        { tokens: ['woking'],                                          min: 15, max: 25 },
+        { tokens: ['leatherhead'],                                     min: 15, max: 25 },
+        { tokens: ['epsom'],                                           min: 20, max: 30 },
+        { tokens: ['weybridge', 'cobham'],                             min: 10, max: 20 },
+        { tokens: ['staines', 'egham', 'virginia water', 'addlestone'], min: 10, max: 20 },
+        { tokens: ['heathrow'],                                        min: 20, max: 35 },
+        { tokens: ['oxford'],                                          min: 60, max: 85 },
+        { tokens: ['cambridge'],                                       min: 100, max: 130 },
+        { tokens: ['bristol'],                                         min: 95,  max: 125 },
+        { tokens: ['birmingham'],                                      min: 100, max: 130 },
+        { tokens: ['manchester'],                                      min: 160, max: 210 },
+        { tokens: ['edinburgh', 'glasgow'],                            min: 300, max: 360 },
+      ];
+      const toLower = to.toLowerCase();
+      for (const entry of _table) {
+        if (entry.tokens.some(t => toLower.includes(t))) {
+          return { minMins: entry.min, maxMins: entry.max, source: 'heuristic' };
+        }
       }
-    }
-
-    // Synchronous legacy wrapper — returns cached result or null.
-    // Used by code paths that cannot await (e.g. _buildCommuteData for sidebar card).
-    function _getCommuteEstimateSync(from, to, transportPref) {
-      const mode = _transportPrefToMode(transportPref || '');
-      const cacheKey = `${from}|${to}|${mode}`;
-      return _commuteCache[cacheKey] || null;
+      return null; // destination not in lookup — caller handles gracefully
     }
 
     // ── Classify work model from raw strings ──────────────────────────────────
@@ -16942,9 +16470,7 @@
     // ── Assemble the full commute data object ─────────────────────────────────
     // This is the only function that knows about both the user context and the
     // role context. Rendering reads from the returned object only.
-    // Uses the sync cache; callers that need fresh data should pre-warm the
-    // cache with await _getCommuteEstimate() before calling this.
-    function _buildCommuteData(jobLocation, workModelRaw, homeLocation, transportPref) {
+    function _buildCommuteData(jobLocation, workModelRaw, homeLocation) {
       const type      = _classifyWorkModel(workModelRaw, jobLocation);
       const homeShort = (homeLocation || 'Egham, Surrey').split(',')[0].trim();
 
@@ -16953,19 +16479,19 @@
                  weeklyLow: null, weeklyHigh: null, officeDaysLabel: null };
       }
 
-      const estimate = _getCommuteEstimateSync(homeLocation, jobLocation, transportPref);
+      const estimate = _getCommuteEstimate(homeLocation, jobLocation);
 
       let weeklyLow = null, weeklyHigh = null, officeDaysLabel = null;
       if (estimate) {
         const round = n => Math.round(n * 2) / 2; // nearest 0.5 hr
         if (type === 'hybrid') {
           officeDaysLabel = '2-3 days/week in office';
-          weeklyLow  = round(estimate.durationMins * 2 * 2 / 60); // 2 days × return
-          weeklyHigh = round(estimate.durationMins * 3 * 2 / 60); // 3 days × return
+          weeklyLow  = round(estimate.minMins * 2 * 2 / 60); // 2 days × return
+          weeklyHigh = round(estimate.maxMins * 3 * 2 / 60); // 3 days × return
         } else {
           officeDaysLabel = '4-5 days/week';
-          weeklyLow  = round(estimate.durationMins * 4 * 2 / 60);
-          weeklyHigh = round(estimate.durationMins * 5 * 2 / 60);
+          weeklyLow  = round(estimate.minMins * 4 * 2 / 60);
+          weeklyHigh = round(estimate.maxMins * 5 * 2 / 60);
         }
       }
 
@@ -17308,7 +16834,7 @@
 
       const _verdictLabels = {
         yes:   'Worth exploring',
-        maybe: 'Unclear fit. Key details need confirming',
+        maybe: 'Unclear fit — key details need confirming',
         no:    'Not viable',
       };
       const _confLabels = {
@@ -17929,9 +17455,6 @@
       var _inlineKeyDetailsHtml = '';
       var _inlineHiringRealityHtml = '';
       var _inlineCommuteHtml = '';
-      // Monotonic counter: increments on every commute render so stale async
-      // responses from a previous role can detect they are outdated.
-      var _commuteRenderGen = (typeof window._rwCommuteGen === 'number') ? ++window._rwCommuteGen : (window._rwCommuteGen = 1);
       {
         const _cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
         const rss = output.role_shape_signals || {};
@@ -17950,54 +17473,23 @@
 
         const _salLabel = _normaliseSalaryDisplay(_pdObj.salary_annual);
 
-        // ── Role facts (structured items) ──
-        const _roleFactRows = [
-          ['Work model:', _wmLabel],
-          ['Role type:', _rtLabel],
-          ['Salary:', _salLabel],
-        ];
-
-        // ── Role shape (selected decision signals, human-readable) ──
         const _csb = rss.craft_strategy_balance || null;
         const _csbLabel = _csb
           ? ({ craft_heavy: 'Craft heavy', strategy_heavy: 'Strategy heavy', balanced: 'Balanced' }[_csb] || _cap(_csb))
-          : null;
+          : 'Not stated';
 
-        const _owRaw = output.ownership_level || null;
-        const _owLabel = _owRaw
-          ? ({ feature: 'Feature-level', product: 'Broad', domain: 'Broad', full: 'End-to-end', strategic: 'End-to-end' }[_owRaw] || _cap(_owRaw))
-          : null;
-
-        const _dpRaw = output.delivery_pressure || null;
-        const _dpLabel = _dpRaw
-          ? ({ intense: 'Intense', fast: 'Fast-moving', sustainable: 'Sustainable', moderate: 'Steady' }[_dpRaw] || _cap(_dpRaw))
-          : null;
-
-        const _scRaw = output.scope_clarity || null;
-        const _scLabel = _scRaw
-          ? ({ clear: 'Well-defined', mixed: 'Mixed', vague: 'Loosely defined', unclear: 'Loosely defined' }[_scRaw] || _cap(_scRaw))
-          : null;
-
-        const _roleShapeRows = [
-          _csbLabel ? ['Craft vs strategy:', _csbLabel] : null,
-          _owLabel  ? ['Ownership:', _owLabel]           : null,
-          _dpLabel  ? ['Pace:', _dpLabel]                : null,
-          _scLabel  ? ['Scope clarity:', _scLabel]       : null,
-        ].filter(Boolean);
-
-        const _renderMetaRows = (rows) => rows.map(([k, v]) =>
-          `<div class="rw-meta-row"><span class="rw-meta-label">${esc(k)}</span><span class="rw-meta-value">${esc(v)}</span></div>`
-        ).join('');
-
-        const _roleShapeBlock = _roleShapeRows.length
-          ? `<div class="rw-meta-group-label">Role shape</div><div class="rw-meta-list">${_renderMetaRows(_roleShapeRows)}</div>`
-          : '';
+        const _keyDetailsRows = [
+          ['Work model', _wmLabel],
+          ['Role type', _rtLabel],
+          ['Salary', _salLabel],
+          ['Craft vs strategy', _csbLabel],
+        ];
 
         _inlineKeyDetailsHtml = `<div class="rw-doc-section" id="section-key-details">
           <h2 class="rw-doc-h2">Key details</h2>
-          <div class="rw-meta-group-label">Role facts</div>
-          <div class="rw-meta-list">${_renderMetaRows(_roleFactRows)}</div>
-          ${_roleShapeBlock}
+          <div class="rw-meta-list">${_keyDetailsRows.map(([k, v]) =>
+            `<div class="rw-meta-row"><span class="rw-meta-label">${esc(k)}</span><span class="rw-meta-value">${esc(v)}</span></div>`
+          ).join('')}</div>
         </div>`;
 
         // ── Operational signal data (for Hiring Reality prose) ─────────
@@ -18109,425 +17601,45 @@
           </div>`;
         }
 
-        // ── Location mismatch detection (shared across Commute, Fit, Risks) ──
-        // Computed once; consumed by commute section, fit reality qualifier,
-        // risks section, and tension panel. No travel time calculation — only
-        // flags the practical dependency clearly.
-        // var (not const) — these are consumed by Fit Reality, Risks, QWA,
-        // and Tension panel sections in a sibling block scope below.
-        var _locText = _pdObj.location || null;
-        var _commuteReality = _pdObj.commute_reality || null;
-        var _userLoc = (userProfile && userProfile.location) ? userProfile.location.trim() : '';
-        var _roleRequiresOffice = (_wmLabel === 'Hybrid' || _wmLabel === 'On site');
-        var _officeFreqKnown = !!_commuteReality;
-
-        // Simple city-level mismatch: compare first city token, case-insensitive
-        var _cityOf = function(s) { return (s || '').split(/[,|]/)[0].replace(/\s*Area\s*$/i, '').trim().toLowerCase(); };
-        var _userCity = _cityOf(_userLoc);
-        var _roleCity = _cityOf(_locText);
-        var _hasLocationMismatch = _userCity.length >= 2 && _roleCity.length >= 2 && _userCity !== _roleCity;
-        // Practical constraint: office required + different city + frequency unknown
-        var _isPracticalConstraint = _roleRequiresOffice && _hasLocationMismatch;
-
         // ── Commute section ──────────────────────────────────────────
-        // Renders inline commute prose with real Google Maps estimates when
-        // the user location is known, or a lightweight location prompt when
-        // it is not. Remote roles produce nothing (no section in DOM).
         {
-          const _transportPref = (userProfile && userProfile.transport_preference) || 'none';
+          const _commSentences = [];
+          const _locText = _pdObj.location || null;
+          const _commuteReality = _pdObj.commute_reality || null;
 
-          if (_wmLabel === 'Remote') {
-            // Remote roles: no Commute section rendered at all.
-          } else if (_locText) {
-            // ── Build static copy (sentence 1: location + work model) ──
-            const _commParts = [];
-            const _dayInfo = (_commuteReality || '').match(/(\d\s*days?\/week)/);
-
-            if (_wmLabel === 'Hybrid') {
-              _commParts.push(_dayInfo
-                ? `This role is based in ${_locText} and expects hybrid working, ${_dayInfo[1]} in the office.`
-                : `This role is based in ${_locText} and expects hybrid working.`);
-              if (!_dayInfo) _commParts.push('Office frequency is not specified.');
+          if (_wmLabel !== 'Not stated') {
+            if (_wmLabel === 'Remote') {
+              _commSentences.push('Remote role' + (_locText ? ` based in ${_locText}` : '') + '.');
+              _commSentences.push('No regular commute expected, though occasional travel may apply.');
+            } else if (_wmLabel === 'Hybrid') {
+              _commSentences.push('Hybrid role' + (_locText ? ` based in ${_locText}` : '') + '.');
+              if (_commuteReality) {
+                _commSentences.push(_commuteReality);
+              } else {
+                _commSentences.push('Office expectations not specified. Worth confirming days and flexibility early to avoid mismatch.');
+              }
             } else if (_wmLabel === 'On site') {
-              _commParts.push(`This role requires daily office presence in ${_locText}.`);
-            } else if (_wmLabel !== 'Not stated') {
-              _commParts.push(`This role is based in ${_locText}.`);
-              _commParts.push(`The work model is ${_wmLabel.toLowerCase()}.`);
+              _commSentences.push('Office based role' + (_locText ? ` in ${_locText}` : '') + '.');
+              if (_commuteReality) {
+                _commSentences.push(_commuteReality);
+              } else {
+                _commSentences.push('Full office presence expected.');
+              }
             } else {
-              _commParts.push(`This role is based in ${_locText}.`);
-              _commParts.push('The work model is not specified.');
+              _commSentences.push(_wmLabel + ' role' + (_locText ? ` in ${_locText}` : '') + '.');
+              if (_commuteReality) _commSentences.push(_commuteReality);
             }
+          } else if (_locText) {
+            _commSentences.push(`Location: ${_locText}. Work model not specified. Worth clarifying early.`);
+            if (_commuteReality) _commSentences.push(_commuteReality);
+          }
 
-            // ── Unique IDs for deferred DOM updates ──
-            const _commuteTextId = 'rw-commute-prose-' + Date.now();
-            const _mapId = 'rw-commute-map-' + Date.now();
-            const _mapQ = encodeURIComponent(_locText);
-            const _mapAlt = esc(_locText).replace(/'/g, "\\'");
-            const _hasUserLoc = _userLoc.length >= 2;
-
-            // ── Location prompt HTML (shown when user location is missing) ──
-            let _locationPromptHtml = '';
-            if (!_hasUserLoc) {
-              const _promptId = 'rw-commute-loc-prompt-' + Date.now();
-              _locationPromptHtml = `<div id="${_promptId}" class="rw-commute-loc-prompt">
-                <span class="rw-commute-loc-prompt-text">To estimate the commute, add your location.</span>
-                <button class="rw-commute-loc-btn" data-action="geolocate">Use current location</button>
-                <button class="rw-commute-loc-btn" data-action="postcode">Enter postcode</button>
-              </div>`;
-
-              // Wire up buttons after DOM paint
-              setTimeout(function() {
-                var _promptEl;
-                var _attempts = 0;
-                var _poll = function() {
-                  _promptEl = document.getElementById(_promptId);
-                  if (!_promptEl) { if (++_attempts < 20) setTimeout(_poll, 100); return; }
-
-                  _promptEl.addEventListener('click', function(e) {
-                    var btn = e.target.closest('[data-action]');
-                    if (!btn) return;
-                    var action = btn.dataset.action;
-
-                    if (action === 'geolocate') {
-                      btn.textContent = 'Locating…';
-                      btn.disabled = true;
-                      if (!navigator.geolocation) {
-                        _showPostcodeInput(_promptEl);
-                        return;
-                      }
-                      navigator.geolocation.getCurrentPosition(
-                        function(pos) {
-                          var _loc = pos.coords.latitude.toFixed(4) + ',' + pos.coords.longitude.toFixed(4);
-                          // Reverse-geocode via edge function (keeps API key server-side)
-                          var _fnUrl = (typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : '') + '/functions/v1/commute-estimate';
-                          var _ak = (typeof SUPABASE_ANON_KEY !== 'undefined') ? SUPABASE_ANON_KEY : '';
-                          fetch(_fnUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _ak, 'apikey': _ak },
-                            body: JSON.stringify({ action: 'reverse_geocode', latlng: _loc }),
-                          })
-                            .then(function(r) { return r.json(); })
-                            .then(function(d) {
-                              var _addr = (d.results && d.results[0]) ? d.results[0].formatted_address : _loc;
-                              _applyUserLocation(_addr, _promptEl);
-                            })
-                            .catch(function() { _applyUserLocation(_loc, _promptEl); });
-                        },
-                        function() { _showPostcodeInput(_promptEl); }
-                      );
-                    } else if (action === 'postcode') {
-                      _showPostcodeInput(_promptEl);
-                    } else if (action === 'submit-postcode') {
-                      var input = _promptEl.querySelector('.rw-commute-loc-input');
-                      if (input && input.value.trim().length >= 3) {
-                        _applyUserLocation(input.value.trim(), _promptEl);
-                      }
-                    }
-                  });
-                };
-                _poll();
-
-                function _showPostcodeInput(container) {
-                  container.innerHTML = '<input class="rw-commute-loc-input" type="text" placeholder="e.g. GU10 1AA or town name" autofocus>'
-                    + ' <button class="rw-commute-loc-btn" data-action="submit-postcode">Go</button>';
-                  var inp = container.querySelector('input');
-                  if (inp) {
-                    inp.focus();
-                    inp.addEventListener('keydown', function(e) {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        container.querySelector('[data-action="submit-postcode"]').click();
-                      }
-                    });
-                  }
-                }
-
-                function _applyUserLocation(loc, container) {
-                  // Persist to profile
-                  if (typeof _savePreferencePatch === 'function') {
-                    _savePreferencePatch({ location: loc });
-                  }
-                  if (userProfile) userProfile.location = loc;
-
-                  // Replace prompt with "Estimating…" then fetch real estimate
-                  container.innerHTML = '<span class="rw-commute-loc-prompt-text">Estimating from ' + esc(loc) + '…</span>';
-
-                  var _capturedGen = _commuteRenderGen;
-                  _getCommuteEstimate(loc, _locText, _transportPref).then(function(est) {
-                    if (window._rwCommuteGen !== _capturedGen) return; // stale
-                    var textEl = document.getElementById(_commuteTextId);
-                    if (!textEl) return;
-                    // Build estimate sentence
-                    var _estSentence = '';
-                    if (est) {
-                      var _fromShort = loc.split(',')[0].trim();
-                      _estSentence = 'From ' + _fromShort + ', it is roughly ' + est.distanceMiles + ' miles and would usually take around ' + est.durationText + ' ' + _modeLabel(est.mode) + '.';
-                    }
-                    // Full replace (not append) to prevent duplication
-                    var _parts = _commParts.slice();
-                    if (_estSentence) _parts.push(_estSentence);
-                    textEl.textContent = _parts.join(' ');
-                    // Remove prompt
-                    container.remove();
-                  });
-                }
-              }, 0);
-            }
-
-            // ── Inline origin editor (shown when user location is known) ──
-            const _originEditorId = 'rw-commute-origin-' + Date.now();
-            let _originEditorHtml = '';
-            if (_hasUserLoc) {
-              const _fromShort = _userLoc.split(',')[0].trim();
-              _originEditorHtml = `<div id="${_originEditorId}" class="rw-commute-origin">` +
-                `<span class="rw-commute-origin-label">From:</span> ` +
-                `<span class="rw-commute-origin-value">${esc(_fromShort)}</span> ` +
-                `<button class="rw-commute-origin-edit" data-action="edit">Edit</button>` +
-              `</div>`;
-
-              // Wire up origin editor after DOM paint
-              setTimeout(function() {
-                var _oAttempts = 0;
-                var _oPoll = function() {
-                  var _oEl = document.getElementById(_originEditorId);
-                  if (!_oEl) { if (++_oAttempts < 20) setTimeout(_oPoll, 100); return; }
-
-                  _oEl.addEventListener('click', function(e) {
-                    var btn = e.target.closest('[data-action]');
-                    if (!btn) return;
-                    var action = btn.dataset.action;
-
-                    if (action === 'edit') {
-                      var _prevVal = (userProfile && userProfile.location) ? userProfile.location.trim() : '';
-                      _oEl.innerHTML =
-                        '<span class="rw-commute-origin-label">From:</span> ' +
-                        '<input class="rw-commute-loc-input" type="text" value="' + esc(_prevVal) + '" placeholder="e.g. EH1 1BB or town name"> ' +
-                        '<button class="rw-commute-origin-save" data-action="save">Save</button> ' +
-                        '<button class="rw-commute-origin-cancel" data-action="cancel">Cancel</button>' +
-                        '<span class="rw-commute-origin-error" style="display:none;"></span>';
-                      var _inp = _oEl.querySelector('input');
-                      if (_inp) {
-                        _inp.focus();
-                        _inp.select();
-                        _inp.addEventListener('keydown', function(ev) {
-                          if (ev.key === 'Enter') { ev.preventDefault(); _oEl.querySelector('[data-action="save"]').click(); }
-                          if (ev.key === 'Escape') { ev.preventDefault(); _oEl.querySelector('[data-action="cancel"]').click(); }
-                        });
-                      }
-                    }
-
-                    if (action === 'cancel') {
-                      var _restoreVal = (userProfile && userProfile.location) ? userProfile.location.trim() : '';
-                      var _short = _restoreVal.split(',')[0].trim();
-                      if (_restoreVal) {
-                        _oEl.innerHTML =
-                          '<span class="rw-commute-origin-label">From:</span> ' +
-                          '<span class="rw-commute-origin-value">' + esc(_short) + '</span> ' +
-                          '<button class="rw-commute-origin-edit" data-action="edit">Edit</button>';
-                      } else {
-                        _oEl.innerHTML =
-                          '<span class="rw-commute-origin-label">From:</span> ' +
-                          '<span class="rw-commute-origin-value">Not set</span> ' +
-                          '<button class="rw-commute-origin-edit" data-action="edit">Edit</button>';
-                      }
-                    }
-
-                    if (action === 'save') {
-                      var _inp = _oEl.querySelector('input');
-                      var _errEl = _oEl.querySelector('.rw-commute-origin-error');
-                      var _newVal = _inp ? _inp.value.trim() : '';
-
-                      if (!_newVal) {
-                        // Clear saved origin → reset to "add your location" prompt
-                        if (typeof _savePreferencePatch === 'function') _savePreferencePatch({ location: '' });
-                        if (userProfile) userProfile.location = '';
-                        // Re-render: replace prose + origin editor with static text + location prompt
-                        var textEl = document.getElementById(_commuteTextId);
-                        if (textEl) textEl.textContent = _commParts.join(' ');
-                        // Replace origin editor with a fresh location prompt
-                        var _newPromptId = 'rw-commute-loc-prompt-' + Date.now();
-                        _oEl.outerHTML =
-                          '<div id="' + _newPromptId + '" class="rw-commute-loc-prompt">' +
-                          '<span class="rw-commute-loc-prompt-text">To estimate the commute, add your location.</span>' +
-                          '<button class="rw-commute-loc-btn" data-action="geolocate">Use current location</button>' +
-                          '<button class="rw-commute-loc-btn" data-action="postcode">Enter postcode</button>' +
-                          '</div>';
-                        // Wire up the new prompt using the existing _applyUserLocation flow
-                        var _npAttempts = 0;
-                        var _npPoll = function() {
-                          var _npEl = document.getElementById(_newPromptId);
-                          if (!_npEl) { if (++_npAttempts < 20) setTimeout(_npPoll, 100); return; }
-                          _npEl.addEventListener('click', function(ev) {
-                            var _b = ev.target.closest('[data-action]');
-                            if (!_b) return;
-                            if (_b.dataset.action === 'postcode') {
-                              _npEl.innerHTML = '<input class="rw-commute-loc-input" type="text" placeholder="e.g. GU10 1AA or town name" autofocus>'
-                                + ' <button class="rw-commute-loc-btn" data-action="submit-postcode">Go</button>';
-                              var _i = _npEl.querySelector('input');
-                              if (_i) { _i.focus(); _i.addEventListener('keydown', function(kv) { if (kv.key === 'Enter') { kv.preventDefault(); _npEl.querySelector('[data-action="submit-postcode"]').click(); } }); }
-                            } else if (_b.dataset.action === 'geolocate') {
-                              _b.textContent = 'Locating\u2026'; _b.disabled = true;
-                              if (!navigator.geolocation) { _npEl.querySelector('[data-action="postcode"]').click(); return; }
-                              navigator.geolocation.getCurrentPosition(
-                                function(pos) {
-                                  var _loc = pos.coords.latitude.toFixed(4) + ',' + pos.coords.longitude.toFixed(4);
-                                  var _fnUrl = (typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : '') + '/functions/v1/commute-estimate';
-                                  var _ak = (typeof SUPABASE_ANON_KEY !== 'undefined') ? SUPABASE_ANON_KEY : '';
-                                  fetch(_fnUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _ak, 'apikey': _ak }, body: JSON.stringify({ action: 'reverse_geocode', latlng: _loc }) })
-                                    .then(function(r) { return r.json(); })
-                                    .then(function(d) { var _addr = (d.results && d.results[0]) ? d.results[0].formatted_address : _loc; _applyAndRefresh(_addr); })
-                                    .catch(function() { _applyAndRefresh(_loc); });
-                                },
-                                function() { _npEl.querySelector('[data-action="postcode"]').click(); }
-                              );
-                            } else if (_b.dataset.action === 'submit-postcode') {
-                              var _i = _npEl.querySelector('.rw-commute-loc-input');
-                              if (_i && _i.value.trim().length >= 3) _applyAndRefresh(_i.value.trim());
-                            }
-                          });
-                          function _applyAndRefresh(loc) {
-                            if (typeof _savePreferencePatch === 'function') _savePreferencePatch({ location: loc });
-                            if (userProfile) userProfile.location = loc;
-                            _npEl.innerHTML = '<span class="rw-commute-loc-prompt-text">Estimating from ' + esc(loc) + '\u2026</span>';
-                            var _cGen = _commuteRenderGen;
-                            _getCommuteEstimate(loc, _locText, _transportPref).then(function(est) {
-                              if (window._rwCommuteGen !== _cGen) return;
-                              var _tEl = document.getElementById(_commuteTextId);
-                              if (!_tEl) return;
-                              var _es = '';
-                              if (est) { var _fs = loc.split(',')[0].trim(); _es = 'From ' + _fs + ', it is roughly ' + est.distanceMiles + ' miles and would usually take around ' + est.durationText + ' ' + _modeLabel(est.mode) + '.'; }
-                              var _p = _commParts.slice(); if (_es) _p.push(_es);
-                              _tEl.textContent = _p.join(' ');
-                              // Replace prompt with origin editor
-                              var _fs2 = loc.split(',')[0].trim();
-                              _npEl.outerHTML =
-                                '<div id="' + _originEditorId + '" class="rw-commute-origin">' +
-                                '<span class="rw-commute-origin-label">From:</span> ' +
-                                '<span class="rw-commute-origin-value">' + esc(_fs2) + '</span> ' +
-                                '<button class="rw-commute-origin-edit" data-action="edit">Edit</button>' +
-                                '</div>';
-                              // Re-wire the origin editor
-                              var _reEl = document.getElementById(_originEditorId);
-                              if (_reEl) _reEl.addEventListener('click', _oEl._rwHandler);
-                            });
-                          }
-                        };
-                        setTimeout(_npPoll, 0);
-                        return;
-                      }
-
-                      // Non-empty save: persist + re-estimate
-                      var _saveBtn = _oEl.querySelector('[data-action="save"]');
-                      if (_saveBtn) { _saveBtn.textContent = 'Saving\u2026'; _saveBtn.disabled = true; }
-                      if (typeof _savePreferencePatch === 'function') _savePreferencePatch({ location: _newVal });
-                      if (userProfile) userProfile.location = _newVal;
-
-                      var _capturedGen = _commuteRenderGen;
-                      _getCommuteEstimate(_newVal, _locText, _transportPref).then(function(est) {
-                        if (window._rwCommuteGen !== _capturedGen) return;
-                        // Update prose
-                        var _tEl = document.getElementById(_commuteTextId);
-                        if (_tEl) {
-                          var _es = '';
-                          if (est) {
-                            var _fs = _newVal.split(',')[0].trim();
-                            _es = 'From ' + _fs + ', it is roughly ' + est.distanceMiles + ' miles and would usually take around ' + est.durationText + ' ' + _modeLabel(est.mode) + '.';
-                          }
-                          var _p = _commParts.slice();
-                          if (_es) _p.push(_es);
-                          _tEl.textContent = _p.join(' ');
-                        }
-                        // Exit edit mode — show updated origin
-                        var _short = _newVal.split(',')[0].trim();
-                        _oEl.innerHTML =
-                          '<span class="rw-commute-origin-label">From:</span> ' +
-                          '<span class="rw-commute-origin-value">' + esc(_short) + '</span> ' +
-                          '<button class="rw-commute-origin-edit" data-action="edit">Edit</button>';
-                      }).catch(function() {
-                        // Estimate failed — show error, keep editor open, revert profile
-                        if (typeof _savePreferencePatch === 'function') _savePreferencePatch({ location: _newVal });
-                        if (_errEl) { _errEl.textContent = 'Could not estimate commute. Check the location and try again.'; _errEl.style.display = ''; }
-                        if (_saveBtn) { _saveBtn.textContent = 'Save'; _saveBtn.disabled = false; }
-                      });
-                    }
-                  });
-                  // Store handler reference for re-wiring after prompt→editor transition
-                  _oEl._rwHandler = _oEl.onclick;
-                };
-                _oPoll();
-              }, 0);
-            }
-
-            // ── Initial prose text (may be updated async when estimate arrives) ──
-            const _proseText = _commParts.join(' ');
-            const _proseHtml = `<div class="rw-doc-prose" id="${_commuteTextId}">${esc(_proseText)}</div>${_locationPromptHtml}${_originEditorHtml}`;
-
-            // ── Map tile (OSM, geocoded via Nominatim) ──
-            const _mapHtml = `<a id="${_mapId}" href="https://www.google.com/maps/search/?api=1&query=${_mapQ}" target="_blank" rel="noopener" class="rw-commute-map" title="View ${esc(_locText)} on Google Maps" style="background:#eef2f7;display:flex;align-items:center;justify-content:center;"><span style="font-size:11px;color:#9ca3af;">Loading map</span></a>`;
-
-            // Helper: remove map and collapse layout
-            var _removeMap = function(el) {
-              if (!el) return;
-              var layout = el.closest('.rw-commute-layout');
-              if (layout) {
-                var textEl = layout.querySelector('.rw-commute-text');
-                if (textEl) { layout.parentNode.insertBefore(textEl, layout); layout.parentNode.removeChild(layout); }
-                else { el.parentNode.removeChild(el); }
-              } else { el.parentNode.removeChild(el); }
-            };
-
-            // Deferred map init (polls for DOM element)
-            var _pollCount = 0;
-            var _initMap = function() {
-              var _el = document.getElementById(_mapId);
-              if (!_el) { if (++_pollCount < 20) { setTimeout(_initMap, 100); } return; }
-              fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + _mapQ)
-                .then(function(r) { return r.json(); })
-                .then(function(d) {
-                  if (!d || !d.length) { _removeMap(_el); return; }
-                  var lat = parseFloat(d[0].lat), lon = parseFloat(d[0].lon);
-                  var z = 13, n = Math.pow(2, z);
-                  var tx = Math.floor((lon + 180) / 360 * n);
-                  var ty = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
-                  var _img = document.createElement('img');
-                  _img.alt = 'Map of ' + _mapAlt;
-                  _img.loading = 'lazy';
-                  _img.src = 'https://tile.openstreetmap.org/' + z + '/' + tx + '/' + ty + '.png';
-                  _img.onerror = function() { _removeMap(_el); };
-                  _el.innerHTML = '';
-                  _el.appendChild(_img);
-                })
-                .catch(function() { _removeMap(_el); });
-            };
-            setTimeout(_initMap, 0);
-
-            // ── If user location IS known, fire async estimate and update prose ──
-            if (_hasUserLoc) {
-              (function(_gen, _parts) {
-                var _fromShort = _userLoc.split(',')[0].trim();
-                _getCommuteEstimate(_userLoc, _locText, _transportPref).then(function(est) {
-                  // Stale check: if a newer render has happened, discard this result
-                  if (window._rwCommuteGen !== _gen) return;
-                  if (!est) return;
-                  var textEl = document.getElementById(_commuteTextId);
-                  if (!textEl) return;
-                  var _estSentence = 'From ' + _fromShort + ', it is roughly ' + est.distanceMiles + ' miles and would usually take around ' + est.durationText + ' ' + _modeLabel(est.mode) + '.';
-                  // Full replace (not append) to prevent duplication on re-render
-                  var _all = _parts.slice();
-                  _all.push(_estSentence);
-                  textEl.textContent = _all.join(' ');
-                });
-              })(_commuteRenderGen, _commParts);
-            }
-
-            // ── Assemble section HTML ──
-            const _innerHtml = `<div class="rw-commute-layout">${_mapHtml}<div class="rw-commute-text">${_proseHtml}</div></div>`;
+          if (_commSentences.length > 0) {
             _inlineCommuteHtml = `<div class="rw-doc-section" id="section-commute-detail">
               <h2 class="rw-doc-h2">Commute</h2>
-              ${_innerHtml}
+              <div class="doc-prose">${esc(_commSentences.join(' '))}</div>
             </div>`;
           }
-          // else: no location and no work model → no section
         }
       }
 
@@ -18540,23 +17652,20 @@
           _narrativeRenderedRisksQwa = true;
 
           // ── Typed helpers — no parsing, just direct array→HTML ─────────
-          // All AI/dynamic text is passed through _sanitizeUiText before esc()
-          // to enforce the no-dash UI writing rule as a safety net.
           const _paragraphs = arr => (Array.isArray(arr) ? arr : [])
-            .filter(Boolean).map(s => `<p class="rw-doc-prose">${esc(_sanitizeUiText(s))}</p>`).join('');
+            .filter(Boolean).map(s => `<p class="rw-doc-prose">${esc(s)}</p>`).join('');
 
           const _bullets = arr => {
             const items = (Array.isArray(arr) ? arr : []).filter(Boolean);
             return items.length
-              ? `<ul class="rw-doc-bullets">${items.map(s => `<li>${esc(_sanitizeUiText(s))}</li>`).join('')}</ul>`
+              ? `<ul class="rw-doc-bullets">${items.map(s => `<li>${esc(s)}</li>`).join('')}</ul>`
               : '';
           };
 
           const _dlItems = arr => {
             const items = (Array.isArray(arr) ? arr : []).filter(i => i && i.label);
-            const _colonise = l => { const s = _sanitizeUiText(l); return s.endsWith(':') ? s : s + ':'; };
             return items.length
-              ? `<dl class="rw-doc-dl">${items.map(i => `<dt>${esc(_colonise(i.label))}</dt><dd>${esc(_sanitizeUiText(i.value || 'Not stated.'))}</dd>`).join('')}</dl>`
+              ? `<dl class="rw-doc-dl">${items.map(i => `<dt>${esc(i.label)}</dt><dd>${esc(i.value || 'Not stated')}</dd>`).join('')}</dl>`
               : '';
           };
 
@@ -18594,16 +17703,10 @@
           // When a local viability veto (_dbNotViable) overrides the decision,
           // the narrative fit text may still reflect the pre-veto "maybe/worth exploring"
           // assessment. Override it so it doesn't contradict the decision block.
-          // _fitHtml: standalone Fit Reality section content.
-          // Only rendered when the content is genuinely additive beyond the
-          // decision block's compact signal chips:
-          //   - Veto path: explains WHY the role isn't viable (decision block only shows the verdict)
-          //   - Narrative path: AI-written paragraphs with deeper reasoning
-          // The generic fallback (_fa.summary) is suppressed — it duplicates the
-          // decision block's "Fit reality" signal and adds visual weight without
-          // new information.
           let _fitHtml = '';
           if (_dbNotViable) {
+            // Align fit reality with the not-viable decision.
+            // Priority: explicit hard_no_reason > coding > hybrid > generic.
             let _vetoText = '';
             if (_dbIsHardNo && output.hard_no_reason) {
               _vetoText = output.hard_no_reason;
@@ -18618,13 +17721,8 @@
             _fitHtml = `<p class="rw-doc-prose">${esc(_vetoText)}</p>`;
           } else if (_narr?.fit_reality?.paragraphs) {
             _fitHtml = _paragraphs(_narr.fit_reality.paragraphs);
-          }
-          // Generic _fa.summary fallback deliberately omitted — the decision
-          // block already covers this signal at the same or higher fidelity.
-          // Append location constraint qualifier when commute is a practical concern
-          // but the role is otherwise viable. One sentence, no duplication with Commute.
-          if (!_dbNotViable && _isPracticalConstraint && !_officeFreqKnown) {
-            _fitHtml += `<p class="rw-doc-prose">Some signals align, but whether this works depends on how often the office expects you in.</p>`;
+          } else if (_fa) {
+            _fitHtml = `<p class="rw-doc-prose">${esc(_fa.summary)}</p>`;
           }
 
           // 2. What this role actually is
@@ -18690,17 +17788,17 @@
               if (!isNaN(_postedMs)) {
                 const _daysAgo = Math.floor((Date.now() - _postedMs) / 86400000);
                 const _postedLabel = _daysAgo === 0 ? 'Today' : _daysAgo === 1 ? '1 day ago' : `${_daysAgo} days ago`;
-                items.push({ label: 'Posted:', value: _postedLabel });
+                items.push({ label: 'Posted', value: _postedLabel });
               }
             }
             // Applicant count — only if meaningful
             if (_liCtx.applicants_count != null && _liCtx.applicants_count > 0) {
               const _appLabel = _liCtx.applicants_count >= 200 ? '200+' : String(_liCtx.applicants_count);
-              items.push({ label: 'Applicants:', value: _appLabel });
+              items.push({ label: 'Applicants', value: _appLabel });
             }
             // Easy Apply
             if (_liCtx.easy_apply === true) {
-              items.push({ label: 'Easy Apply:', value: 'Yes' });
+              items.push({ label: 'Easy Apply', value: 'Yes' });
             }
             return items;
           };
@@ -18722,31 +17820,31 @@
                 ? ROLEWISE_CANDIDATE_CONTEXT.cv_variants : [];
               const _cvMatch = _cvVariants.find(v => v.id === _narr.recommended_cv);
               const _cvLabel = _cvMatch ? _cvMatch.label : _narr.recommended_cv;
-              const _cvValue = _narr.why_that_cv ? `${_cvLabel}. ${_narr.why_that_cv}` : _cvLabel;
-              _pdItems = [..._pdItems, { label: 'Recommended CV:', value: _cvValue }];
+              const _cvValue = _narr.why_that_cv ? `${_cvLabel} — ${_narr.why_that_cv}` : _cvLabel;
+              _pdItems = [..._pdItems, { label: 'Recommended CV', value: _cvValue }];
             }
             _pdHtml = _dlItems(_pdItems);
           } else {
             const _pd = output.practical_details || {};
             // Only include fields NOT already in Key Details or Commute
             const _pdItems = [
-              (_pd.company_type   && _pd.company_type   !== 'Not stated') ? ['Company type:',    _pd.company_type]    : null,
-              (_pd.reporting_line && _pd.reporting_line  !== 'Not stated') ? ['Reporting to:',    _pd.reporting_line]  : null,
-              (_pd.visa           && _pd.visa            !== 'Not stated') ? ['Visa:',            _pd.visa]            : null,
+              (_pd.company_type   && _pd.company_type   !== 'Not stated') ? ['Company type',    _pd.company_type]    : null,
+              (_pd.reporting_line && _pd.reporting_line  !== 'Not stated') ? ['Reporting to',    _pd.reporting_line]  : null,
+              (_pd.visa           && _pd.visa            !== 'Not stated') ? ['Visa',            _pd.visa]            : null,
             ].filter(Boolean);
             // Append platform context items (adapt tuple format)
             if (_liCtx.posted_date) {
               const _pm = new Date(_liCtx.posted_date).getTime();
               if (!isNaN(_pm)) {
                 const _d = Math.floor((Date.now() - _pm) / 86400000);
-                _pdItems.push(['Posted:', _d === 0 ? 'Today' : _d === 1 ? '1 day ago' : `${_d} days ago`]);
+                _pdItems.push(['Posted', _d === 0 ? 'Today' : _d === 1 ? '1 day ago' : `${_d} days ago`]);
               }
             }
             if (_liCtx.applicants_count != null && _liCtx.applicants_count > 0) {
-              _pdItems.push(['Applicants:', _liCtx.applicants_count >= 200 ? '200+' : String(_liCtx.applicants_count)]);
+              _pdItems.push(['Applicants', _liCtx.applicants_count >= 200 ? '200+' : String(_liCtx.applicants_count)]);
             }
             if (_liCtx.easy_apply === true) {
-              _pdItems.push(['Easy Apply:', 'Yes']);
+              _pdItems.push(['Easy Apply', 'Yes']);
             }
             _pdHtml = _pdItems.length
               ? `<dl class="rw-doc-dl">${_pdItems.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`
@@ -18766,12 +17864,12 @@
             const _cm = _liCtx.company_meta;
             if (_cm && typeof _cm === 'object') {
               const _ccItems = [];
-              if (_cm.industry)       _ccItems.push(['Industry:',  _cm.industry]);
-              if (_cm.employee_count) _ccItems.push(['Size:',      _cm.employee_count + ' employees']);
-              if (_cm.company_type)   _ccItems.push(['Type:',      _cm.company_type]);
-              if (_cm.headquarters)   _ccItems.push(['HQ:',        _cm.headquarters]);
-              if (_cm.founded)        _ccItems.push(['Founded:',   String(_cm.founded)]);
-              if (_cm.website)        _ccItems.push(['Website:',   _cm.website]);
+              if (_cm.industry)       _ccItems.push(['Industry',  _cm.industry]);
+              if (_cm.employee_count) _ccItems.push(['Size',      _cm.employee_count + ' employees']);
+              if (_cm.company_type)   _ccItems.push(['Type',      _cm.company_type]);
+              if (_cm.headquarters)   _ccItems.push(['HQ',        _cm.headquarters]);
+              if (_cm.founded)        _ccItems.push(['Founded',   String(_cm.founded)]);
+              if (_cm.website)        _ccItems.push(['Website',   _cm.website]);
               if (_ccItems.length) {
                 _companyCtxHtml = `<dl class="rw-doc-dl">${_ccItems.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
               }
@@ -18785,7 +17883,7 @@
             if (_p && _p.name) {
               const _parts = [esc(_p.name)];
               if (_p.title) _parts.push(esc(_p.title));
-              _posterHtml = `<p class="rw-doc-prose rw-doc-prose--muted" style="font-size:13px;">Posted by ${_parts.join(' · ')}</p>`;
+              _posterHtml = `<p class="rw-doc-prose rw-doc-prose--muted" style="margin-top:4px;font-size:13px;">Posted by ${_parts.join(' · ')}</p>`;
             }
           }
 
@@ -18805,34 +17903,19 @@
             // Populated after unified classification pass from NEEDS_CLARITY signals
             _risksHtml = '';
           }
-          // Append commute-specific risk when office frequency is unknown and
-          // there is a location mismatch. Avoids repeating the Commute section
-          // detail — just flags the dependency as a risk.
-          if (_isPracticalConstraint && !_officeFreqKnown) {
-            const _commuteRisk = `Office attendance frequency is not stated. This is important given the distance from ${_userLoc || 'your location'}.`;
-            _risksHtml += `<ul class="rw-doc-bullets"><li>${esc(_commuteRisk)}</li></ul>`;
-          }
 
           // 7. Candidate match (personalisation section)
           // 7. Questions worth asking
-          const _commuteQ = 'How many days per week are required in the office?';
-          const _shouldInjectCommuteQ = _isPracticalConstraint && !_officeFreqKnown;
           let _qwaHtml = '';
           if (_narr?.questions_worth_asking) {
-            let _nqwa = Array.isArray(_narr.questions_worth_asking)
+            const _nqwa = Array.isArray(_narr.questions_worth_asking)
               ? _narr.questions_worth_asking : [];
-            if (_shouldInjectCommuteQ && !_nqwa.some(q => /days.*office|office.*days/i.test(q))) {
-              _nqwa = [_commuteQ, ..._nqwa];
-            }
-            _qwaHtml = _bullets(_nqwa.slice(0, 6));
+            _qwaHtml = _bullets(_nqwa.slice(0, 5));
           } else {
-            let _qwa = Array.isArray(output.questions_worth_asking)
+            const _qwa = Array.isArray(output.questions_worth_asking)
               ? output.questions_worth_asking.filter(Boolean).slice(0, 5) : [];
-            if (_shouldInjectCommuteQ && !_qwa.some(q => /days.*office|office.*days/i.test(q))) {
-              _qwa = [_commuteQ, ..._qwa];
-            }
             _qwaHtml = _qwa.length
-              ? `<ul class="rw-doc-bullets">${_qwa.slice(0, 6).map(q => `<li>${esc(String(q))}</li>`).join('')}</ul>`
+              ? `<ul class="rw-doc-bullets">${_qwa.map(q => `<li>${esc(String(q))}</li>`).join('')}</ul>`
               : '';
           }
 
@@ -18909,12 +17992,6 @@
               ${_secEnriching}
             </div>` : ''}
 
-            ${_fitHtml ? `<div class="rw-doc-section" id="section-fit-reality">
-              <h2 class="rw-doc-h2">Fit reality</h2>
-              ${_fitHtml}
-              ${_secEnriching}
-            </div>` : ''}
-
             ${_whatIsItHtml ? `<div class="rw-doc-section" id="section-what-role-is">
               <h2 class="rw-doc-h2">What this role actually is</h2>
               ${_whatIsItHtml}
@@ -18941,12 +18018,6 @@
               <h2 class="rw-doc-h2">Practical details</h2>
               ${_pdHtml}
               ${_posterHtml}
-              ${_secEnriching}
-            </div>` : ''}
-
-            ${_risksHtml ? `<div class="rw-doc-section" id="section-risks-unknowns">
-              <h2 class="rw-doc-h2">Risks &amp; unknowns</h2>
-              ${_risksHtml}
               ${_secEnriching}
             </div>` : ''}
 
@@ -19182,7 +18253,11 @@
 
       // ── Your Decision Context heading removed (RW-REMOVE-SECTION-HEADERS) ──
 
-      // ── Decision Lens — REMOVED (merged into Key Details as "Role shape") ──
+      // ── Decision Lens — History / Pattern insight (RW-ROLEPAGE-LAYOUT-01) ──
+      {
+        const _dlHtml = _renderDecisionLens(output);
+        if (_dlHtml) html += _dlHtml;
+      }
 
       // ── Your Pattern vs This Role (RW-CMP-PANEL) ──────────────────────────
       {
@@ -19269,16 +18344,9 @@
             _cmpRows.push({ dimLabel, yourPattern, roleSignal, isMatch });
 
             if (!isMatch) {
-              // Location mismatches on office-required roles are practical constraints
-              if (pat.dimension === 'location' && _roleRequiresOffice) {
-                _cmpTensions.push(
-                  `This role is based in ${esc(roleSignal)} while your pattern is ${esc(yourPattern)}. If regular office attendance is required, this may not be practical.`
-                );
-              } else {
-                _cmpTensions.push(
-                  `${esc(roleSignal)} vs your pattern of ${esc(yourPattern.toLowerCase())}`
-                );
-              }
+              _cmpTensions.push(
+                `${esc(roleSignal)} vs your pattern of ${esc(yourPattern.toLowerCase())}`
+              );
             }
           }
 
@@ -19292,12 +18360,9 @@
               </div>`
             ).join('');
 
-            // Use stronger header when a location practical constraint is present
-            const _hasLocConstraint = _cmpRows.some(r => !r.isMatch && r.dimLabel === 'Location') && _roleRequiresOffice;
-            const _tensionHdr = _hasLocConstraint ? 'Practical constraint' : 'Tension';
             const _tensionHtml = _cmpTensions.length
               ? `<div class="rw-cmp-tensions">
-                  <div class="rw-cmp-tension-hdr">${_tensionHdr}</div>
+                  <div class="rw-cmp-tension-hdr">Tension</div>
                   <ul class="rw-cmp-tension-list">${_cmpTensions.map(t => `<li>${t}</li>`).join('')}</ul>
                 </div>`
               : '';
@@ -19650,7 +18715,7 @@
           ? output.signal_questions
           : (output.questions_worth_asking || []);
         html += `<div class="rw-doc-section" id="section-questions">
-          <h2 class="rw-doc-h2">Questions worth asking</h2>
+          <h2 class="rw-doc-h2">Questions Worth Asking</h2>
           ${bullets(_sq)}
         </div>`;
       }
@@ -19872,25 +18937,25 @@
         const archetype = (output.role_archetype && output.role_archetype.primary) || null;
 
         if (seniority === 'inflated') {
-          return _lens('identity', 'Identity fit', 'negative', 'Seniority inflated');
+          return _lens('identity', 'Identity Fit', 'negative', 'Seniority inflated');
         }
         if (seniority === 'understated') {
-          return _lens('identity', 'Identity fit', 'caution', 'Seniority understated');
+          return _lens('identity', 'Identity Fit', 'caution', 'Seniority understated');
         }
         if (scopeClar === 'vague') {
-          return _lens('identity', 'Identity fit', 'caution', 'Scope vague');
+          return _lens('identity', 'Identity Fit', 'caution', 'Scope vague');
         }
         if (ownership === 'feature') {
-          return _lens('identity', 'Identity fit', 'caution', 'Feature level ownership');
+          return _lens('identity', 'Identity Fit', 'caution', 'Feature-level ownership');
         }
         if (seniority === 'authentic' && (scopeClar === 'clear' || (ownership && ownership !== 'feature'))) {
           var _t = archetype ? archetype + ', authentic' : 'Strong';
-          return _lens('identity', 'Identity fit', 'positive', _t);
+          return _lens('identity', 'Identity Fit', 'positive', _t);
         }
         if (archetype) {
-          return _lens('identity', 'Identity fit', 'unclear', archetype);
+          return _lens('identity', 'Identity Fit', 'unclear', archetype);
         }
-        return _lens('identity', 'Identity fit', 'unclear', 'Unclear');
+        return _lens('identity', 'Identity Fit', 'unclear', 'Unclear');
       }());
 
       // ── Lens 2: Role Shape ────────────────────────────────────────────────────
@@ -19915,7 +18980,7 @@
         if (squad)                        _parts.push('squad model');
 
         if (!_parts.length) {
-          return _lens('shape', 'Role shape', 'unclear', 'Unclear');
+          return _lens('shape', 'Role Shape', 'unclear', 'Unclear');
         }
 
         var _text = _parts.join(', ');
@@ -19924,7 +18989,7 @@
           : (pressure === 'fast' || mode === 'greenfield' || domain === 'high') ? 'caution'
           : (pressure === 'sustainable' || balance === 'strategy_heavy') ? 'positive'
           : 'unclear';
-        return _lens('shape', 'Role shape', _signal, _text);
+        return _lens('shape', 'Role Shape', _signal, _text);
       }());
 
       // ── Lens 3: Economic Reality ──────────────────────────────────────────────
@@ -19935,12 +19000,12 @@
         const isSalaryKnown  = salaryAnnual !== 'Not stated' && salaryAnnual !== 'Not disclosed' && salaryAnnual !== 'Mentioned but not specified';
 
         if (!isSalaryKnown) {
-          return _lens('economics', 'Economic reality', 'negative', 'Not disclosed');
+          return _lens('economics', 'Economic Reality', 'negative', 'Not disclosed');
         }
         var _text = salaryAnnual;
         if (isContract) _text += ', contract';
         else if (empType && empType !== 'Not stated') _text += ', ' + empType.toLowerCase();
-        return _lens('economics', 'Economic reality', 'positive', _text);
+        return _lens('economics', 'Economic Reality', 'positive', _text);
       }());
 
       // ── Lens 4: Sustainability ────────────────────────────────────────────────
@@ -19998,7 +19063,7 @@
         if (_credsHeavy) _parts.push('credentials heavy');
 
         if (!_parts.length) {
-          return _lens('culture', 'Culture signals', 'unclear', 'Unclear');
+          return _lens('culture', 'Culture Signals', 'unclear', 'Unclear');
         }
 
         var _text = _parts.join(', ');
@@ -20007,7 +19072,7 @@
           : (_officeMismatch || _topDown || _credsHeavy || dc === 'strong') ? 'caution'
           : _positive ? 'positive'
           : 'unclear';
-        return _lens('culture', 'Culture signals', _signal, _text);
+        return _lens('culture', 'Culture Signals', _signal, _text);
       }());
 
       const lenses = [_l1, _l2, _l3, _l4, _l5];
@@ -20036,7 +19101,7 @@
       }).join('');
 
       return '<div class="rw-doc-section rw-decision-lens" id="section-decision-lens">' +
-        '<h2 class="rw-doc-h2">Decision lens</h2>' +
+        '<h2 class="rw-doc-h2">Decision Lens</h2>' +
         '<div class="rw-lens-list">' + lensesHtml + '</div>' +
       '</div>';
     }
@@ -20312,7 +19377,7 @@
       const details = [];
       if (signals.work_model === 'remote')       details.push('remote');
       else if (signals.work_model === 'hybrid')  details.push('hybrid');
-      else if (signals.work_model === 'onsite')  details.push('office based');
+      else if (signals.work_model === 'onsite')  details.push('on-site');
       if (signals.role_type === 'permanent')     details.push('permanent');
       else if (signals.role_type === 'contract') details.push('contract');
 
@@ -21681,7 +20746,7 @@
       // Work model: verification_needed signal from extractor
       if (result.work_model.normalized === 'Verification needed') {
         vn.push('work_model');
-        notes.push('Location based requirement detected but work model unclear.');
+        notes.push('Location-based requirement detected but work model unclear.');
       }
       // Company type: generic startup signal, might be earlier or later stage
       if (result.company_type.normalized === 'Startup' && result.company_type.confidence === 'medium') {
@@ -21961,23 +21026,23 @@
         const dayMatch = wmLower.match(/(\d)\s*(?:days?|x)\s*(?:per\s+week|\/\s*week|in[- ]?office|on[- ]?site)/);
         if (dayMatch) {
           const dayPhrase = `${dayMatch[1]} day${dayMatch[1] === '1' ? '' : 's'}/week`;
-          pd.commute_reality = `Hybrid in ${city}, ${dayPhrase} in the office.`;
+          pd.commute_reality = `Hybrid ${city} — ${dayPhrase} office presence. Factor in travel if not based nearby.`;
         } else {
-          pd.commute_reality = `Hybrid in ${city}. Office frequency not specified.`;
+          pd.commute_reality = `Hybrid ${city} — on-site expectation not specified. Confirm minimum office days before estimating commute burden.`;
         }
         return pd;
       }
 
       // 3. On-site with known city
       if (isOnsite && city) {
-        pd.commute_reality = `On-site in ${city}, daily attendance required.`;
+        pd.commute_reality = `On-site ${city}, daily commute required. Travel burden likely to be material.`;
         return pd;
       }
 
       // 4. Mostly on-site (4+ days) with known city — treated as near-onsite
       const heavyDayMatch = wmLower.match(/(\d)\s*days?\s*(?:on[- ]?site|in[- ]?office)/);
       if (heavyDayMatch && parseInt(heavyDayMatch[1], 10) >= 4 && city) {
-        pd.commute_reality = `${city}, ${heavyDayMatch[1]} days/week in the office.`;
+        pd.commute_reality = `${city}, ${heavyDayMatch[1]} days/week in office. Effectively on-site; commute burden is material.`;
         return pd;
       }
 
@@ -21989,7 +21054,7 @@
 
       // 6. Location known but work model unclear
       if (hasLocation && !isRemote && !isHybrid && !isOnsite && city) {
-        pd.commute_reality = `This role is based in ${city}. The work model is not specified.`;
+        pd.commute_reality = `Location: ${city}. Work model not stated. Confirm whether remote, hybrid, or on-site.`;
         return pd;
       }
 
@@ -22404,7 +21469,7 @@
         if (dim === 'seniority') {
           const sen = (pd.role_seniority || '').toLowerCase();
           if (sen && sen !== 'not stated' && pat.values.includes(sen)) {
-            matches.push({ dimension: dim, label: sen + '-level role' });
+            matches.push({ dimension: dim, label: sen + ' level role' });
           }
         }
 
@@ -22412,7 +21477,7 @@
           const loc = (pd.location || '').trim();
           const city = loc ? loc.split(/[,|]/)[0].replace(/\s*Area\s*$/i, '').trim() : '';
           if (city.length >= 2 && pat.values.some(v => v.toLowerCase() === city.toLowerCase())) {
-            matches.push({ dimension: dim, label: city + '-based' });
+            matches.push({ dimension: dim, label: city + ' based' });
           }
         }
       }
@@ -22820,7 +21885,7 @@
 
         const sMin      = _sMinNum != null ? _fmt(_sMinNum) : null;
         const sMax      = _sMaxNum != null ? _fmt(_sMaxNum) : null;
-        const figStr    = sMin && sMax ? `${symbol}${sMin} to ${symbol}${sMax}`
+        const figStr    = sMin && sMax ? `${symbol}${sMin}–${symbol}${sMax}`
                         : sMin        ? `${symbol}${sMin}+`
                         : sMax        ? `Up to ${symbol}${sMax}`
                         : null;
@@ -22832,7 +21897,7 @@
             // ── Hourly display: show rate + annual equivalent ──────────────
             const annualEquiv = _sMinNum != null ? _sMinNum * 2000 : (_sMaxNum != null ? _sMaxNum * 2000 : null);
             const annualStr = annualEquiv != null ? ` (${symbol}${_fmt(annualEquiv)}${currLabel}/yr)` : '';
-            const hrFig = sMin && sMax ? `${symbol}${sMin} to ${symbol}${sMax}`
+            const hrFig = sMin && sMax ? `${symbol}${sMin}–${symbol}${sMax}`
                         : sMin ? `${symbol}${sMin}` : `Up to ${symbol}${sMax}`;
             salaryAnnual = `${hrFig}${currLabel}/hr${annualStr}${geoNote}`;
           } else {
@@ -23311,7 +22376,7 @@
           if (!_hasHybridRisk) {
             analysis.risks_and_unknowns.push({
               text: 'Work model is hybrid but minimum office days are not stated. Confirm the expectation before committing time.',
-              tag: 'Inferred. Missing detail',
+              tag: 'Inferred — missing detail',
             });
           }
         }
@@ -24384,7 +23449,7 @@
         }
       }
       if (remote_model === 'Remote')   fitPoints.push('Role is fully remote. Positive signal.');
-      if (remote_model === 'On-site')  fitPoints.push('Role is office based. Confirm the location works for you.');
+      if (remote_model === 'On-site')  fitPoints.push('Role is on-site. Confirm the location works for you.');
       if (remote_model === 'Hybrid')   fitPoints.push('Hybrid arrangement. Ask how many days in office before committing.');
       if (salary_annual === 'Not stated' || salary_annual === 'Mentioned but not specified') fitPoints.push('No salary figure listed. Raise this early. Do not invest significant time before knowing the range.');
       if (fitPoints.length === 0) fitPoints.push('No strong positive or negative signals detected. Review the full JD to form a view.');
@@ -26317,14 +25382,14 @@
 
       // ── Signal 2: Common role level / title family ───────────────────────
       const SENIORITY_PATTERNS = [
-        { re: /\b(vp|vice\s+president)\b/i,    label: 'VP level' },
-        { re: /\bdirector\b/i,                  label: 'director level' },
+        { re: /\b(vp|vice\s+president)\b/i,    label: 'VP-level' },
+        { re: /\bdirector\b/i,                  label: 'director-level' },
         { re: /\bhead\s+of\b/i,                 label: 'Head of' },
-        { re: /\bprincipal\b/i,                 label: 'principal level' },
-        { re: /\bstaff\b/i,                     label: 'staff level' },
-        { re: /\blead\b/i,                      label: 'lead level' },
+        { re: /\bprincipal\b/i,                 label: 'principal-level' },
+        { re: /\bstaff\b/i,                     label: 'staff-level' },
+        { re: /\blead\b/i,                      label: 'lead-level' },
         { re: /\b(senior|sr\.?)\b/i,            label: 'senior' },
-        { re: /\bmanager\b/i,                   label: 'manager level' },
+        { re: /\bmanager\b/i,                   label: 'manager-level' },
         { re: /\b(junior|jr\.?|associate)\b/i,  label: 'junior' },
       ];
       const senCounts = {};
@@ -26373,7 +25438,7 @@
         const max    = sorted[sorted.length - 1];
         const range  = min === max
           ? `~${min} day${min !== 1 ? 's' : ''}`
-          : `${min} to ${max} days`;
+          : `${min}–${max} days`;
         signals.push(`First responses tend to arrive within ${range}`);
       }
 
@@ -27288,10 +26353,10 @@
       { key: 'production_coding', label: 'Production coding required' },
       { key: 'salary_missing',    label: 'Salary not stated'          },
       { key: 'salary_too_low',    label: 'Salary too low'             },
-      { key: 'hybrid_onsite',     label: 'Too hybrid / office based'  },
+      { key: 'hybrid_onsite',     label: 'Too hybrid / on-site'       },
       { key: 'domain_mismatch',   label: 'Wrong product / domain'     },
       { key: 'scope_unclear',     label: 'Scope unclear'              },
-      { key: 'marketing_heavy',   label: 'Too marketing heavy'        },
+      { key: 'marketing_heavy',   label: 'Too marketing-heavy'        },
       { key: 'too_junior',        label: 'Too junior'                 },
       { key: 'other',             label: 'Other'                      },
     ];
@@ -27444,7 +26509,7 @@
       if (fitProfile.work_model) {
         const _wm = (_rss.work_model || _pd.work_model || role.work_model || '').trim().toLowerCase();
         if (_wm === fitProfile.work_model) {
-          const _labels = { remote: 'Remote role', hybrid: 'Hybrid role', onsite: 'Office based role' };
+          const _labels = { remote: 'Remote role', hybrid: 'Hybrid role', onsite: 'On-site role' };
           _matched.push(_labels[_wm] || _wm);
         }
       }
@@ -27657,9 +26722,9 @@
           re: /data\s+analytic|analytics\b|sql\b|data.driven|data\s+science|data\s+strategy/i },
         { label: 'product strategy',
           re: /product\s+strateg|go.to.market|\bgtm\b|strategic\s+direction|product\s+vision/i },
-        { label: 'early stage startup environments',
+        { label: 'early-stage startup environments',
           re: /early.stage|seed\s+stage|series\s+[ab]\b|scrappy\b|zero.to.one|founding\s+team/i },
-        { label: 'enterprise or large org complexity',
+        { label: 'enterprise or large-org complexity',
           re: /enterprise\b|fortune\s+500|large.scale\s+org|complex\s+stakeholder|matrix\s+org/i },
         { label: 'technical leadership',
           re: /technical\s+(lead|leadership|direction|strategy)|tech\s+(lead|strategy)/i },
@@ -27931,13 +26996,13 @@
 
       // ── Admin sections ──────────────────────────────────────────────────────
       const ADMIN_SECTIONS = [
-        { id: 'overview', label: 'Overview', desc: 'Summary of stored roles and data coverage.' },
+        { id: 'overview', label: 'Overview', desc: 'High-level summary of stored roles and data coverage.' },
         { id: 'roles',    label: 'Roles',    desc: 'Admin view of all stored roles. Search, inspect, archive, or restore.' },
         { id: 'radar',    label: 'Radar',    desc: 'Review radar signal data and preference model inputs.' },
-        { id: 'rules',    label: 'Rules',    desc: 'Manage blockers, keyword filters, and scoring weights.' },
-        { id: 'prompts',  label: 'Prompts',  desc: 'View and manage AI prompt templates used across the app.' },
+        { id: 'rules',    label: 'Rules',    desc: 'Manage hard-no rules, keyword filters, and scoring weights.' },
+        { id: 'prompts',  label: 'Prompts',  desc: 'View and version-control AI prompt templates used across the app.' },
         { id: 'stats',    label: 'Stats',    desc: 'Usage statistics, AI cost rollups, and efficiency metrics.' },
-        { id: 'audit',         label: 'Audit',         desc: 'View recent role activity from role_updates.' },
+        { id: 'audit',         label: 'Audit',         desc: 'Read-only view of recent role activity from role_updates.' },
         { id: 'intelligence',  label: 'Intelligence',  desc: 'Outcome patterns and signals from your closed application history.' },
         { id: 'preferences',   label: 'Preferences',   desc: 'Edit your role preferences, blockers, and CV setup.' },
         { id: 'linkedin',      label: 'LinkedIn',      desc: 'Store your LinkedIn session cookie so Rolewise can fetch JDs automatically.' },
@@ -28410,7 +27475,7 @@ Focus on signal over noise. Only include patterns that appear in at least 3 deci
             id:      'weekly_review',
             name:    'Weekly Review',
             version: 'v1',
-            desc:    'Generates a weekly summary of pipeline health and recommended next actions.',
+            desc:    'Generates a plain-English weekly summary of pipeline health and recommended next actions.',
             text:
 `You are helping a job seeker understand the current state of their application pipeline.
 
@@ -29091,7 +28156,7 @@ If a field cannot be determined from the message, return null for that field.`,
           <div style="margin:20px 0 6px;">
             <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">
               ${hasCookie
-                ? `<span style="color:var(--green,#22c55e);">✓ Session active</span>. Last 6 chars: <code>${masked.slice(-6)}</code>`
+                ? `<span style="color:var(--green,#22c55e);">✓ Session active</span> — last 6 chars: <code>${masked.slice(-6)}</code>`
                 : `<span style="color:var(--text-muted);">No session set.</span> Paste jobs will ask you to add this.`}
             </div>
             <label style="font-size:12.5px;font-weight:500;display:block;margin-bottom:6px;">li_at cookie value</label>
@@ -31227,7 +30292,7 @@ If a field cannot be determined from the message, return null for that field.`,
           const _urlEl = document.getElementById('add-url');
           if (_urlEl && !_urlEl.value.trim()) _urlEl.value = pasted.trim();
           _showLinkedInFetchBar(true);
-          if (_liStatus) _liStatus.textContent = 'LinkedIn URL detected. Click Fetch JD to load it.';
+          if (_liStatus) _liStatus.textContent = 'LinkedIn URL detected — click Fetch JD to load it.';
         }
       });
     }

@@ -5,9 +5,9 @@
 // Uses global esc() from app.js (loaded in the same page context).
 //
 // renderDecisionBlock(signals, viability, narrative, output)
-//   → { html, hasBreaks, topSignals, cvPlaceholderHtml }
+//   → { html, hasBreaks, topSignals, rawTopSignals, rawPositiveInCard, claritySignals, cvPlaceholderHtml }
 //
-// renderMatchBreak(signals, hasBreaks, topSignals)
+// renderMatchBreak(signals, hasBreaks, rawTopSignals, rawPositiveInCard)
 //   → string (HTML or empty)
 
 function renderDecisionBlock(signals, viability, narrative, output) {
@@ -34,7 +34,7 @@ function renderDecisionBlock(signals, viability, narrative, output) {
     // Breaks: the signals already explain what's wrong. The one-liner
     // should add complementary context, not repeat the lead signal.
     if (viability.hasCoding) {
-      oneLiner = 'This role requires production-level coding.';
+      oneLiner = 'This role requires production coding.';
     } else if (signals.breaks.length >= 2) {
       oneLiner = 'Multiple conflicts with your saved preferences.';
     } else if (viability.isHardNo && output.hard_no_reason) {
@@ -92,7 +92,7 @@ function renderDecisionBlock(signals, viability, narrative, output) {
 
   // ── Card state ────────────────────────────────────────────────────
   var icon  = hasBreaks ? '\u2715' : '\u2713';
-  var title = hasBreaks ? 'Not viable for you' : 'Worth exploring';
+  var title = 'Fit reality';
   var mod   = hasBreaks ? 'rw-decision-block--not-viable' : 'rw-decision-block--worth';
   var cvPlaceholderHtml = hasBreaks ? '' :
     '<div class="rw-decision-block-cv" id="rw-fa-cv-placeholder">Loading recommendation\u2026</div>';
@@ -147,7 +147,7 @@ function renderDecisionBlock(signals, viability, narrative, output) {
     if (l === 'remote role') {
       var wms = Array.isArray(up.work_models) ? up.work_models : [];
       if (wms.some(function(m) { return m.toLowerCase() === 'remote'; })) {
-        return text + ' \u2014 matches your preference';
+        return text + '. Matches your preference';
       }
     }
     // Compensation within range
@@ -156,7 +156,7 @@ function renderDecisionBlock(signals, viability, narrative, output) {
       if (salMatch) {
         var v = parseFloat(salMatch[1]);
         if (v < 1000) v *= 1000;
-        if (v >= up.salary_min) return text + ' \u2014 within your range';
+        if (v >= up.salary_min) return text + '. Within your range';
       }
     }
     // Company stage — all 6 types, annotate ideal or open-to
@@ -175,29 +175,29 @@ function renderDecisionBlock(signals, viability, narrative, output) {
         for (var _ai = 0; _ai < up.company_stages.length; _ai++) {
           if (up.company_stages[_ai].stage === _csKey) { _csPref = up.company_stages[_ai]; break; }
         }
-        if (_csPref && _csPref.strength === 'ideal') return text + ' \u2014 matches your preference';
-        if (_csPref && _csPref.strength === 'open') return text + ' \u2014 you\u2019re open to this';
+        if (_csPref && _csPref.strength === 'ideal') return text + '. Matches your preference';
+        if (_csPref && _csPref.strength === 'open') return text + '. You\u2019re open to this';
       }
     }
     // Employment type match
     if (Array.isArray(up.employment_types) && up.employment_types.length > 0) {
       var _etLower = up.employment_types.map(function(s) { return s.toLowerCase(); });
       if (l === 'permanent' || l === 'contract' || l === 'freelance') {
-        if (_etLower.indexOf(l) >= 0) return text + ' \u2014 matches your preference';
+        if (_etLower.indexOf(l) >= 0) return text + '. Matches your preference';
       }
     }
     // Product maturity
     if (Array.isArray(up.product_maturity) && up.product_maturity.length > 0) {
       if (l === 'building new product') {
-        if (up.product_maturity.indexOf('building') >= 0) return text + ' \u2014 matches your preference';
+        if (up.product_maturity.indexOf('building') >= 0) return text + '. Matches your preference';
       }
       if (l.startsWith('iterating on existing')) {
-        if (up.product_maturity.indexOf('scaling') >= 0) return text + ' \u2014 matches your preference';
-        if (up.product_maturity.indexOf('mature') >= 0) return text + ' \u2014 aligns with your maturity preference';
+        if (up.product_maturity.indexOf('scaling') >= 0) return text + '. Matches your preference';
+        if (up.product_maturity.indexOf('mature') >= 0) return text + '. Aligns with your maturity preference';
       }
       if (l.startsWith('mix of new and existing')) {
         if (up.product_maturity.indexOf('building') >= 0 || up.product_maturity.indexOf('scaling') >= 0) {
-          return text + ' \u2014 matches your preference';
+          return text + '. Matches your preference';
         }
       }
     }
@@ -206,23 +206,52 @@ function renderDecisionBlock(signals, viability, narrative, output) {
 
   // Actionable clarity: enrich known structural items with guidance.
   function _enrichClarity(text) {
-    if (text === 'Salary not disclosed') return text + ' \u2014 worth clarifying early';
-    if (text === 'Work model not stated') return text + ' \u2014 confirm before applying';
-    if (text === 'Product scope unclear') return text + ' \u2014 worth clarifying ownership';
+    if (text === 'Salary not disclosed') return text + '. Worth clarifying early';
+    if (text === 'Work model not stated') return text + '. Confirm before applying';
+    if (text === 'Product scope unclear') return text + '. Worth clarifying ownership';
     // Product maturity mismatches (classified as NEEDS_CLARITY by signals.js)
     var _l = text.toLowerCase();
     if (_l === 'building new product' || _l.startsWith('iterating on existing') || _l.startsWith('mix of new and existing')) {
-      return text + ' \u2014 outside your usual maturity preference';
+      return text + '. Outside your usual maturity preference';
     }
     return text;
   }
 
-  var topSignals = hasBreaks
+  var _rawTopSignals = hasBreaks
     ? _prioritiseBreaks(signals.breaks.map(function(s) { return _shortenBullet(s.text); })).slice(0, 4)
-    : _prioritise(signals.positive.map(function(s) { return s.text; })).slice(0, 4)
-        .map(_annotate);
-  var topClarity = signals.clarity.map(function(s) { return s.text; }).slice(0, 2)
+    : _prioritise(signals.positive.map(function(s) { return s.text; })).slice(0, 4);
+  var topSignals = hasBreaks ? _rawTopSignals : _rawTopSignals.map(_annotate);
+
+  // When there are breaks, also gather positive signals for the card's
+  // "Worth exploring" sub-section so all decision signals live in one place.
+  var _positiveInCard = hasBreaks
+    ? _prioritise(signals.positive.map(function(s) { return s.text; })).slice(0, 4).map(_annotate)
+    : [];
+
+  // ── Merge clarity + narrative risks into unified "Risks & unknowns" ─
+  // "Needs clarity" is removed as a standalone section. Its items are
+  // merged with narrative-sourced risks into one block inside the card.
+  var _clarityItems = signals.clarity.map(function(s) { return s.text; }).slice(0, 4)
     .map(_enrichClarity);
+
+  // Pull in narrative stated/inferred risks (deduped against clarity)
+  var _narrRiskItems = [];
+  if (narrative && narrative.risks_and_unknowns) {
+    var _stated = Array.isArray(narrative.risks_and_unknowns.stated)
+      ? narrative.risks_and_unknowns.stated : [];
+    var _inferred = Array.isArray(narrative.risks_and_unknowns.inferred)
+      ? narrative.risks_and_unknowns.inferred : [];
+    var _allNarrRisks = _stated.concat(_inferred);
+    var _clarityLower = new Set(_clarityItems.map(function(c) { return c.toLowerCase().slice(0, 30); }));
+    for (var _nri = 0; _nri < _allNarrRisks.length && _narrRiskItems.length < 3; _nri++) {
+      var _nr = _allNarrRisks[_nri];
+      if (typeof _nr !== 'string') continue;
+      _nr = _nr.replace(/\s*\((Stated|Inferred)\)\s*$/i, '');
+      if (_clarityLower.has(_nr.toLowerCase().slice(0, 30))) continue;
+      _narrRiskItems.push(_nr);
+    }
+  }
+  var allClarity = _clarityItems.concat(_narrRiskItems).slice(0, 5);
 
   // ── Decision block HTML ───────────────────────────────────────────
   var html = '<div class="rw-decision-block ' + mod + '">' +
@@ -230,43 +259,47 @@ function renderDecisionBlock(signals, viability, narrative, output) {
       '<span class="rw-decision-block-icon">' + icon + '</span>' +
       '<span class="rw-decision-block-title">' + title + '</span>' +
     '</div>' +
-    (topSignals.length ? '<ul class="rw-decision-block-reasons">' + topSignals.map(function(r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' : '') +
-    (topClarity.length ? '<div class="rw-decision-block-clarity"><span class="rw-decision-block-clarity-label">Needs clarity</span><ul class="rw-decision-block-reasons rw-decision-block-reasons--clarity">' + topClarity.map(function(r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul></div>' : '') +
+    (oneLiner ? '<p class="rw-decision-block-summary">' + esc(_sanitizeUiText(oneLiner)) + '</p>' : '') +
+    (topSignals.length && !hasBreaks ? '<div class="rw-decision-block-section"><span class="rw-decision-block-section-label">Worth exploring</span><ul class="rw-decision-block-reasons">' + topSignals.map(function(r) { return '<li>' + esc(_sanitizeUiText(r)) + '</li>'; }).join('') + '</ul></div>' : '') +
+    (topSignals.length && hasBreaks ? '<div class="rw-decision-block-section"><span class="rw-decision-block-section-label">Concerns</span><ul class="rw-decision-block-reasons">' + topSignals.map(function(r) { return '<li>' + esc(_sanitizeUiText(r)) + '</li>'; }).join('') + '</ul></div>' : '') +
+    (_positiveInCard.length ? '<div class="rw-decision-block-section"><span class="rw-decision-block-section-label">Worth exploring</span><ul class="rw-decision-block-reasons">' + _positiveInCard.map(function(r) { return '<li>' + esc(_sanitizeUiText(r)) + '</li>'; }).join('') + '</ul></div>' : '') +
+    (allClarity.length ? '<div class="rw-decision-block-section"><span class="rw-decision-block-section-label">Risks &amp; unknowns</span><ul class="rw-decision-block-reasons rw-decision-block-reasons--clarity">' + allClarity.map(function(r) { return '<li>' + esc(_sanitizeUiText(r)) + '</li>'; }).join('') + '</ul></div>' : '') +
     cvPlaceholderHtml +
-    (oneLiner ? '<p class="rw-decision-block-summary">' + esc(oneLiner) + '</p>' : '') +
   '</div>';
 
   return {
     html: html,
     hasBreaks: hasBreaks,
     topSignals: topSignals,
+    rawTopSignals: _rawTopSignals,
+    rawPositiveInCard: hasBreaks ? _prioritise(signals.positive.map(function(s) { return s.text; })).slice(0, 4) : [],
+    claritySignals: allClarity,
     cvPlaceholderHtml: cvPlaceholderHtml,
   };
 }
 
 
-function renderMatchBreak(signals, hasBreaks, topSignals) {
-  // Match: positives not already shown in top card (avoids duplication)
-  // Break: ONLY when hasBreaks (never under "Worth exploring")
-  var topSigSet = new Set(topSignals.map(function(s) { return s.toLowerCase().slice(0, 30); }));
-  var matchItems = hasBreaks
-    ? signals.positive.map(function(s) { return s.text; }).slice(0, 4)
-    : signals.positive.filter(function(s) { return !topSigSet.has(s.text.toLowerCase().slice(0, 30)); })
-                 .map(function(s) { return s.text; }).slice(0, 4);
-  var breakItems = hasBreaks ? signals.breaks.map(function(s) { return s.text; }).slice(0, 4) : [];
+function renderMatchBreak(signals, hasBreaks, rawTopSignals, rawPositiveInCard) {
+  // All primary decision signals (breaks, positives, clarity) now live inside
+  // the decision card. This section only renders OVERFLOW positive signals that
+  // didn't fit inside the card.
+  //
+  // Build de-dup set from all signals already shown in the card:
+  // - rawTopSignals: break signals (when hasBreaks) or positive signals (when !hasBreaks)
+  // - rawPositiveInCard: positive signals shown in the card's "Worth exploring" sub-section (when hasBreaks)
+  var _allCardSigs = rawTopSignals.concat(rawPositiveInCard || []);
+  var cardSigSet = new Set(_allCardSigs.map(function(s) { return s.toLowerCase().slice(0, 30); }));
+  var overflowItems = signals.positive
+    .filter(function(s) { return !cardSigSet.has(s.text.toLowerCase().slice(0, 30)); })
+    .map(function(s) { return s.text; })
+    .slice(0, 4);
 
-  if (!matchItems.length && !breakItems.length) return '';
+  if (!overflowItems.length) return '';
 
   return '<div class="rw-match-break" id="section-match-break">' +
-    (matchItems.length ?
-      '<div class="rw-mb-col rw-mb-col--match">' +
-        '<h3 class="rw-mb-heading rw-mb-heading--match">Where this role matches</h3>' +
-        '<ul class="rw-mb-list">' + matchItems.map(function(b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>' +
-      '</div>' : '') +
-    (breakItems.length ?
-      '<div class="rw-mb-col rw-mb-col--break">' +
-        '<h3 class="rw-mb-heading rw-mb-heading--break">Why this breaks</h3>' +
-        '<ul class="rw-mb-list">' + breakItems.map(function(b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>' +
-      '</div>' : '') +
+    '<div class="rw-mb-col rw-mb-col--match">' +
+      '<h3 class="rw-mb-heading rw-mb-heading--match">Also worth noting</h3>' +
+      '<ul class="rw-mb-list">' + overflowItems.map(function(b) { return '<li>' + esc(_sanitizeUiText(b)) + '</li>'; }).join('') + '</ul>' +
+    '</div>' +
   '</div>';
 }

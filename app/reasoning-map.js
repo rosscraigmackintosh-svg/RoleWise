@@ -298,7 +298,7 @@
 
     // Salary
     if (pd.salary_annual || pd.salary_min || pd.salary_max) {
-      const salLabel = pd.salary_annual || ((pd.currency || '£') + (pd.salary_min || '?') + '–' + (pd.salary_max || '?'));
+      const salLabel = pd.salary_annual || ((pd.currency || '£') + (pd.salary_min || '?') + ' to ' + (pd.salary_max || '?'));
       const salId = _slug('trait', 'salary');
       nodes.push({
         id: salId, type: 'trait',
