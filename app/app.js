@@ -1239,6 +1239,86 @@
       return loc || null;
     }
 
+    // ─── Work-model vs geographic-location split ──────────────────────────────
+    // Free-form role "location" strings often mix work-model tokens (Hybrid,
+    // Remote, On-site) and office-day qualifiers (e.g. "(2 days)") alongside —
+    // or in place of — a real geographic place. This helper decomposes such a
+    // string into:
+    //   - geo:        the geographic portion (city / "city, country"), or null
+    //                 when nothing genuinely geographic remains
+    //   - workModel:  Hybrid / Remote / On site / Flexible / null
+    //   - officeDays: integer (explicitly stated day count) or null
+    //
+    // Important guarantees:
+    //   - Never infers a city. If the input is "Hybrid (2 days)", geo is null.
+    //   - Generic region-only strings ("UK", "Europe", "Global") are not
+    //     considered geographic on their own.
+    //   - Does not mutate input; returns a plain object.
+    //
+    // Kept alongside normaliseLocation because both operate on the same raw
+    // "practical_details.location" shape and are consumed by commute rendering,
+    // risk generation, and mismatch detection.
+    function _parseLocationString(raw) {
+      const out = { geo: null, workModel: null, officeDays: null };
+      if (!raw || typeof raw !== 'string') return out;
+      const s0 = raw.trim();
+      if (!s0 || /^not stated$/i.test(s0) || /^unknown$/i.test(s0)) return out;
+
+      // Explicit day count ("2 days/week", "(3 days)", "2 days in office").
+      // Never inferred — only accepted when numeric.
+      const dayRe = /(\d+)\s*(?:days?|d)\s*(?:\/\s*week|per\s+week|a\s+week|in[- ]?office|on[- ]?site|in\s+the\s+office)?/i;
+      const dayMatch = s0.match(dayRe);
+      if (dayMatch) {
+        const n = parseInt(dayMatch[1], 10);
+        if (n >= 1 && n <= 7) out.officeDays = n;
+      }
+
+      // Work-model token.
+      const wmRe = /\b(remote[- ]?first|hybrid[- ]?first|fully[- ]?remote|fully[- ]?distributed|hybrid|remote|on[- ]?site|onsite|in[- ]?office|wfh|flexible)\b/i;
+      const wmMatch = s0.match(wmRe);
+      if (wmMatch) {
+        const t = wmMatch[1].toLowerCase().replace(/[-\s]/g, '');
+        if (/hybrid/.test(t))                       out.workModel = 'Hybrid';
+        else if (/^remote|wfh|distributed/.test(t)) out.workModel = 'Remote';
+        else if (/onsite|inoffice/.test(t))         out.workModel = 'On site';
+        else if (t === 'flexible')                  out.workModel = 'Flexible';
+      }
+
+      // Geographic portion.
+      // 1) Strip parenthetical qualifiers globally so they don't bleed across
+      //    comma splits (e.g. "London (Hybrid, 2 days)" → "London").
+      const s1 = s0.replace(/\([^)]*\)/g, ' ');
+
+      // 2) Split on strong geographic separators and clean each piece of
+      //    work-model tokens and day phrases. Drop empties and generic regions.
+      const GENERIC_RE = /^(?:uk|united kingdom|us|usa|united states|europe|emea|eu|north america|apac|global|worldwide|anywhere|international)$/i;
+      const stripNoise = function(piece) {
+        return piece
+          .replace(wmRe, ' ')
+          .replace(dayRe, ' ')
+          .replace(/\s+/g, ' ')
+          .replace(/^[^\w]+|[^\w]+$/g, '')
+          .trim();
+      };
+      const cleaned = s1.split(/[,|;\n]/)
+        .map(stripNoise)
+        .filter(function(p) { return p.length >= 2; });
+
+      if (cleaned.length > 0) {
+        // Require at least one piece that isn't a generic region. Otherwise
+        // the input was effectively just "UK" / "Europe" / etc. and is not
+        // specific enough to drive a commute map.
+        const hasRealPlace = cleaned.some(function(p) { return !GENERIC_RE.test(p); });
+        if (hasRealPlace) out.geo = cleaned.join(', ');
+      }
+      return out;
+    }
+
+    // Thin convenience wrapper — used as a boolean guard at render sites.
+    function _hasGeographicLocation(raw) {
+      return !!_parseLocationString(raw).geo;
+    }
+
     // ─── Shared UI helpers ────────────────────────────────────────────────────
 
     // shortenReasonPhrase — trims a friction signal label to a clean 2–4 word phrase.
@@ -18166,13 +18246,37 @@
         // flags the practical dependency clearly.
         // var (not const) — these are consumed by Fit Reality, Risks, QWA,
         // and Tension panel sections in a sibling block scope below.
-        var _locText = _pdObj.location || null;
+        //
+        // IMPORTANT: the raw _pdObj.location field can contain work-model
+        // tokens or day qualifiers (e.g. "Hybrid (2 days)", "Remote (UK)",
+        // "On-site, Manchester"). We decompose it via _parseLocationString and
+        // only ever treat the geographic portion as a place. Without this,
+        // the Commute section would render a map of "Hybrid" and emit copy
+        // like "This role is based in Hybrid".
+        var _parsedLoc = _parseLocationString(_pdObj.location || '');
+        // Geographic portion only — null when the raw value was just a work
+        // model (e.g. "Hybrid", "Remote (UK)"). Used for map + copy.
+        var _locText = _parsedLoc.geo || null;
         var _commuteReality = _pdObj.commute_reality || null;
         var _userLoc = (userProfile && userProfile.location) ? userProfile.location.trim() : '';
+        // Upgrade _wmLabel if the structured work-model field was unknown but
+        // the location string itself revealed the work model.
+        if ((_wmLabel === 'Not stated' || !_wmLabel) && _parsedLoc.workModel) {
+          _wmLabel = _parsedLoc.workModel;
+        }
         var _roleRequiresOffice = (_wmLabel === 'Hybrid' || _wmLabel === 'On site');
-        var _officeFreqKnown = !!_commuteReality;
+        // Office attendance frequency is known iff we have an explicit day
+        // count, not merely because commute_reality produced some string.
+        var _commuteHasDayPhrase = /\b\d+\s*days?\/week\b/i.test(_commuteReality || '') ||
+                                   /daily attendance/i.test(_commuteReality || '');
+        var _officeFreqKnown = !!_parsedLoc.officeDays || _commuteHasDayPhrase;
+        // Office location known separately from frequency — the two are
+        // independent unknowns and must not be collapsed.
+        var _officeLocationKnown = !!_locText;
 
-        // Simple city-level mismatch: compare first city token, case-insensitive
+        // Simple city-level mismatch: compare first city token, case-insensitive.
+        // Use the geographic portion only — never compare a work-model token
+        // ("Hybrid") against the user's city.
         var _cityOf = function(s) { return (s || '').split(/[,|]/)[0].replace(/\s*Area\s*$/i, '').trim().toLowerCase(); };
         var _userCity = _cityOf(_userLoc);
         var _roleCity = _cityOf(_locText);
@@ -18190,15 +18294,32 @@
           if (_wmLabel === 'Remote') {
             // Remote roles: no Commute section rendered at all.
           } else if (_locText) {
+            // _locText is already the geographic portion only (see _parsedLoc
+            // above). If nothing geographic could be extracted — e.g. the raw
+            // field was "Hybrid (2 days)" or "Remote (UK)" — we fall straight
+            // through and render no Commute section. No fake map, no
+            // "based in Hybrid" copy, no invented commute estimate.
+
             // ── Build static copy (sentence 1: location + work model) ──
             const _commParts = [];
-            const _dayInfo = (_commuteReality || '').match(/(\d\s*days?\/week)/);
+            // Prefer an explicit day count parsed from either commute_reality
+            // or the location string itself. Stored as a plain phrase so the
+            // copy reads naturally.
+            let _dayPhrase = null;
+            const _crDayMatch = (_commuteReality || '').match(/(\d+)\s*days?\/week/i);
+            if (_crDayMatch) {
+              const _n = parseInt(_crDayMatch[1], 10);
+              _dayPhrase = `${_n} day${_n === 1 ? '' : 's'}/week`;
+            } else if (_parsedLoc.officeDays) {
+              const _n = _parsedLoc.officeDays;
+              _dayPhrase = `${_n} day${_n === 1 ? '' : 's'}/week`;
+            }
 
             if (_wmLabel === 'Hybrid') {
-              _commParts.push(_dayInfo
-                ? `This role is based in ${_locText} and expects hybrid working, ${_dayInfo[1]} in the office.`
+              _commParts.push(_dayPhrase
+                ? `This role is based in ${_locText} and expects hybrid working, ${_dayPhrase} in the office.`
                 : `This role is based in ${_locText} and expects hybrid working.`);
-              if (!_dayInfo) _commParts.push('Office frequency is not specified.');
+              if (!_dayPhrase) _commParts.push('Office frequency is not specified.');
             } else if (_wmLabel === 'On site') {
               _commParts.push(`This role requires daily office presence in ${_locText}.`);
             } else if (_wmLabel !== 'Not stated') {
@@ -18676,18 +18797,39 @@
             // Populated after unified classification pass from NEEDS_CLARITY signals
             _risksHtml = '';
           }
-          // Append commute-specific risk when office frequency is unknown and
-          // there is a location mismatch. Avoids repeating the Commute section
-          // detail — just flags the dependency as a risk.
+          // Append commute-specific risks. Two independent unknowns, handled
+          // separately so we never claim "frequency unknown" when it is in
+          // fact known (e.g. "Hybrid (2 days)" — days known, place unknown):
+          //   - frequency unknown  → attendance days aren't stated
+          //   - location unknown   → work model implies office but no place
+          // Both are gated on _isPracticalConstraint for the frequency case
+          // (user has a location + role requires office + cities differ). The
+          // location-unknown case doesn't require a user location — if the
+          // role requires an office at an unknown place, that's always a risk.
+          const _commuteRiskBullets = [];
           if (_isPracticalConstraint && !_officeFreqKnown) {
-            const _commuteRisk = `Office attendance frequency is not stated. This is important given the distance from ${_userLoc || 'your location'}.`;
-            _risksHtml += `<ul class="rw-doc-bullets"><li>${esc(_commuteRisk)}</li></ul>`;
+            _commuteRiskBullets.push(
+              `Office attendance frequency is not stated. This is important given the distance from ${_userLoc || 'your location'}.`
+            );
+          }
+          if (_roleRequiresOffice && !_officeLocationKnown) {
+            _commuteRiskBullets.push(
+              'Office location is not stated. The role expects office attendance but no place is given.'
+            );
+          }
+          if (_commuteRiskBullets.length > 0) {
+            _risksHtml += `<ul class="rw-doc-bullets">${_commuteRiskBullets.map(function(t) { return `<li>${esc(t)}</li>`; }).join('')}</ul>`;
           }
 
           // 7. Candidate match (personalisation section)
           // 7. Questions worth asking
           const _commuteQ = 'How many days per week are required in the office?';
-          const _shouldInjectCommuteQ = _isPracticalConstraint && !_officeFreqKnown;
+          // Inject the day-count question when the frequency is unknown and
+          // the user has a practical location mismatch, OR when the role
+          // clearly expects an office but no place has been given (in which
+          // case the question is still worth asking to surface both unknowns).
+          const _shouldInjectCommuteQ = (_isPracticalConstraint && !_officeFreqKnown) ||
+                                        (_roleRequiresOffice && !_officeLocationKnown && !_officeFreqKnown);
           let _qwaHtml = '';
           if (_narr?.questions_worth_asking) {
             let _nqwa = Array.isArray(_narr.questions_worth_asking)
@@ -19111,9 +19253,11 @@
               return (sen && sen.toLowerCase() !== 'not stated') ? sen : null;
             }
             if (dim === 'location') {
-              const loc = (_pd.location || '').trim();
-              if (!loc || loc.toLowerCase() === 'not stated') return null;
-              return loc.split(/[,|]/)[0].replace(/\s*Area\s*$/i, '').trim() || null;
+              // Use only the geographic portion, never work-model tokens.
+              // e.g. "Hybrid (2 days)" → null; "On-site, Manchester" → "Manchester".
+              const geo = _parseLocationString(_pd.location || '').geo;
+              if (!geo) return null;
+              return geo.split(/[,|]/)[0].replace(/\s*Area\s*$/i, '').trim() || null;
             }
             return null;
           };
@@ -21749,10 +21893,22 @@
     function _computeCommuteReality(pd) {
       if (!pd) return pd;
 
-      const location  = (pd.location     || '').trim();
-      const workModel = (pd.remote_model  || '').trim();
+      const rawLocation = (pd.location || '').trim();
 
-      const hasLocation = location && location !== 'Not stated';
+      // Decompose raw location into (geo, workModel, officeDays). Without this
+      // step, strings like "Hybrid (2 days)" would be treated as a place —
+      // producing fake commute copy like "based in Hybrid".
+      const _parsed = _parseLocationString(rawLocation);
+
+      // remote_model is the primary work-model source. If it's missing or
+      // "Not stated", fall back to the work-model token embedded in the
+      // location string (never the other way round).
+      let workModel = (pd.remote_model || '').trim();
+      if ((!workModel || /^not stated$/i.test(workModel) || /^unknown$/i.test(workModel)) && _parsed.workModel) {
+        workModel = _parsed.workModel;
+      }
+
+      const hasLocation = !!_parsed.geo;
       const wmLower     = workModel.toLowerCase();
 
       // ── Classify work model ──────────────────────────────────────────────
@@ -21762,20 +21918,16 @@
                         !isRemote;
       const isOnsite  = /\bon[- ]?site\b|\bin[- ]?office\b/i.test(wmLower) && !isHybrid && !isRemote;
 
-      // ── Extract city name from location ──────────────────────────────────
-      // Locations come as "London, United Kingdom", "London Area", "London, City of London" etc.
-      const extractCity = (loc) => {
-        if (!loc || loc === 'Not stated') return null;
-        // "London Area, United Kingdom" → "London"
-        // "London, United Kingdom" → "London"
-        // "London, City of London" → "London"
-        // "Manchester, United Kingdom" → "Manchester"
-        const parts = loc.split(/[,|]/);
+      // ── Extract city name from the parsed geographic portion only ────────
+      // Never reads work-model tokens or day phrases as a place.
+      const extractCity = (geo) => {
+        if (!geo) return null;
+        const parts = geo.split(/[,|]/);
         const city = (parts[0] || '').replace(/\s*Area\s*$/i, '').trim();
         return city.length >= 2 ? city : null;
       };
 
-      const city = extractCity(location);
+      const city = extractCity(_parsed.geo);
 
       // ── Determine commute reality string ─────────────────────────────────
 
@@ -21787,10 +21939,12 @@
 
       // 2. Hybrid with known city
       if (isHybrid && city) {
-        // Only show day count if explicitly stated — NEVER fall back to invented "regular" frequency
+        // Only show day count if explicitly stated — NEVER fall back to invented "regular" frequency.
+        // Accept either a wmLower day phrase or the officeDays parsed from the location string itself.
         const dayMatch = wmLower.match(/(\d)\s*(?:days?|x)\s*(?:per\s+week|\/\s*week|in[- ]?office|on[- ]?site)/);
-        if (dayMatch) {
-          const dayPhrase = `${dayMatch[1]} day${dayMatch[1] === '1' ? '' : 's'}/week`;
+        const dayN = (dayMatch && parseInt(dayMatch[1], 10)) || _parsed.officeDays || null;
+        if (dayN) {
+          const dayPhrase = `${dayN} day${dayN === 1 ? '' : 's'}/week`;
           pd.commute_reality = `Hybrid in ${city}, ${dayPhrase} in the office.`;
         } else {
           pd.commute_reality = `Hybrid in ${city}. Office frequency not specified.`;
