@@ -14,3 +14,5 @@ node_modules/
 
 # Claude worktrees (temporary working directories)
 .claude/worktrees/
+
+*conflicted copy*
