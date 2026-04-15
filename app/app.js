@@ -3246,7 +3246,7 @@
 
       if (!filtered.length) {
         el.innerHTML = !roles.length
-          ? `<div class="state-msg">No roles yet.<br><span style="font-size:12px;color:var(--text-light);line-height:1.6;">Paste a job description in Add JD to analyse your first role.</span></div>`
+          ? `<div class="state-msg">No roles yet.<br><span style="font-size:12px;color:var(--text-light);line-height:1.6;">Click + Add role to analyse your first job description.</span></div>`
           : searchQ
             ? '<div class="state-msg">No matching roles.</div>'
             : '<div class="state-msg">No roles match this filter.</div>';
