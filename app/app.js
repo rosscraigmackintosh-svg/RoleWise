@@ -77,6 +77,37 @@
       return db.from('roles').update(patch).eq('id', id);
     }
 
+    // ── Shared work-model + salary-missing helpers ─────────────────────────
+    // Display labels for canonical work_model values. Used by the sticky
+    // header and role-header views. Callers fall back to a plain capitalize
+    // for unknown values (e.g. `WORK_MODEL_LABELS[v] || cap(v)`).
+    const WORK_MODEL_LABELS = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On site' };
+
+    // Normalise a remote_model / work_model string to one of:
+    //   'remote' | 'hybrid' | 'onsite' | null
+    // Returns null for falsy or unrecognised input. Mirrors the inline
+    // _workModelMap pattern previously duplicated in the add-role and import
+    // paths byte-identically (lowercase lookup, null fallback, throws on
+    // non-string truthy input — same as the original `.toLowerCase()` call).
+    function normaliseWorkModel(value) {
+      if (!value) return null;
+      const map = { remote: 'remote', hybrid: 'hybrid', 'on-site': 'onsite', onsite: 'onsite' };
+      return map[value.toLowerCase()] || null;
+    }
+
+    // Predicate / regex for "salary not actually stated in the JD".
+    // SALARY_MISSING_RE matches the three canonical strings case-insensitively
+    // (provided for callers that need a permissive regex match).
+    // isSalaryMissing uses strict equality to mirror the inline `===` checks
+    // at the call sites that were consolidated, so behaviour is byte-identical.
+    const SALARY_MISSING_RE = /^(?:not stated|not disclosed|mentioned but not specified)$/i;
+    function isSalaryMissing(value) {
+      if (!value) return true;
+      return value === 'Not stated'
+          || value === 'Not disclosed'
+          || value === 'Mentioned but not specified';
+    }
+
     // Lazy-load reasoning-map.js (~124 KB) on first invocation. The script is an
     // IIFE that writes window.openReasoningMap when it loads, so we inject a
     // <script> tag, await its `load` event, then call through.
@@ -2038,8 +2069,7 @@
       const parts = [];
       if (role.location_text) parts.push(esc(role.location_text));
       if (role.work_model && role.work_model !== 'unknown') {
-        const _shdWmMap = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On site' };
-        const _shdWmLabel = _shdWmMap[role.work_model] || (role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1));
+        const _shdWmLabel = WORK_MODEL_LABELS[role.work_model] || (role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1));
         parts.push(esc(_shdWmLabel));
       }
       if (role.salary_text_raw) parts.push(esc(role.salary_text_raw));
@@ -2110,12 +2140,10 @@
       const _metaParts = [];
       if (role.location_text) {
         const _wmRaw   = role.work_model && role.work_model !== 'unknown' ? role.work_model : null;
-        const _rhWmMap = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On site' };
-        const _wmLabel = _wmRaw ? (_rhWmMap[_wmRaw] || (_wmRaw.charAt(0).toUpperCase() + _wmRaw.slice(1))) : null;
+        const _wmLabel = _wmRaw ? (WORK_MODEL_LABELS[_wmRaw] || (_wmRaw.charAt(0).toUpperCase() + _wmRaw.slice(1))) : null;
         _metaParts.push(esc(_wmLabel ? `${role.location_text} (${_wmLabel})` : role.location_text));
       } else if (role.work_model && role.work_model !== 'unknown') {
-        const _rhWmMap2 = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On site' };
-        _metaParts.push(esc(_rhWmMap2[role.work_model] || (role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1))));
+        _metaParts.push(esc(WORK_MODEL_LABELS[role.work_model] || (role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1))));
       }
       if (role.engagement_type && role.engagement_type !== 'Unknown') {
         _metaParts.push(esc(role.engagement_type));
@@ -11522,7 +11550,7 @@
                   const _noSalary = _analysed.filter(r => {
                     const fo = r.analysis?.full_output || r.latest_match_output;
                     const pd = fo?.practical_details;
-                    return !pd?.salary_annual || pd.salary_annual === 'Not stated' || pd.salary_annual === 'Not disclosed' || pd.salary_annual === 'Mentioned but not specified';
+                    return isSalaryMissing(pd?.salary_annual);
                   }).length;
                   if (_noSalary >= 2) {
                     _sigs.push(`Salary information absent from ${_noSalary} of ${_analysed.length} analysed roles`);
@@ -13861,8 +13889,7 @@
           const _title   = (_fetchedMeta && _fetchedMeta.title)   || _meta.role_title   || null;
           const _location= (_fetchedMeta && _fetchedMeta.location)|| _meta.location     || null;
           const _jobUrl  = url || _meta.job_url || null;
-          const _workModelMap = { remote: 'remote', hybrid: 'hybrid', 'on-site': 'onsite', onsite: 'onsite' };
-          const _workModel = _meta.remote_model ? (_workModelMap[_meta.remote_model.toLowerCase()] || null) : null;
+          const _workModel = normaliseWorkModel(_meta.remote_model);
           const _salary  = _meta.salary_annual || null;
           const _engType = (typeof _detectEngagementType === 'function') ? _detectEngagementType(jd_raw || jd) : null;
           const _ir35    = (typeof _detectIr35Status === 'function') ? _detectIr35Status(jd_raw || jd, _engType) : null;
@@ -14206,8 +14233,7 @@
         const _source    = document.getElementById('add-source').value.trim()                           || null;
 
         // Map extracted remote_model to work_model values the app uses
-        const _workModelMap = { remote: 'remote', hybrid: 'hybrid', 'on-site': 'onsite', onsite: 'onsite' };
-        const _workModel = _meta.remote_model ? (_workModelMap[_meta.remote_model.toLowerCase()] || null) : null;
+        const _workModel = normaliseWorkModel(_meta.remote_model);
         // Salary: prefer cleaned annual string; fallback to raw salary mention
         const _salary = _meta.salary_annual || null;
         // Engagement type: manual dropdown > auto-detected from JD text > null (Unknown)
@@ -20009,7 +20035,7 @@
         const salaryAnnual   = pd.salary_annual  || 'Not stated';
         const empType        = pd.employment_type || null;
         const isContract     = !!(empType && /contract/i.test(empType));
-        const isSalaryKnown  = salaryAnnual !== 'Not stated' && salaryAnnual !== 'Not disclosed' && salaryAnnual !== 'Mentioned but not specified';
+        const isSalaryKnown  = !isSalaryMissing(salaryAnnual);
 
         if (!isSalaryKnown) {
           return _lens('economics', 'Economic reality', 'negative', 'Not disclosed');
