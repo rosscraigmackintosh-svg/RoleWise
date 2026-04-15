@@ -68,6 +68,15 @@
       return (err) => { try { console.warn('[swallow:' + label + ']', err); } catch (_) {} };
     }
 
+    // Thin wrapper for the most-repeated DB pattern in this file:
+    //   db.from('roles').update(patch).eq('id', id)
+    // Returns the supabase query-builder unchanged, so all existing chaining
+    // (`await`, `const { error } = await`, `.then()`, `.catch()`, fire-and-forget)
+    // keeps working byte-identically.
+    function updateRole(id, patch) {
+      return db.from('roles').update(patch).eq('id', id);
+    }
+
     // Lazy-load reasoning-map.js (~124 KB) on first invocation. The script is an
     // IIFE that writes window.openReasoningMap when it loads, so we inject a
     // <script> tag, await its `load` event, then call through.
@@ -4319,11 +4328,11 @@
     // Save outcome: update roles, log event, generate and persist learnings.
     async function saveOutcome(roleId, outcomeState, outcomeReason, role) {
       const now = new Date().toISOString();
-      const { error } = await db.from('roles').update({
+      const { error } = await updateRole(roleId, {
         outcome_state:  outcomeState,
         outcome_reason: outcomeReason || null,
         outcome_at:     now,
-      }).eq('id', roleId);
+      });
       if (error) throw error;
 
       // Log outcome in role_updates so it appears in History
@@ -5326,7 +5335,7 @@
     async function _wsStoreDecisionReason(role, decisionType, reason, timelineEl) {
       // Keep roles.outcome_reason as the latest summary (existing behaviour unchanged)
       try {
-        await db.from('roles').update({ outcome_reason: reason }).eq('id', role.id);
+        await updateRole(role.id, { outcome_reason: reason });
         allRoles = allRoles.map(r => r.id === role.id ? { ...r, outcome_reason: reason } : r);
         role.outcome_reason = reason;
       } catch (_) {}
@@ -5470,7 +5479,7 @@
           reply = "No problem, you can let me know where you found it later.";
         } else if (t.length < 80) {
           // Treat as the actual source name (e.g. "LinkedIn", "a recruiter")
-          db.from('roles').update({ source: text.trim() }).eq('id', role.id).catch(swallow('role'));
+          updateRole(role.id, { source: text.trim() }).catch(swallow('role'));
           role.source = text.trim();
           const srcLabel = text.trim().charAt(0).toUpperCase() + text.trim().slice(1);
           reply = `Got it, noted as "${srcLabel}".`;
@@ -6861,7 +6870,7 @@
         // For existing (saved) roles: update metadata fields in the background.
         // For temp roles: skip — the role doesn't exist in DB yet.
         if (!role._isTemp) {
-          db.from('roles').update(_updatePayload).eq('id', role.id)
+          updateRole(role.id, _updatePayload)
             .then(({ error }) => {
               if (!error) {
                 Object.assign(role, _updatePayload);
@@ -7243,15 +7252,15 @@
           const _radarInput = { ...role, latest_match_output: analysis };
           const _radarResult = _computeRadarMatchKey(_radarInput);
           if (_radarResult.radar_match_key) {
-            db.from('roles').update({
+            updateRole(role.id, {
               radar_match_key:        _radarResult.radar_match_key,
               radar_match_confidence: _radarResult.radar_match_confidence,
               radar_match_basis:      _radarResult.radar_match_basis,
-            }).eq('id', role.id).then(() => {
+            }).then(() => {
               role.radar_match_key        = _radarResult.radar_match_key;
               role.radar_match_confidence = _radarResult.radar_match_confidence;
               role.radar_match_basis      = _radarResult.radar_match_basis;
-            }).catch(swallow('unknown'));
+            }).catch(swallow('updateRole'));
           }
         } catch (_radarErr) { console.error('[_doSave] radar key computation failed (non-blocking) —', _radarErr); }
 
@@ -7432,11 +7441,11 @@
               if (!role.title    && _result.title)         _meta.title    = _result.title;
               if (!role.location && _result.location)      _meta.location = _result.location;
               if (Object.keys(_meta).length) {
-                db.from('roles').update(_meta).eq('id', role.id).then(() => {
+                updateRole(role.id, _meta).then(() => {
                   Object.assign(role, _meta);
                   const _arEntry = allRoles.find(r => r.id === role.id);
                   if (_arEntry && _arEntry !== role) Object.assign(_arEntry, _meta);
-                }).catch(swallow('unknown'));
+                }).catch(swallow('updateRole'));
               }
             } else {
               role.job_url = text;
@@ -7472,12 +7481,12 @@
               };
               if (role._liMeta.company_meta) role._liCompanyMeta = role._liMeta.company_meta;
               if (!role._isTemp) {
-                db.from('roles').update({ source_meta: role._liMeta }).eq('id', role.id).then(() => {
+                updateRole(role.id, { source_meta: role._liMeta }).then(() => {
                   role.source_meta = role._liMeta;
                   const _arE = allRoles.find(r => r.id === role.id);
                   if (_arE && _arE !== role) _arE.source_meta = role._liMeta;
                   _ensureCompanyLogo(role);
-                }).catch(swallow('unknown'));
+                }).catch(swallow('updateRole'));
               }
               // LinkedIn truncation warning
               if (!_isLinkedInJDComplete(_desc)) {
@@ -7498,12 +7507,12 @@
                 salary_text:     _result.salary || null,
               };
               if (!role._isTemp) {
-                db.from('roles').update({ source_meta: _srcMeta }).eq('id', role.id).then(() => {
+                updateRole(role.id, { source_meta: _srcMeta }).then(() => {
                   role.source_meta = _srcMeta;
                   const _arE = allRoles.find(r => r.id === role.id);
                   if (_arE && _arE !== role) _arE.source_meta = _srcMeta;
                   _ensureCompanyLogo(role);
-                }).catch(swallow('unknown'));
+                }).catch(swallow('updateRole'));
               } else {
                 role.source_meta = _srcMeta;
               }
@@ -7539,7 +7548,7 @@
           // Persist to DB only for real (saved) roles
           wsAddInsight(role.id, 'signal', `Company/role link: ${text}`, 'extraction').catch(swallow('role'));
           if (!role.job_url) {
-            db.from('roles').update({ job_url: text }).eq('id', role.id).then(() => {
+            updateRole(role.id, { job_url: text }).then(() => {
               role.job_url = text; // patch local object
               // Also patch the canonical allRoles entry so any later look-ups see the URL
               const _arEntry = allRoles.find(r => r.id === role.id);
@@ -7548,7 +7557,7 @@
               if (role.job_description_raw) {
                 _renderJDSection(role, role.job_description_raw);
               }
-            }).catch(swallow('unknown'));
+            }).catch(swallow('updateRole'));
           }
 
           // Attempt background enrichment for supported ATS sources (Greenhouse / Lever / Ashby)
@@ -7568,8 +7577,8 @@
                 if (!role.source_meta.company_meta) role.source_meta.company_meta = {};
                 role.source_meta.company_meta.logo_url = _enrichLogo;
                 // Fire-and-forget DB persist
-                db.from('roles').update({ source_meta: role.source_meta })
-                  .eq('id', role.id).then(() => {}).catch(swallow('then'));
+                updateRole(role.id, { source_meta: role.source_meta })
+                  .then(() => {}).catch(swallow('updateRole'));
                 // Trigger brand asset creation + FK linking immediately
                 // (non-blocking — resolves logo, upserts brand_assets row, patches visible avatars)
                 _ensureCompanyLogo(role);
@@ -7833,7 +7842,7 @@
 
       // Update allRoles cache + sync DB current_stage column
       allRoles = allRoles.map(r => r.id === role.id ? { ...r, current_stage: detectedStage } : r);
-      db.from('roles').update({ current_stage: detectedStage }).eq('id', role.id).catch(swallow('role'));
+      updateRole(role.id, { current_stage: detectedStage }).catch(swallow('role'));
 
       // Update stage display text in the right rail if visible
       const stageDisplay = document.getElementById('rail-stage-display');
@@ -8486,7 +8495,7 @@
         if (Object.keys(updates).length === 0) { card.remove(); return; }
 
         try {
-          await db.from('roles').update(updates).eq('id', role.id);
+          await updateRole(role.id, updates);
           Object.assign(role, updates); // patch local object so briefing reflects merge
 
           // Mark enrichment row as merged (best-effort, non-blocking)
@@ -11916,11 +11925,11 @@
       if (msgEl) msgEl.textContent = 'Saving…';
 
       try {
-        const { error } = await db.from('roles').update({
+        const { error } = await updateRole(role.id, {
           fit_assessment: fitAssessment || null,
           fit_reasons:    fitReasons && fitReasons.length > 0 ? fitReasons : null,
           fit_assessed_at: new Date().toISOString(),
-        }).eq('id', role.id);
+        });
         if (error) throw error;
 
         // Update in-memory role
@@ -12157,7 +12166,7 @@
           confirmEl.innerHTML = '';
           btn.disabled = true;
           try {
-            const { error } = await db.from('roles').update({ archived: true }).eq('id', roleId);
+            const { error } = await updateRole(roleId, { archived: true });
             if (error) throw error;
             insertEvent(roleId, { event_type: 'role_archived', title: 'Archived' });
             allRoles = allRoles.map(r => r.id === roleId ? { ...r, archived: true } : r);
@@ -12375,7 +12384,7 @@
         // ── Workspace: keep current_stage in sync + fire stage event ──────────
         // 1. Keep roles.current_stage column current so _wsBuildPrep always reads
         //    the right value and page refreshes load the correct stage.
-        db.from('roles').update({ current_stage: stageReached }).eq('id', roleId).catch(swallow('db:roles'));
+        updateRole(roleId, { current_stage: stageReached }).catch(swallow('db:roles'));
 
         // 2. Patch local allRoles so _wsBuildPrep sees the new stage without a refetch.
         allRoles = allRoles.map(r => r.id === roleId ? { ...r, current_stage: stageReached } : r);
@@ -12521,7 +12530,7 @@
       if (decision === 'apply')            _roleFields.current_stage  = 'Applied';
       if (decision === 'skip' && opts.reason) _roleFields.outcome_reason = opts.reason;
 
-      await db.from('roles').update(_roleFields).eq('id', role.id);
+      await updateRole(role.id, _roleFields);
       Object.assign(role, _roleFields);
       allRoles = allRoles.map(r => r.id === role.id ? { ...r, ..._roleFields } : r);
 
@@ -12579,7 +12588,7 @@
         if (decision === 'apply')               _revert.current_stage  = _prevCurrentStage;
         if (decision === 'skip' && opts.reason) _revert.outcome_reason = _prevOutcomeReason;
 
-        await db.from('roles').update(_revert).eq('id', role.id).catch(swallow('role'));
+        await updateRole(role.id, _revert).catch(swallow('role'));
         Object.assign(role, _revert);
         allRoles = allRoles.map(r => r.id === role.id ? { ...r, ..._revert } : r);
 
@@ -13045,7 +13054,7 @@
         // Snooze for 7 days — update DB field nudge_snoozed_until
         const _until = new Date(Date.now() + 7 * 86_400_000).toISOString();
         try {
-          await db.from('roles').update({ nudge_snoozed_until: _until }).eq('id', roleId);
+          await updateRole(roleId, { nudge_snoozed_until: _until });
           allRoles = allRoles.map(r =>
             r.id !== roleId ? r : { ...r, nudge_snoozed_until: _until }
           );
@@ -13061,10 +13070,10 @@
       // These are progress states (not terminal), so no reason form needed.
       try {
         const now = new Date().toISOString();
-        const { error } = await db.from('roles').update({
+        const { error } = await updateRole(roleId, {
           outcome_state: action,
           outcome_at:    now,
-        }).eq('id', roleId);
+        });
         if (error) throw error;
 
         await db.from('role_updates').insert({
@@ -13238,11 +13247,11 @@
         const _prevOutcome = (() => { const r = allRoles.find(x => x.id === roleId); return r ? r.outcome_state ?? null : null; })();
 
         const now = new Date().toISOString();
-        const { error } = await db.from('roles').update({
+        const { error } = await updateRole(roleId, {
           outcome_state:  outcomeState,
           outcome_reason: reason || null,
           outcome_at:     now,
-        }).eq('id', roleId);
+        });
         if (error) throw error;
 
         // Record outcome in the timeline — uses event_type='outcome' and dedicated
@@ -13370,12 +13379,12 @@
       if (reopenBtn) { reopenBtn.disabled = true; reopenBtn.textContent = 'Reopening\u2026'; }
 
       try {
-        const { error } = await db.from('roles').update({
+        const { error } = await updateRole(roleId, {
           outcome_state:  null,
           outcome_reason: null,
           outcome_at:     null,
           archived:       false,
-        }).eq('id', roleId);
+        });
         if (error) throw error;
 
         insertEvent(roleId, {
@@ -13412,7 +13421,7 @@
       if (btn) { btn.disabled = true; btn.textContent = 'Restoring\u2026'; }
 
       try {
-        const { error } = await db.from('roles').update({ archived: false }).eq('id', roleId);
+        const { error } = await updateRole(roleId, { archived: false });
         if (error) throw error;
 
         insertEvent(roleId, {
@@ -13890,9 +13899,9 @@
           // ── Existing role: update JD if a new one was provided ────────────
           savedRole = role;
           if (text && text !== role.job_description_raw) {
-            const { error: upErr } = await db.from('roles').update({
+            const { error: upErr } = await updateRole(role.id, {
               job_description_raw: jd_raw,
-            }).eq('id', role.id);
+            });
             if (!upErr) savedRole = { ...role, job_description_raw: jd_raw };
           }
         }
@@ -13919,7 +13928,7 @@
             const _aiTitle = analysis._roleTitle || null;
             if (_aiTitle) { _patch.role_title = _aiTitle; savedRole = { ...savedRole, role_title: _aiTitle }; }
           }
-          if (Object.keys(_patch).length) db.from('roles').update(_patch).eq('id', savedRole.id).catch(swallow('savedRole'));
+          if (Object.keys(_patch).length) updateRole(savedRole.id, _patch).catch(swallow('savedRole'));
         }
 
         // ── Save jd_matches row ──────────────────────────────────────────────
@@ -14319,7 +14328,7 @@
             if (_aiTitle) { _patch.role_title = _aiTitle; role.role_title = _aiTitle; }
           }
           if (Object.keys(_patch).length) {
-            db.from('roles').update(_patch).eq('id', role.id).catch(swallow('role'));
+            updateRole(role.id, _patch).catch(swallow('role'));
           }
         }
 
@@ -14601,7 +14610,7 @@
         const _source         = document.getElementById('edit-source')?.value           || null;
         const _jobUrl         = document.getElementById('edit-job-url')?.value.trim()   || null;
 
-        const { error } = await db.from('roles').update({
+        const { error } = await updateRole(roleId, {
           engagement_type:  _engType,
           ir35_status:      _ir35Status,
           day_rate_text:    _dayRateText,
@@ -14611,7 +14620,7 @@
           work_model:       _workModel,
           source:           _source,
           job_url:          _jobUrl,
-        }).eq('id', roleId);
+        });
         if (error) throw error;
 
         // Update in-memory role object so the UI refreshes without a full reload
@@ -27151,7 +27160,7 @@
 
         document.getElementById('na-save').addEventListener('click', async () => {
           const val = input.value.trim();
-          await db.from('roles').update({ next_action: val || null }).eq('id', role.id);
+          await updateRole(role.id, { next_action: val || null });
           role.next_action = val || null;
           // Update allRoles cache
           const idx = allRoles.findIndex(r => r.id === role.id);
@@ -27164,7 +27173,7 @@
         const clearBtn = document.getElementById('na-clear');
         if (clearBtn) {
           clearBtn.addEventListener('click', async () => {
-            await db.from('roles').update({ next_action: null }).eq('id', role.id);
+            await updateRole(role.id, { next_action: null });
             role.next_action = null;
             const idx = allRoles.findIndex(r => r.id === role.id);
             if (idx !== -1) allRoles[idx].next_action = null;
@@ -28219,7 +28228,7 @@
               if (btn) btn.disabled = true;
               if (msg) msg.textContent = action === 'archive' ? 'Archiving…' : 'Restoring…';
               try {
-                const { error } = await db.from('roles').update({ archived: action === 'archive' }).eq('id', roleId);
+                const { error } = await updateRole(roleId, { archived: action === 'archive' });
                 if (error) throw error;
                 await _loadAdminRoles();
                 await _loadAndRenderDetail(roleId);
