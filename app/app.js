@@ -8756,31 +8756,6 @@
       if (!_ovCards || _ovCards.dataset.lensPanelWired) return;
       _ovCards.dataset.lensPanelWired = '1';
 
-      _ovCards.addEventListener('click', async e => {
-        const btn = e.target.closest('[data-ws-quick]');
-        if (!btn) return;
-        const action = btn.dataset.wsQuick;
-        if (!selectedRoleId) return;
-        const _r = allRoles.find(r => r.id === selectedRoleId);
-        if (!_r || _r._isTemp) return;
-
-        if (btn.dataset.lensBusy) return;
-        btn.dataset.lensBusy = '1';
-        btn.style.opacity = '0.5';
-        try {
-          if (action === 'applied') {
-            // Advance stage to Applied using the same path as the rail stepper
-            await markStage(selectedRoleId, 'applied', 'Applied');
-          } else if (action === 'skipped') {
-            // Mark outcome as Skipped — terminal; role leaves active pipeline
-            await markStage(selectedRoleId, 'skipped', 'Skipped');
-          }
-        } finally {
-          delete btn.dataset.lensBusy;
-          btn.style.opacity = '';
-        }
-      });
-
       // ── JD modal: open / close (RW-TWO-COL-LAYOUT) ───────────────────────
       // RW-REMOVE-MAIN-JD: now loads JD text directly from role data
       // instead of cloning from the (removed) col-jd-section element.
@@ -8807,8 +8782,39 @@
         modal.hidden = true;
         document.body.style.overflow = '';
       }
-      _ovCards.addEventListener('click', e => {
-        // ── Copy role/analysis IDs to clipboard ──
+
+      // ── Single delegated click handler for the lens panel container ──────
+      // Merges the previous two click listeners (data-ws-quick + sidebar/JD/copy)
+      // into one dispatcher. Selectors are disjoint, so branch order does not
+      // change behaviour; original ordering is preserved.
+      _ovCards.addEventListener('click', async e => {
+        // ── Branch 1: ws-quick action buttons (applied / skipped) — async ──
+        const btn = e.target.closest('[data-ws-quick]');
+        if (btn) {
+          const action = btn.dataset.wsQuick;
+          if (!selectedRoleId) return;
+          const _r = allRoles.find(r => r.id === selectedRoleId);
+          if (!_r || _r._isTemp) return;
+
+          if (btn.dataset.lensBusy) return;
+          btn.dataset.lensBusy = '1';
+          btn.style.opacity = '0.5';
+          try {
+            if (action === 'applied') {
+              // Advance stage to Applied using the same path as the rail stepper
+              await markStage(selectedRoleId, 'applied', 'Applied');
+            } else if (action === 'skipped') {
+              // Mark outcome as Skipped — terminal; role leaves active pipeline
+              await markStage(selectedRoleId, 'skipped', 'Skipped');
+            }
+          } finally {
+            delete btn.dataset.lensBusy;
+            btn.style.opacity = '';
+          }
+          return;
+        }
+
+        // ── Branch 2: Copy role/analysis IDs to clipboard ──
         const _copyBtn = e.target.closest('.rh-copy-id');
         if (_copyBtn) {
           const _rid = _copyBtn.dataset.roleId || '';
@@ -8820,10 +8826,13 @@
           }).catch(swallow('unknown'));
           return;
         }
+
+        // ── Branch 3: JD modal open / close ──
         if (e.target.closest('#rw-jd-modal-trigger')) { _rwOpenJdModal(); return; }
         if (e.target.closest('#rw-jd-modal-close'))   { _rwCloseJdModal(); return; }
         if (e.target.closest('#rw-jd-modal-backdrop')){ _rwCloseJdModal(); return; }
-        // ── Edit details + Reasoning Map (RW-SIDEBAR-BUTTONS) ──
+
+        // ── Branch 4: Edit details + Reasoning Map (RW-SIDEBAR-BUTTONS) ──
         if (e.target.closest('#rw-sidebar-edit-details')) {
           const _role = selectedRoleId ? allRoles.find(r => r.id === selectedRoleId) : null;
           if (_role) openEditRoleModal(_role);
@@ -8834,7 +8843,8 @@
           if (_role) loadReasoningMap(_role);
           return;
         }
-        // ── Admin actions (RW-SIDEBAR-ADMIN) — delegated from sidebar buttons ──
+
+        // ── Branch 5: Admin actions (RW-SIDEBAR-ADMIN) — delegated from sidebar buttons ──
         if (e.target.closest('#btn-archive-role')) {
           if (selectedRoleId) archiveRole(selectedRoleId);
           return;
