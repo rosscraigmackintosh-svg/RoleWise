@@ -4465,6 +4465,23 @@
       text-overflow: ellipsis;
     }
 
+    /* ─── Application Response Status badges ───────────────────── */
+    .ars-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+    .ars-active  { background: var(--success-bg); color: var(--success); }
+    .ars-waiting { background: var(--warning-bg); color: var(--warning); }
+    .ars-stale   { background: var(--warning-bg-alt); color: var(--warning); }
+    .ars-ghosted { background: var(--error-bg); color: var(--error); }
+
     /* ─── Mini reason line — up to 2 decision signals ──────────── */
     .inbox-mini-reasons {
       font-size: 11px;
@@ -11520,6 +11537,17 @@
       margin-top: 6px;
     }
 
+    /* Hiring signal badge variants */
+    .ars-interviewing { background: #DBEAFE; color: #1e40af; }
+    .ars-offer        { background: var(--success-bg); color: var(--success); }
+    .ars-accepted     { background: var(--success-bg); color: var(--success); }
+    .ars-rejected     { background: var(--error-bg); color: var(--error); }
+    .ars-ghosted      { background: var(--gray-100); color: var(--gray-500); } /* grey/muted: no response */
+    .ars-withdrew     { background: var(--gray-100); color: var(--gray-500); }
+    .ars-waiting      { background: var(--warning-bg); color: var(--warning); }
+    .ars-stale        { background: var(--warning-bg-alt); color: var(--warning); }
+    .ars-active       { background: var(--success-bg); color: var(--success); } /* responded */
+
     /* ── Role Overview Card Grid ─────────────────────────────────────────────── */
     /*
      * Two-column fixed-order grid for the role overview panel.
@@ -12982,6 +13010,19 @@
       background: var(--accent, #5264b4);
       vertical-align: 0.15em;   /* fine-tuned to sit centrally against 14px cap height */
     }
+
+    /* ── ARS hiring-signal badges: dark mode tint overrides ─────────────── */
+    /* All variants use hardcoded light-mode backgrounds. These use the      */
+    /* utility palette dark swatches (already defined in tokens.css).        */
+    [data-theme="dark"] .ars-active    { background: var(--utility-success-100, #074d31); color: var(--utility-success-700, #75e0a7); }
+    [data-theme="dark"] .ars-waiting   { background: var(--utility-warning-50, #4e1d09); color: var(--utility-warning-700, #fec84b); }
+    [data-theme="dark"] .ars-stale     { background: var(--utility-warning-100, #7a2e0e); color: var(--utility-warning-600, #fdb022); }
+    [data-theme="dark"] .ars-ghosted   { background: var(--utility-gray-100, #22262f); color: var(--utility-gray-600, #94979c); }
+    [data-theme="dark"] .ars-withdrew  { background: var(--utility-gray-100, #22262f); color: var(--utility-gray-600, #94979c); }
+    [data-theme="dark"] .ars-interviewing { background: var(--utility-blue-100, #194185); color: var(--utility-blue-700, #84caff); }
+    [data-theme="dark"] .ars-offer,
+    [data-theme="dark"] .ars-accepted  { background: var(--utility-success-100, #074d31); color: var(--utility-success-700, #75e0a7); }
+    [data-theme="dark"] .ars-rejected  { background: var(--utility-error-100, #7a271a); color: var(--utility-error-700, #fda29b); }
 
     /* ── Stage tags: dark mode tint overrides ────────────────────────────── */
     /* Same issue — all stage-tag variants use hardcoded light tints.        */
