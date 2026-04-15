@@ -28522,10 +28522,7 @@ If a field cannot be determined from the message, return null for that field.`,
           },
         ];
 
-        function _esc(s) {
-          return s == null ? '' : String(s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
+        // _esc inherited from enclosing renderAdminView() scope.
 
         function _renderDetail(prompt) {
           const detail = contentEl.querySelector('.ar-prompts-detail');
@@ -28590,19 +28587,7 @@ If a field cannot be determined from the message, return null for that field.`,
 
       // ── Admin > Radar ───────────────────────────────────────────────────────
       async function _renderAdminRadar(contentEl) {
-        function _esc(s) {
-          return s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
-        function _fmtDate(iso) {
-          if (!iso) return '-';
-          try { return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
-          catch { return iso; }
-        }
-        function _fmtTs(iso) {
-          if (!iso) return '-';
-          try { return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
-          catch { return iso; }
-        }
+        // _esc, _fmtDate, _fmtTs inherited from enclosing renderAdminView() scope.
 
         contentEl.innerHTML = `
           <div class="admin-section-title">Radar</div>
@@ -28779,9 +28764,7 @@ If a field cannot be determined from the message, return null for that field.`,
 
       // ── Admin > Stats ───────────────────────────────────────────────────────
       async function _renderAdminStats(contentEl) {
-        function _esc(s) {
-          return s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
+        // _esc inherited from enclosing renderAdminView() scope.
 
         // Known values from schema CHECK constraints and app conventions.
         // Used to order rows and ensure zero-counts appear rather than being omitted.
