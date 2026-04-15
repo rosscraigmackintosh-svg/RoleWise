@@ -6162,7 +6162,10 @@
       // we don't inject this role's lens into a different role's overview panel.
       if (timelineEl && !timelineEl.isConnected) return;
 
-      const { favoured = [], weaker = [], note = null } = lensData;
+      const { favoured: _rawFavoured = [], weaker: _rawWeaker = [], note = null } = lensData;
+      // Destructuring defaults only fire on `undefined`; coerce explicit nulls to [].
+      const favoured = Array.isArray(_rawFavoured) ? _rawFavoured : [];
+      const weaker   = Array.isArray(_rawWeaker)   ? _rawWeaker   : [];
       if (!favoured.length && !weaker.length) return;
 
       // RW-CMP-PANEL: flat prose format — no chips, no tick-lists
