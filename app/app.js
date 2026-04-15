@@ -62,6 +62,12 @@
       };
     }
 
+    // Silent-promise rejection swallower with a label, so failures show up in
+    // the console instead of disappearing. Replaces bare `.catch(() => {})`.
+    function swallow(label) {
+      return (err) => { try { console.warn('[swallow:' + label + ']', err); } catch (_) {} };
+    }
+
     // ─── Role Workspace: Object Boundaries ───────────────────────────────────
     //
     // GUARD RAIL 1 — Role is the root.
@@ -148,13 +154,13 @@
         const _learningType = decisionType === 'other' ? 'keep_reviewing' : decisionType;
         if (['apply', 'skip', 'keep_reviewing'].includes(_learningType)) {
           // Always record in role_decisions_ext (available for future pattern analysis)
-          _saveCandidateDecisionExt(_decRole, _learningType, { reason, notes }).catch(() => {});
+          _saveCandidateDecisionExt(_decRole, _learningType, { reason, notes }).catch(swallow('_saveCandidateDecisionExt'));
           // Only bump counters for terminal decisions (apply/skip), not keep_reviewing
           if (_learningType !== 'keep_reviewing') {
-            _updateCandidateLearningCounters(_learningType, _decRole, reason).catch(() => {});
+            _updateCandidateLearningCounters(_learningType, _decRole, reason).catch(swallow('_updateCandidateLearningCounters'));
             // Rebuild learned patterns every 5th terminal decision
             if (_candidateLearning && ((_candidateLearning.total_roles_analysed || 0) + 1) % 5 === 0) {
-              _rebuildCandidateLearningPatterns().catch(() => {});
+              _rebuildCandidateLearningPatterns().catch(swallow('_rebuildCandidateLearningPatterns'));
             }
           }
         }
@@ -1875,7 +1881,7 @@
           const r = allRoles.find(r => r.id === roleId);
           if (r) { r.company_logo_asset_id = assetId; r.company_domain = domain; }
         })
-        .catch(() => {});
+        .catch(swallow('unknown'));
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -3787,7 +3793,7 @@
         ref_url:      payload.ref_url || null,
         event_date:   payload.event_date || _today,
         note:         payload.note || null,
-      }).then(() => {}).catch(() => {});
+      }).then(() => {}).catch(swallow('then'));
     }
 
     // Load up to 50 events for a role, ordered by event_date DESC (then created_at for tie-breaking).
@@ -3987,7 +3993,7 @@
         snapshot_type:  snapshotType,
         snapshot_title: snapshotTitle,
         snapshot_data:  snapshotData || {},
-      }).then(() => {}).catch(() => {});
+      }).then(() => {}).catch(swallow('then'));
     }
 
     // Load all snapshots for a role, newest first.
@@ -4266,14 +4272,14 @@
     async function saveLearnings(roleId, texts) {
       if (!roleId || !texts.length) return;
       // Delete old learnings then insert new ones
-      await db.from('role_learnings').delete().eq('role_id', roleId).catch(() => {});
+      await db.from('role_learnings').delete().eq('role_id', roleId).catch(swallow('db:role_learnings'));
       for (const text of texts) {
         await db.from('role_learnings').insert({
           role_id:       roleId,
           learning_text: text,
           source:        'system',
           confidence:    'low',
-        }).catch(() => {});
+        }).catch(swallow('unknown'));
       }
     }
 
@@ -4323,7 +4329,7 @@
       // Append to decision ledger
       const _ledgerType = { skipped: 'skip', withdrew: 'withdraw', offer_accepted: 'accept' }[outcomeState] || 'other';
       await wsAppendDecision(roleId, _ledgerType, outcomeReason || null);
-      wsRefreshDecisionHistory(roleId).catch(() => {});
+      wsRefreshDecisionHistory(roleId).catch(swallow('wsRefreshDecisionHistory'));
 
       // Generate and persist learnings
       const roleForLearning = allRoles.find(r => r.id === roleId) || role;
@@ -4331,10 +4337,10 @@
       await saveLearnings(roleId, texts);
 
       // ── Candidate learning hook (fire-and-forget) ──
-      _saveCandidateOutcomeExt(roleForLearning, outcomeState, outcomeReason).catch(() => {});
-      _updateCandidateLearningOutcome(outcomeState).catch(() => {});
+      _saveCandidateOutcomeExt(roleForLearning, outcomeState, outcomeReason).catch(swallow('_saveCandidateOutcomeExt'));
+      _updateCandidateLearningOutcome(outcomeState).catch(swallow('_updateCandidateLearningOutcome'));
       // Always rebuild patterns after an outcome — outcomes are high-signal
-      _rebuildCandidateLearningPatterns().catch(() => {});
+      _rebuildCandidateLearningPatterns().catch(swallow('_rebuildCandidateLearningPatterns'));
 
       return texts;
     }
@@ -5094,7 +5100,7 @@
       // Apply: append ledger record immediately (no reason prompt for apply)
       if (decision === 'apply') {
         await wsAppendDecision(role.id, 'apply', null);
-        wsRefreshDecisionHistory(role.id).catch(() => {});
+        wsRefreshDecisionHistory(role.id).catch(swallow('role'));
         // Ask which CV was used, then show confidence prompt
         setTimeout(() => {
           _wsRenderCvUsedPrompt(role, timelineEl);
@@ -5213,9 +5219,9 @@
           ? 'Noted, good luck with the application.'
           : 'Saved for further exploration.';
         _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(ackText)}</div>`);
-        if (decision === 'apply') wsAppendDecision(role.id, 'apply', null).catch(() => {});
-        if (decision === 'save')  wsAppendDecision(role.id, 'other', null, 'explore_further').catch(() => {});
-        wsRefreshDecisionHistory(role.id).catch(() => {});
+        if (decision === 'apply') wsAppendDecision(role.id, 'apply', null).catch(swallow('role'));
+        if (decision === 'save')  wsAppendDecision(role.id, 'other', null, 'explore_further').catch(swallow('role'));
+        wsRefreshDecisionHistory(role.id).catch(swallow('role'));
         // Apply: switch to Applied tab, then show CV + confidence prompts
         if (decision === 'apply') {
           _switchToAppliedTab();
@@ -5239,8 +5245,8 @@
         if (reason) {
           await _wsStoreDecisionReason(role, 'skip', reason, timelineEl);
         } else {
-          wsAppendDecision(role.id, 'skip', null).catch(() => {});
-          wsRefreshDecisionHistory(role.id).catch(() => {});
+          wsAppendDecision(role.id, 'skip', null).catch(swallow('role'));
+          wsRefreshDecisionHistory(role.id).catch(swallow('role'));
           _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">Got it, archived.</div>`);
         }
         // Show skip overlay on the analysis panel
@@ -5306,7 +5312,7 @@
 
       // Append an immutable ledger record, then refresh the history block if workspace is open
       await wsAppendDecision(role.id, decisionType, reason);
-      wsRefreshDecisionHistory(role.id).catch(() => {});
+      wsRefreshDecisionHistory(role.id).catch(swallow('role'));
 
       // Check for a cross-role pattern with the same reason (silent query, no throw)
       let patternNote = '';
@@ -5398,7 +5404,7 @@
       card.querySelectorAll('.ws-dc-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           card.remove();
-          wsUpdateDecisionConfidence(role.id, btn.dataset.val).catch(() => {});
+          wsUpdateDecisionConfidence(role.id, btn.dataset.val).catch(swallow('dataset'));
         });
       });
       card.querySelector('.ws-dc-skip')?.addEventListener('click', () => card.remove());
@@ -5443,7 +5449,7 @@
           reply = "No problem, you can let me know where you found it later.";
         } else if (t.length < 80) {
           // Treat as the actual source name (e.g. "LinkedIn", "a recruiter")
-          db.from('roles').update({ source: text.trim() }).eq('id', role.id).catch(() => {});
+          db.from('roles').update({ source: text.trim() }).eq('id', role.id).catch(swallow('role'));
           role.source = text.trim();
           const srcLabel = text.trim().charAt(0).toUpperCase() + text.trim().slice(1);
           reply = `Got it, noted as "${srcLabel}".`;
@@ -5459,7 +5465,7 @@
       }
 
       _wsAppend(timelineEl, `<div class="ws-assistant-reply" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(reply)}</div>`);
-      wsAddMessage(role.id, 'assistant', reply).catch(() => {});
+      wsAddMessage(role.id, 'assistant', reply).catch(swallow('role'));
     }
 
     // ─── UK salary take-home calculator ──────────────────────────────────────
@@ -6731,7 +6737,7 @@
           const _storedReply = (sections && sections.length > 0)
             ? JSON.stringify({ _type: 'briefing', title: reply, sections })
             : reply;
-          wsAddMessage(role.id, 'assistant', _storedReply).catch(() => {});
+          wsAddMessage(role.id, 'assistant', _storedReply).catch(swallow('role'));
         } else {
           // Show a calm failure state — avoids silent drop
           console.warn('[_wsTriggerChat] no reply returned');
@@ -6850,7 +6856,7 @@
                   }
                 });
               }
-            }).catch(() => {});
+            }).catch(swallow('unknown'));
         }
 
         jdClean  = cleanJobDescription(text);
@@ -7030,8 +7036,8 @@
         // Refresh decision capture card in case analysis was the first trigger
         _renderDecisionCapture(_liveRole);
         // Render blocker checklist + decision history (Decision Layer V1)
-        _renderBlockersSection(_liveRole).catch(() => {});
-        _renderDecisionHistoryDL(_liveRole).catch(() => {});
+        _renderBlockersSection(_liveRole).catch(swallow('_renderBlockersSection'));
+        _renderDecisionHistoryDL(_liveRole).catch(swallow('_renderDecisionHistoryDL'));
         // Render rail + JD section — wrap was just replaced, slots must be re-created
         renderRail(_liveRole);
         if (_liveRole.job_description_raw) {
@@ -7224,7 +7230,7 @@
               role.radar_match_key        = _radarResult.radar_match_key;
               role.radar_match_confidence = _radarResult.radar_match_confidence;
               role.radar_match_basis      = _radarResult.radar_match_basis;
-            }).catch(() => {});
+            }).catch(swallow('unknown'));
           }
         } catch (_radarErr) { console.error('[_doSave] radar key computation failed (non-blocking) —', _radarErr); }
 
@@ -7330,7 +7336,7 @@
 
       // 1. Save raw message to role_conversations (fire and forget).
       // Skip for temp roles — no DB record exists yet; message is saved after promotion.
-      if (!role._isTemp) wsAddMessage(role.id, 'user', text).catch(() => {});
+      if (!role._isTemp) wsAddMessage(role.id, 'user', text).catch(swallow('role'));
 
       // 2. Render source card (or chat bubble for short text).
       // Non-chat content (URL / email / JD) supersedes any pending clarification — clear it
@@ -7388,7 +7394,7 @@
                 ? _ingestCopyFor('failed', _srcLabel, 'description_too_short')
                 : _ingestCopyFor(_result.fetch_status, _srcLabel, _result.failure_reason);
               _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_msg)}</div>`);
-              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _msg).catch(() => {});
+              if (!role._isTemp) wsAddMessage(role.id, 'assistant', _msg).catch(swallow('role'));
               return;
             }
 
@@ -7409,7 +7415,7 @@
                   Object.assign(role, _meta);
                   const _arEntry = allRoles.find(r => r.id === role.id);
                   if (_arEntry && _arEntry !== role) Object.assign(_arEntry, _meta);
-                }).catch(() => {});
+                }).catch(swallow('unknown'));
               }
             } else {
               role.job_url = text;
@@ -7450,13 +7456,13 @@
                   const _arE = allRoles.find(r => r.id === role.id);
                   if (_arE && _arE !== role) _arE.source_meta = role._liMeta;
                   _ensureCompanyLogo(role);
-                }).catch(() => {});
+                }).catch(swallow('unknown'));
               }
               // LinkedIn truncation warning
               if (!_isLinkedInJDComplete(_desc)) {
                 const _warn = 'Heads up. This job description may be cut off. You can paste the full version if needed.';
                 _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_warn)}</div>`);
-                if (!role._isTemp) wsAddMessage(role.id, 'assistant', _warn).catch(() => {});
+                if (!role._isTemp) wsAddMessage(role.id, 'assistant', _warn).catch(swallow('role'));
               }
             } else {
               // Non-LinkedIn supported source: persist a minimal source_meta
@@ -7476,7 +7482,7 @@
                   const _arE = allRoles.find(r => r.id === role.id);
                   if (_arE && _arE !== role) _arE.source_meta = _srcMeta;
                   _ensureCompanyLogo(role);
-                }).catch(() => {});
+                }).catch(swallow('unknown'));
               } else {
                 role.source_meta = _srcMeta;
               }
@@ -7484,7 +7490,7 @@
               if (_result.fetch_status === 'partial') {
                 const _partialMsg = _ingestCopyFor('partial', _srcLabel, _result.failure_reason);
                 _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_partialMsg)}</div>`);
-                if (!role._isTemp) wsAddMessage(role.id, 'assistant', _partialMsg).catch(() => {});
+                if (!role._isTemp) wsAddMessage(role.id, 'assistant', _partialMsg).catch(swallow('role'));
               }
             }
 
@@ -7495,7 +7501,7 @@
             if (_statusEl.isConnected) _statusEl.remove();
             const _errMsg = _ingestCopyFor('failed', _srcLabel, 'unexpected_error');
             _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_errMsg)}</div>`);
-            if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(() => {});
+            if (!role._isTemp) wsAddMessage(role.id, 'assistant', _errMsg).catch(swallow('role'));
           }
           return;
         }
@@ -7505,12 +7511,12 @@
           if (/linkedin\.com\/jobs\/search/i.test(text)) {
             const _invalidMsg = 'That looks like a LinkedIn search page. Open the specific job posting and copy the URL from there.';
             _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_invalidMsg)}</div>`);
-            wsAddMessage(role.id, 'assistant', _invalidMsg).catch(() => {});
+            wsAddMessage(role.id, 'assistant', _invalidMsg).catch(swallow('role'));
             return;
           }
 
           // Persist to DB only for real (saved) roles
-          wsAddInsight(role.id, 'signal', `Company/role link: ${text}`, 'extraction').catch(() => {});
+          wsAddInsight(role.id, 'signal', `Company/role link: ${text}`, 'extraction').catch(swallow('role'));
           if (!role.job_url) {
             db.from('roles').update({ job_url: text }).eq('id', role.id).then(() => {
               role.job_url = text; // patch local object
@@ -7521,7 +7527,7 @@
               if (role.job_description_raw) {
                 _renderJDSection(role, role.job_description_raw);
               }
-            }).catch(() => {});
+            }).catch(swallow('unknown'));
           }
 
           // Attempt background enrichment for supported ATS sources (Greenhouse / Lever / Ashby)
@@ -7542,7 +7548,7 @@
                 role.source_meta.company_meta.logo_url = _enrichLogo;
                 // Fire-and-forget DB persist
                 db.from('roles').update({ source_meta: role.source_meta })
-                  .eq('id', role.id).then(() => {}).catch(() => {});
+                  .eq('id', role.id).then(() => {}).catch(swallow('then'));
                 // Trigger brand asset creation + FK linking immediately
                 // (non-blocking — resolves logo, upserts brand_assets row, patches visible avatars)
                 _ensureCompanyLogo(role);
@@ -7561,13 +7567,13 @@
               // Fetch failed or no fields — plain acknowledgement
               const _ackMsg = 'Got it, I\'ve attached the original job posting to this role.';
               _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_ackMsg)}</div>`);
-              wsAddMessage(role.id, 'assistant', _ackMsg).catch(() => {});
+              wsAddMessage(role.id, 'assistant', _ackMsg).catch(swallow('role'));
             }
           } else {
             // Unsupported URL — plain acknowledgement
             const _ackMsg = 'Got it, I\'ve attached the original job posting to this role.';
             _wsAppend(timelineEl, `<div class="ws-assistant-reply ws-settle" data-ws-entry="${WS_ENTRY.CHAT_ASSISTANT}">${esc(_ackMsg)}</div>`);
-            wsAddMessage(role.id, 'assistant', _ackMsg).catch(() => {});
+            wsAddMessage(role.id, 'assistant', _ackMsg).catch(swallow('role'));
           }
         } else {
           // Temp role: keep URL in memory, plain acknowledgement (no DB write yet)
@@ -7806,7 +7812,7 @@
 
       // Update allRoles cache + sync DB current_stage column
       allRoles = allRoles.map(r => r.id === role.id ? { ...r, current_stage: detectedStage } : r);
-      db.from('roles').update({ current_stage: detectedStage }).eq('id', role.id).catch(() => {});
+      db.from('roles').update({ current_stage: detectedStage }).eq('id', role.id).catch(swallow('role'));
 
       // Update stage display text in the right rail if visible
       const stageDisplay = document.getElementById('rail-stage-display');
@@ -7819,7 +7825,7 @@
       try {
         const mem = await wsLoadMemory(role.id);
         if (mem.artifacts.some(a => a.artifact_type === 'preparation')) {
-          _wsTriggerPrep(role, timelineEl).catch(() => {});
+          _wsTriggerPrep(role, timelineEl).catch(swallow('_wsTriggerPrep'));
         }
       } catch (_) {}
     }
@@ -7863,7 +7869,7 @@
         // Perform the steps that were deferred pending mismatch confirmation:
         // message persistence, source card, and retryText all happen now, as they
         // would have if no mismatch had been detected.
-        if (!role._isTemp) wsAddMessage(role.id, 'user', text).catch(() => {});
+        if (!role._isTemp) wsAddMessage(role.id, 'user', text).catch(swallow('role'));
         _renderJDSection(role, text);
         role._retryText = text;
         _wsRunAnalysis(role, text, timelineEl);
@@ -8468,7 +8474,7 @@
               merged:       true,
               merge_fields: mergeFields,
               merged_at:    new Date().toISOString(),
-            }).eq('id', enrichmentId).catch(() => {});
+            }).eq('id', enrichmentId).catch(swallow('eq'));
           }
 
           card.innerHTML =
@@ -8501,7 +8507,7 @@
         interaction_type: signal.type,
         summary:          signal.summary,
         raw_content:      text.slice(0, 300),
-      }).catch(() => {});
+      }).catch(swallow('unknown'));
 
       // 2. Render a compact interaction event in the timeline
       _wsAppend(timelineEl, _wsInteractionEventHtml(signal.summary, signal.type));
@@ -8781,7 +8787,7 @@
           navigator.clipboard.writeText(_text).then(() => {
             _copyBtn.classList.add('rh-copy-id--done');
             setTimeout(() => _copyBtn.classList.remove('rh-copy-id--done'), 1200);
-          }).catch(() => {});
+          }).catch(swallow('unknown'));
           return;
         }
         if (e.target.closest('#rw-jd-modal-trigger')) { _rwOpenJdModal(); return; }
@@ -9047,7 +9053,7 @@
           interaction_type: 'recruiter_email',
           summary:          'Recruiter email received',
           raw_content:      text.slice(0, 500),
-        }).catch(() => {});
+        }).catch(swallow('unknown'));
       }
 
       // Extract recruiter signals from the email content
@@ -9197,8 +9203,8 @@
                 // Re-render lower overview cards — the wrap was just replaced, so
                 // any previously created slots were destroyed. Re-create and populate.
                 _renderDecisionCapture(role);
-                _renderBlockersSection(role).catch(() => {});    // Decision Layer V1
-                _renderDecisionHistoryDL(role).catch(() => {});  // Decision Layer V1: history
+                _renderBlockersSection(role).catch(swallow('_renderBlockersSection'));    // Decision Layer V1
+                _renderDecisionHistoryDL(role).catch(swallow('_renderDecisionHistoryDL'));  // Decision Layer V1: history
                 renderRail(role);
                 if (role && role.job_description_raw) {
                   _renderJDSection(role, role.job_description_raw);
@@ -9371,8 +9377,8 @@
 
       // ── Decision Capture card — always shown when a role is loaded ────────────
       _renderDecisionCapture(role);
-      _renderBlockersSection(role).catch(() => {});    // Decision Layer V1
-      _renderDecisionHistoryDL(role).catch(() => {});  // Decision Layer V1: history
+      _renderBlockersSection(role).catch(swallow('_renderBlockersSection'));    // Decision Layer V1
+      _renderDecisionHistoryDL(role).catch(swallow('_renderDecisionHistoryDL'));  // Decision Layer V1: history
 
       // ── Rail + JD section — rendered here so the wrap + slots exist first ─────
       // renderRail is also called from selectRole, but that fires synchronously
@@ -9545,7 +9551,7 @@
       _lensRendered = false;
       _wsLoadYourLens().then(lensData => {
         if (lensData) _wsRenderYourLens(lensData, timelineEl);
-      }).catch(() => {}); // non-critical
+      }).catch(swallow('unknown')); // non-critical
 
       // ── Chat input wiring ────────────────────────────────────────────────
       let _wsSubmitting = false;
@@ -12137,8 +12143,8 @@
             // Candidate learning: record archive decision
             const _archRole = allRoles.find(r => r.id === roleId);
             if (_archRole) {
-              _saveCandidateDecisionExt(_archRole, 'archive').catch(() => {});
-              _updateCandidateLearningCounters('archive', _archRole).catch(() => {});
+              _saveCandidateDecisionExt(_archRole, 'archive').catch(swallow('_saveCandidateDecisionExt'));
+              _updateCandidateLearningCounters('archive', _archRole).catch(swallow('_updateCandidateLearningCounters'));
             }
             renderInbox(allRoles);
             selectedRoleId = null;
@@ -12348,7 +12354,7 @@
         // ── Workspace: keep current_stage in sync + fire stage event ──────────
         // 1. Keep roles.current_stage column current so _wsBuildPrep always reads
         //    the right value and page refreshes load the correct stage.
-        db.from('roles').update({ current_stage: stageReached }).eq('id', roleId).catch(() => {});
+        db.from('roles').update({ current_stage: stageReached }).eq('id', roleId).catch(swallow('db:roles'));
 
         // 2. Patch local allRoles so _wsBuildPrep sees the new stage without a refetch.
         allRoles = allRoles.map(r => r.id === roleId ? { ...r, current_stage: stageReached } : r);
@@ -12359,7 +12365,7 @@
           summary:          `Stage moved to ${stageReached}`,
           person_id:        null,
           raw_content:      null,
-        }).catch(() => {});
+        }).catch(swallow('unknown'));
 
         // 4. If workspace is currently open for this role, append a timeline marker
         //    and refresh any existing preparation artefact (update in place, never force-create).
@@ -12371,9 +12377,9 @@
               const hasPrepArtifact = mem.artifacts.some(a => a.artifact_type === 'preparation');
               if (hasPrepArtifact) {
                 const _liveRole = allRoles.find(r => r.id === roleId);
-                if (_liveRole) _wsTriggerPrep(_liveRole, _wsTimeline).catch(() => {});
+                if (_liveRole) _wsTriggerPrep(_liveRole, _wsTimeline).catch(swallow('_wsTriggerPrep'));
               }
-            }).catch(() => {});
+            }).catch(swallow('unknown'));
           }
         }
 
@@ -12541,7 +12547,7 @@
               .eq('decision_type', 'apply')
               .order('created_at', { ascending: false })
               .limit(1)
-              .catch(() => {});
+              .catch(swallow('unknown'));
           }, 600);
         }
       }
@@ -12552,12 +12558,12 @@
         if (decision === 'apply')               _revert.current_stage  = _prevCurrentStage;
         if (decision === 'skip' && opts.reason) _revert.outcome_reason = _prevOutcomeReason;
 
-        await db.from('roles').update(_revert).eq('id', role.id).catch(() => {});
+        await db.from('roles').update(_revert).eq('id', role.id).catch(swallow('role'));
         Object.assign(role, _revert);
         allRoles = allRoles.map(r => r.id === role.id ? { ...r, ..._revert } : r);
 
         if (_insertedUpdateId) {
-          await db.from('role_updates').delete().eq('id', _insertedUpdateId).catch(() => {});
+          await db.from('role_updates').delete().eq('id', _insertedUpdateId).catch(swallow('db:role_updates'));
           role.role_updates = (role.role_updates || []).filter(u => u.id !== _insertedUpdateId);
           allRoles = allRoles.map(r => r.id === role.id
             ? { ...r, role_updates: (r.role_updates || []).filter(u => u.id !== _insertedUpdateId) }
@@ -13283,14 +13289,14 @@
         // Append to decision ledger — maps outcome_state to ledger decision_type
         const _ledgerType = { skipped: 'skip', withdrew: 'withdraw', offer_accepted: 'accept' }[outcomeState] || 'other';
         await wsAppendDecision(roleId, _ledgerType, reason || null);
-        wsRefreshDecisionHistory(roleId).catch(() => {});
+        wsRefreshDecisionHistory(roleId).catch(swallow('wsRefreshDecisionHistory'));
 
         // ── Candidate learning hook — record outcome + rebuild patterns ──
         const _outcomeRole = allRoles.find(r => r.id === roleId);
         if (_outcomeRole) {
-          _saveCandidateOutcomeExt(_outcomeRole, outcomeState, reason, { outcomeQuality }).catch(() => {});
-          _updateCandidateLearningOutcome(outcomeState).catch(() => {});
-          _rebuildCandidateLearningPatterns().catch(() => {});
+          _saveCandidateOutcomeExt(_outcomeRole, outcomeState, reason, { outcomeQuality }).catch(swallow('_saveCandidateOutcomeExt'));
+          _updateCandidateLearningOutcome(outcomeState).catch(swallow('_updateCandidateLearningOutcome'));
+          _rebuildCandidateLearningPatterns().catch(swallow('_rebuildCandidateLearningPatterns'));
         }
 
         renderInbox(allRoles);
@@ -13892,7 +13898,7 @@
             const _aiTitle = analysis._roleTitle || null;
             if (_aiTitle) { _patch.role_title = _aiTitle; savedRole = { ...savedRole, role_title: _aiTitle }; }
           }
-          if (Object.keys(_patch).length) db.from('roles').update(_patch).eq('id', savedRole.id).catch(() => {});
+          if (Object.keys(_patch).length) db.from('roles').update(_patch).eq('id', savedRole.id).catch(swallow('savedRole'));
         }
 
         // ── Save jd_matches row ──────────────────────────────────────────────
@@ -13941,7 +13947,7 @@
 
         // Auto-detect recruiter (fire-and-forget)
         if (typeof runRecruiterAutoDetection === 'function')
-          runRecruiterAutoDetection(savedRole, jd_raw || jd).catch(() => {});
+          runRecruiterAutoDetection(savedRole, jd_raw || jd).catch(swallow('runRecruiterAutoDetection'));
 
       } catch (err) {
         // Analysis failed — show error, return to idle state
@@ -14292,7 +14298,7 @@
             if (_aiTitle) { _patch.role_title = _aiTitle; role.role_title = _aiTitle; }
           }
           if (Object.keys(_patch).length) {
-            db.from('roles').update(_patch).eq('id', role.id).catch(() => {});
+            db.from('roles').update(_patch).eq('id', role.id).catch(swallow('role'));
           }
         }
 
@@ -14360,11 +14366,11 @@
             email:       _manualRecEmail,
             profile_url: _manualRecUrl,
             type:        _manualRecType,
-          }).catch(() => {});
+          }).catch(swallow('unknown'));
         } else {
           // No manual entry — fall back to auto-detection from JD text + job URL.
           // Prefer jd_raw so recruiter signals in headers/footers not stripped by cleaning.
-          await runRecruiterAutoDetection(role, jd_raw || jd).catch(() => {});
+          await runRecruiterAutoDetection(role, jd_raw || jd).catch(swallow('runRecruiterAutoDetection'));
         }
 
         closeAddModal();
@@ -26052,7 +26058,7 @@
           // Patch stored type if user explicitly provided one and existing record has none
           if (data.type && !byEmail[0].recruiter_type) {
             await db.from('recruiters').update({ recruiter_type: data.type, updated_at: new Date().toISOString() })
-              .eq('id', recruiterId).catch(() => {});
+              .eq('id', recruiterId).catch(swallow('eq'));
           }
         }
       }
@@ -26065,7 +26071,7 @@
           recruiterId = byUrl[0].id;
           if (data.type && !byUrl[0].recruiter_type) {
             await db.from('recruiters').update({ recruiter_type: data.type, updated_at: new Date().toISOString() })
-              .eq('id', recruiterId).catch(() => {});
+              .eq('id', recruiterId).catch(swallow('eq'));
           }
         }
       }
@@ -26079,7 +26085,7 @@
           recruiterId = byName[0].id;
           if (data.type && !byName[0].recruiter_type) {
             await db.from('recruiters').update({ recruiter_type: data.type, updated_at: new Date().toISOString() })
-              .eq('id', recruiterId).catch(() => {});
+              .eq('id', recruiterId).catch(swallow('eq'));
           }
         }
       }
@@ -26995,7 +27001,7 @@
           renderRecruiterDetail(_newRecObj);
 
           // Background sync to keep allRoles / allRecruiters consistent with DB
-          refresh().catch(() => {});
+          refresh().catch(swallow('refresh'));
 
         } catch (e) {
           errEl.textContent = e.message || 'Could not save contact.';
@@ -27288,7 +27294,7 @@
               company_name: role.company_name || null,
               role_title:   role.role_title   || null,
             },
-          }).then(() => {}).catch(() => {});
+          }).then(() => {}).catch(swallow('then'));
           // Also clear the snap dedup cache for this role so the type can be re-used
           const _cache = _snapDedupCache.get(role.id);
           if (_cache) { _cache.delete(snapType); }
@@ -27428,7 +27434,7 @@
         renderDecisionBar(role);
 
         // Refresh decision history slot to show the new snapshot
-        _renderDecisionHistoryDL(role).catch(() => {});
+        _renderDecisionHistoryDL(role).catch(swallow('_renderDecisionHistoryDL'));
 
       } catch (e) {
         console.error('[_commitSkip]', e);
@@ -31767,7 +31773,7 @@ If a field cannot be determined from the message, return null for that field.`,
             }
             const _navNameEl = document.getElementById('nav-profile-name');
             if (_navNameEl) _navNameEl.textContent = _nameForInitials || 'Profile';
-          }).catch(() => {}),
+          }).catch(swallow('unknown')),
           db.from('recruiters')
             .select('id, name, company, email, linkedin_url, recruiter_type, office_phone, mobile_phone, website_url, notes, notes_log, created_at, updated_at')
             .order('updated_at', { ascending: false })
@@ -31786,7 +31792,7 @@ If a field cannot be determined from the message, return null for that field.`,
         // Warm boundary cache, then re-render inbox so boundary match indicators
         // appear. Without the re-render the first inbox load always shows no
         // indicators (cache is still null when renderInbox first runs above).
-        _warmBoundaryCache().then(() => { renderInbox(allRoles); }).catch(() => {});
+        _warmBoundaryCache().then(() => { renderInbox(allRoles); }).catch(swallow('renderInbox'));
 
         // ── Load candidate profile + learning (non-blocking) ──
         // Populates the live candidate context for the AI pipeline.
