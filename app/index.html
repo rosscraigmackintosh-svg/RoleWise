@@ -496,6 +496,8 @@
   </style>
 
   <link rel="stylesheet" href="styles.css?v=sp5">
+  <!-- Overview v1 — calm career-home styles -->
+  <link rel="stylesheet" href="overview/overview.css?v=ov1">
   <!-- Reasoning Map — advanced internal feature. Remove this line + reasoning-map.js to disable. -->
   <link rel="stylesheet" href="reasoning-map.css">
   <!-- Role Analysis UI hierarchy refinement — design layer only, no logic -->
@@ -895,6 +897,8 @@
   <script src="analysis/render.js"></script>
   <!-- Reasoning Map — lazy-loaded on demand by loadReasoningMap() in app.js (saves ~124 KB at boot) -->
   <script src="app.js?v=li21"></script>
+  <!-- Overview v1 — calm career-home page; consumes state via window.RW_OverviewV1 -->
+  <script src="overview/overview.js?v=ov1"></script>
   <!-- <script src="reasoning-map.js"></script> -->
   <!-- AI Inspect: inspect-mode.js loads after app.js (needs DOM ready + app state) -->
   <!-- DEV ONLY — remove this line for production builds -->

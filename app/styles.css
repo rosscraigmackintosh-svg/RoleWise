@@ -8705,6 +8705,69 @@
       gap: 7px;
       overflow: hidden;
     }
+
+    /* ─── Transient subset banner (stale follow-up only) ───────────
+       Surfaces that the inbox is narrowed to a specific subset routed
+       from Overview v1's stale follow-up action. No new filter model,
+       no persistence — the "Clear" control restores the default view. */
+    .inbox-subset-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      margin: 0 14px 8px;
+      padding: 8px 10px 8px 12px;
+      background: var(--color-bg-secondary, var(--border-light, #f3f2ee));
+      border: 1px solid var(--color-border-secondary, transparent);
+      border-radius: 8px;
+      font-size: 12.5px;
+      line-height: 1.35;
+      color: var(--text, #1a1a1a);
+    }
+    .inbox-subset-banner__label {
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .inbox-subset-banner__count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--text, #1a1a1a);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1;
+    }
+    .inbox-subset-banner__clear {
+      flex-shrink: 0;
+      min-height: 26px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-family: inherit;
+      color: var(--text-muted, #6b6b68);
+      cursor: pointer;
+      transition: color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+    }
+    .inbox-subset-banner__clear:hover {
+      background: rgba(0, 0, 0, 0.04);
+      color: var(--text, #1a1a1a);
+    }
+    .inbox-subset-banner__clear:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--accent, #2e3a4a);
+    }
     .inbox-search-wrap {
       flex: 1 1 0;
       min-width: 0;

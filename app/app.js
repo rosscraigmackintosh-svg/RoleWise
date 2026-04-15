@@ -3096,6 +3096,17 @@
         // Needs attention: active roles with a live nudge — matches Overview section
         if (inboxTab === 'needs_attention')
           return !isArchivedRole(r) && r.user_decision !== 'skip' && !!_roleNudge(r);
+        // Stale follow-up (transient filter, wired from Overview v1 "follow up"
+        // action). Mirrors overview.js getNextActions stale predicate exactly:
+        // applied, no outcome, no first response, ≥14 days since applied, not
+        // archived. Not shown as a nav chip — user returns to a normal view by
+        // clicking any chip.
+        if (inboxTab === 'stale_followup') {
+          if (isArchivedRole(r) || r.user_decision === 'skip') return false;
+          if (!r._appliedDate || r.outcome_state || r._firstResponseDate) return false;
+          const days = Math.floor((Date.now() - new Date(r._appliedDate).getTime()) / 86400000);
+          return days >= 14;
+        }
         // In progress: Recruiter Screen and beyond — matches Overview section
         if (inboxTab === 'in_progress')
           return !isArchivedRole(r) && r.user_decision !== 'skip' && _IN_PROGRESS_STAGES.has(currentStageLabel(r));
@@ -3406,7 +3417,30 @@
       // All / Needs attention / In progress). The list is always a clean flat list.
       const listHtml = filtered.map(renderRoleCard).join('');
 
-      el.innerHTML = listHtml;
+      // Transient-subset banner — only shown for the Overview-wired
+      // `stale_followup` filter, which has no nav chip. Gives the user a
+      // visible cue that they're viewing a narrowed subset, plus a Clear
+      // control to return to the default Active view. Kept minimal on
+      // purpose — no new filter architecture.
+      const subsetBannerHtml = (inboxTab === 'stale_followup')
+        ? `<div class="inbox-subset-banner" id="inbox-subset-banner">
+             <span class="inbox-subset-banner__label">
+               Follow-up: applications past 14 days
+               <span class="inbox-subset-banner__count">${filtered.length}</span>
+             </span>
+             <button type="button" class="inbox-subset-banner__clear" id="inbox-subset-banner-clear">Clear</button>
+           </div>`
+        : '';
+
+      el.innerHTML = subsetBannerHtml + listHtml;
+
+      const _clearSubsetBtn = document.getElementById('inbox-subset-banner-clear');
+      if (_clearSubsetBtn) {
+        _clearSubsetBtn.addEventListener('click', () => {
+          _setAppFilter('active');
+          renderInbox(allRoles);
+        });
+      }
 
       el.querySelectorAll('.inbox-role').forEach(row => {
         row.addEventListener('click', () => selectRole(row.dataset.id));
@@ -29407,7 +29441,66 @@ If a field cannot be determined from the message, return null for that field.`,
       return _insights;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Overview page entry point.
+    //
+    // v1 delegates rendering to the decoupled module at /overview/overview.js
+    // (loaded after app.js from index.html). The module reads state through
+    // the context object below — it never mutates app state and never imports
+    // from app.js directly. If the module hasn't loaded (or is removed) this
+    // wrapper degrades to a simple empty state rather than throwing.
+    //
+    // Shared helpers (_computeOutcomeInsights, _interpretObservation, the
+    // "while you were away" banner, etc.) remain in app.js because they are
+    // also used by Review, Applications, and the away banner. Overview v1
+    // does not depend on them; it derives its own patterns from raw roles.
+    // ─────────────────────────────────────────────────────────────────────────
     function renderOverviewView() {
+      const el = document.getElementById('col-overview-cards');
+      if (!el) return;
+      // Scroll-mode toggling is handled inside the module so it stays in
+      // sync with the module's content footprint. Do not pre-set it here.
+
+      const api = window.RW_OverviewV1;
+      if (!api || typeof api.render !== 'function') {
+        el.innerHTML = `<div class="doc-empty">Overview module failed to load.</div>`;
+        return;
+      }
+
+      api.render({
+        mount:       el,
+        allRoles:    allRoles,
+        userProfile: userProfile,
+        helpers: {
+          esc,
+          currentStageLabel,
+          isArchivedRole,
+          sanitiseCompanyName,
+          daysSinceLastUpdate,
+          appResponseStatus:   _appResponseStatus,
+          switchNav,
+          selectRole,
+          setAppFilter:        _setAppFilter,
+          IN_PROGRESS_STAGES:  _IN_PROGRESS_STAGES,
+        },
+      });
+
+      // "While you were away" banner (shown once per session) — preserved
+      // from the previous Overview so the cross-session summary still surfaces
+      // on the calm home. The banner renders into the top of the .ov1-page.
+      const _ovPage = el.querySelector('.ov1-page');
+      if (_ovPage && typeof _renderAwaySummaryBanner === 'function') {
+        _renderAwaySummaryBanner(_ovPage);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Legacy Overview (pre-v1) — retained commented-out for rollback only.
+    // Do not re-enable without product sign-off. If this stays dormant for a
+    // release cycle, delete the block below.
+    // ─────────────────────────────────────────────────────────────────────────
+    /* LEGACY_OVERVIEW_V0_START
+    function renderOverviewView_legacy() {
       const el = document.getElementById('col-overview-cards');
       if (!el) return;
       el.classList.remove('col-ov--legacy-doc'); // reset scroll mode from Review or legacy doc
@@ -29583,6 +29676,7 @@ If a field cannot be determined from the message, return null for that field.`,
         });
       });
     }
+    LEGACY_OVERVIEW_V0_END */
 
     // ─── Review page ──────────────────────────────────────────────────────────
     async function renderReviewView() {
