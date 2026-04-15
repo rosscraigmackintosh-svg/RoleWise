@@ -14157,324 +14157,12 @@
       return tempRole; // allows callers (e.g. mismatch handler) to reference the new role object
     }
 
-    // ─── Add role modal ───────────────────────────────────────────────────────
-    function openAddModal() {
-      ['add-jd', 'add-company', 'add-title', 'add-location', 'add-source', 'add-url']
-        .forEach(id => { document.getElementById(id).value = ''; });
-      const _engTypeEl = document.getElementById('add-engagement-type');
-      if (_engTypeEl) _engTypeEl.value = '';
-      // Reset recruiter section
-      ['add-rec-name', 'add-rec-company', 'add-rec-email', 'add-rec-url'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-      });
-      const _recTypeEl = document.getElementById('add-rec-type');
-      if (_recTypeEl) _recTypeEl.value = '';
-      const _recSection = document.getElementById('recruiter-details-section');
-      if (_recSection) _recSection.removeAttribute('open');
-      document.getElementById('recruiter-autofill-badge')?.classList.add('hidden');
-      // Reset role details section
-      ['add-ir35-status', 'add-start-timeline'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-      });
-      ['add-day-rate', 'add-contract-length'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-      });
-      const _roleDetailsSection = document.getElementById('role-details-section');
-      if (_roleDetailsSection) _roleDetailsSection.removeAttribute('open');
-      document.getElementById('role-details-autofill-badge')?.classList.add('hidden');
-      document.getElementById('add-error').classList.add('hidden');
-      // Reset truncation warning state on every open
-      const _jdEl = document.getElementById('add-jd');
-      if (_jdEl) _jdEl.dataset.pasteAnyway = '';
-      document.getElementById('jd-truncation-warning')?.classList.add('hidden');
-      _liSourceMeta = null;  // clear any stale LinkedIn fetch metadata
-      document.getElementById('modal-add').classList.remove('hidden');
-      setTimeout(() => document.getElementById('add-jd').focus(), 60);
-    }
-
-    function closeAddModal() {
-      document.getElementById('modal-add').classList.add('hidden');
-      // Reset analysis trace state so it's clean on next open
-      const _traceEl = document.getElementById('add-analysis-trace');
-      const _formEl  = document.getElementById('add-modal-form-body');
-      if (_traceEl) { _traceEl.classList.add('hidden'); _traceEl.classList.remove('add-analysis-trace--done'); _traceEl.innerHTML = ''; }
-      if (_formEl)  { _formEl.classList.remove('add-modal-form--hidden'); }
-      _liSourceMeta = null;  // reset on modal close/cancel
-    }
-
-    async function saveRole() {
-      const jd_raw  = document.getElementById('add-jd').value;
-      const jd_clean = cleanJobDescription(jd_raw);
-      const jd      = jd_clean || jd_raw;   // canonical JD text for analysis
-      const errEl   = document.getElementById('add-error');
-
-      if (!jd.trim()) {
-        errEl.textContent = 'Job description is required.';
-        errEl.classList.remove('hidden');
-        return;
-      }
-
-      errEl.classList.add('hidden');
-      const btn = document.getElementById('btn-save-add');
-      btn.disabled = true;
-      btn.textContent = 'Saving…';
-
-      try {
-        // ── Step 1: Create role ───────────────────────────────────────────────
-        // Extract metadata as a safety net for any fields the autofill may have missed
-        const _meta = extractJDMetadata(jd_raw, jd_clean);
-        const _company   = document.getElementById('add-company').value.trim()   || _meta.company_name  || null;
-        const _title     = document.getElementById('add-title').value.trim()     || _meta.role_title    || null;
-        const _location  = document.getElementById('add-location').value.trim()  || _meta.location      || null;
-        const _jobUrl    = document.getElementById('add-url').value.trim()       || _meta.job_url       || null;
-        const _source    = document.getElementById('add-source').value.trim()                           || null;
-
-        // Map extracted remote_model to work_model values the app uses
-        const _workModel = normaliseWorkModel(_meta.remote_model);
-        // Salary: prefer cleaned annual string; fallback to raw salary mention
-        const _salary = _meta.salary_annual || null;
-        // Engagement type: manual dropdown > auto-detected from JD text > null (Unknown)
-        const _manualEngType = document.getElementById('add-engagement-type')?.value || null;
-        const _engType = _manualEngType || _detectEngagementType(jd_raw || jd) || null;
-        // Practical fields: manual override > auto-detect > null
-        const _manualIr35 = document.getElementById('add-ir35-status')?.value || null;
-        const _ir35Status = _manualIr35 || _detectIr35Status(jd_raw || jd, _engType) || null;
-        const _dayRateRaw = document.getElementById('add-day-rate')?.value.trim() || null;
-        const _dayRateText = _dayRateRaw || _detectDayRateText(jd_raw || jd) || null;
-        const _contractLenRaw = document.getElementById('add-contract-length')?.value.trim() || null;
-        const _contractLength = _contractLenRaw || _detectContractLength(jd_raw || jd) || null;
-        const _manualStart = document.getElementById('add-start-timeline')?.value || null;
-        const _startTimeline = _manualStart || _detectStartTimeline(jd_raw || jd) || null;
-
-        const { data: role, error: re } = await db.from('roles').insert({
-          company_name:        _company,
-          role_title:          _title,
-          location_text:       _location,
-          source:              _source,
-          job_url:             _jobUrl,
-          job_description_raw: jd_raw || jd,
-          status:              'active',
-          work_model:          _workModel,
-          salary_text_raw:     _salary,
-          engagement_type:     _engType,
-          ir35_status:         _ir35Status,
-          day_rate_text:       _dayRateText,
-          contract_length:        _contractLength,
-          start_timeline:         _startTimeline,
-          captured_via:           _liSourceMeta?.captured_via          || null,
-          recruiter_intermediary: _liSourceMeta?.recruiter_intermediary ?? null,
-          source_type:            _liSourceMeta?.source_type            || null,
-          source_url:             _liSourceMeta?.source_url             || null,
-        }).select().single();
-        if (re) throw re;
-
-        insertEvent(role.id, { event_type: 'role_created', title: 'Role created', detail: 'Added via Add JD' });
-
-        const { error: ue } = await db.from('role_updates').insert({
-          role_id:       role.id,
-          event_type:    'stage',
-          status:        'in_progress',
-          stage_reached: 'JD Review',
-        });
-        if (ue) throw ue;
-
-        // ── Step 2: Generate analysis — same path as Match a JD ──────────────
-        // callAnalysisAPI() tries AI first, falls back to local automatically.
-        btn.textContent = 'Analysing…';
-
-        // ── Show staged analysis trace in the modal ───────────────────────────
-        // The modal stays open during analysis. Replace the form fields with a
-        // calm step-by-step trace so the user can see what's happening.
-        const _traceEl = document.getElementById('add-analysis-trace');
-        const _modalFormEl = document.getElementById('add-modal-form-body');
-        if (_traceEl) {
-          _traceEl.innerHTML = _ANALYSIS_STAGES.map((s, i) =>
-            `<div class="ws-step${i === 0 ? ' ws-step--active' : ''}" data-step="${i}">` +
-              `<span class="ws-step-check"></span>` +
-              `<span class="ws-step-label">${s}</span>` +
-            `</div>`
-          ).join('');
-          _traceEl.classList.remove('hidden');
-          _traceEl.classList.remove('add-analysis-trace--done');
-        }
-        if (_modalFormEl) _modalFormEl.classList.add('add-modal-form--hidden');
-
-        let _modalTraceDone = false;
-        const _modalTraceTimers = _ANALYSIS_TIMINGS.map((t, i) => setTimeout(() => {
-          if (_modalTraceDone || !_traceEl?.isConnected) return;
-          const _stepEls = _traceEl.querySelectorAll('.ws-step');
-          for (let j = 0; j <= i; j++) {
-            _stepEls[j]?.classList.remove('ws-step--active');
-            _stepEls[j]?.classList.add('ws-step--done');
-          }
-          if (i + 1 < _stepEls.length) {
-            _stepEls[i + 1]?.classList.remove('ws-step--done');
-            _stepEls[i + 1]?.classList.add('ws-step--active');
-          }
-        }, t));
-        const _clearModalTrace = (success = false) => {
-          _modalTraceDone = true;
-          _modalTraceTimers.forEach(clearTimeout);
-          if (!_traceEl?.isConnected) return;
-          // Mark all remaining steps done immediately
-          _traceEl.querySelectorAll('.ws-step').forEach(el => {
-            el.classList.remove('ws-step--active');
-            el.classList.add('ws-step--done');
-          });
-          if (success) {
-            // Add done class briefly for a completion moment, then modal closes
-            _traceEl.classList.add('add-analysis-trace--done');
-          } else {
-            // On error: hide trace and restore the form
-            _traceEl.classList.add('hidden');
-            if (_modalFormEl) _modalFormEl.classList.remove('add-modal-form--hidden');
-          }
-        };
-        // ─────────────────────────────────────────────────────────────────────
-
-        let analysis;
-        try {
-          analysis = await callAnalysisAPI(jd);
-          _clearModalTrace(true);
-        } catch (_analysisErr) {
-          _clearModalTrace(false);
-          throw _analysisErr;
-        }
-        const analysisSource = analysis?._source || 'local';
-
-        // ── Step 2b: Company/title backfill from AI output ──────────────────
-        // If client-side extraction missed company/title but AI found them,
-        // update the role record so it doesn't remain blank.
-        {
-          const _patch = {};
-          if (!role.company_name) {
-            let _aiCompany = analysis._company || null;
-            if (!_aiCompany) {
-              const _summ = analysis.role_summary || '';
-              const _m = _summ.match(/\bat\s+([A-Z][a-zA-Z0-9&. '-]{1,40}?)(?:[,.]|\s+(?:is|you|the|a|as|where|that|for|in)\b)/);
-              if (_m?.[1]) _aiCompany = sanitiseCompanyName(_m[1].trim().replace(/[.,]+$/, '')) || null;
-            }
-            if (_aiCompany) { _patch.company_name = _aiCompany; role.company_name = _aiCompany; }
-          }
-          if (!role.role_title) {
-            const _aiTitle = analysis._roleTitle || null;
-            if (_aiTitle) { _patch.role_title = _aiTitle; role.role_title = _aiTitle; }
-          }
-          if (Object.keys(_patch).length) {
-            updateRole(role.id, _patch).catch(swallow('role'));
-          }
-        }
-
-        // ── Step 3: Insert jd_matches row (non-fatal — role already saved) ───
-        try {
-          const { data: _matchRow3, error: me } = await db.from('jd_matches').insert({
-            role_id:             role.id,
-            job_description_raw: jd_raw || jd,
-            jd_text_raw:         jd_raw || jd,
-            jd_text:             jd,
-            jd_text_clean:       jd_clean || null,
-            company_name:        role.company_name,
-            role_title:          role.role_title,
-            job_url:             role.job_url,
-            selected_cv_ids:     [],
-            cv_version_ids:      [],
-            output_json:         analysis,
-          }).select('id').single();
-          if (me) throw me;
-
-          // Background: patch narrative into DB when Pass 2 completes
-          if (_matchRow3?.id) _backgroundAIPatch(analysis, role.id, _matchRow3.id);
-
-          insertEvent(role.id, { event_type: 'analysis_saved', title: 'Analysis saved', detail: `Source: ${analysisSource}` });
-          const _dec3 = analysis.suggested_actions?.next_step || null;
-          createSnapshot(role.id, 'initial_analysis', 'Analysis recorded', {
-            stage:                            'JD Review',
-            decision:                         _dec3,
-            company_name:                     role.company_name,
-            role_title:                       role.role_title,
-            work_model:                       role.work_model || null,
-            location_text:                    role.location_text || null,
-            salary_text_raw:                  role.salary_text_raw || null,
-            raw_jd:                           jd,
-            fit_reality_summary:              analysis.fit_reality_summary              || null,
-            what_they_are_really_looking_for: analysis.what_they_are_really_looking_for || null,
-            what_you_would_actually_do:       analysis.what_you_would_actually_do       || null,
-            risks_and_unknowns:               analysis.risks_and_unknowns               || null,
-          });
-          if (_dec3) createSnapshot(role.id, 'decision_set', _decisionSnapTitle(_dec3), { stage: 'JD Review', decision: _dec3 });
-        } catch (matchErr) {
-          // Analysis insert failed — role is still saved. User can regenerate from role detail.
-          console.error('[saveRole] jd_matches insert failed:', matchErr);
-        }
-
-        // ── Recruiter linking — must complete before refresh() ───────────────
-        // IMPORTANT: This is awaited so the role_recruiters join row exists before
-        // loadData() runs inside refresh(). If it fires after refresh(), the recruiter
-        // never appears in the panel for that session.
-        //
-        // Priority: manual entry (user-provided) > auto-detection from JD/URL.
-        // Manual entry fields are only used if any of them are non-empty.
-        const _manualRecName    = document.getElementById('add-rec-name')?.value.trim()    || null;
-        const _manualRecCompany = document.getElementById('add-rec-company')?.value.trim() || null;
-        const _manualRecEmail   = document.getElementById('add-rec-email')?.value.trim()   || null;
-        const _manualRecUrl     = document.getElementById('add-rec-url')?.value.trim()     || null;
-        // '' means user left type as "Unknown" — treat as null (no explicit choice)
-        const _manualRecType    = document.getElementById('add-rec-type')?.value           || null;
-        const _hasManualRec     = !!(_manualRecName || _manualRecEmail || _manualRecUrl);
-
-        if (_hasManualRec) {
-          await runManualRecruiterLink(role, {
-            name:        _manualRecName,
-            company:     _manualRecCompany,
-            email:       _manualRecEmail,
-            profile_url: _manualRecUrl,
-            type:        _manualRecType,
-          }).catch(swallow('unknown'));
-        } else {
-          // No manual entry — fall back to auto-detection from JD text + job URL.
-          // Prefer jd_raw so recruiter signals in headers/footers not stripped by cleaning.
-          await runRecruiterAutoDetection(role, jd_raw || jd).catch(swallow('runRecruiterAutoDetection'));
-        }
-
-        closeAddModal();
-        // ── Force-switch to Applications before refresh so all nav state is consistent ──
-        // Clear selectedRoleId first so neither switchNav's renderInbox nor refresh()'s
-        // renderInbox highlight the old/stale selection before selectRole() runs.
-        selectedRoleId = null;
-        // Ensure Active filter is showing — a new role (user_decision=null, no outcome) will
-        // never appear in the Archive or All filters, so the card would be missing from
-        // the DOM and selectRole() couldn't apply the .active class.
-        _setAppFilter('active');
-        switchNav('applications');
-        await refresh();
-        // Reset scroll to top: new role sorts to position 0 in Needs Decision group.
-        // Without this, renderInbox restores the old scroll position and selectRole
-        // then jumps from there to the top — a double-scroll jerk.
-        const _inboxEl = document.getElementById('role-inbox');
-        if (_inboxEl) _inboxEl.scrollTop = 0;
-        // selectRole with scrollIntoView: new role is at top, scroll confirms it's visible
-        selectRole(role.id, { scrollIntoView: true });
-      } catch (e) {
-        errEl.textContent = e.message || 'Something went wrong.';
-        errEl.classList.remove('hidden');
-        // Ensure trace is hidden and form is restored on any non-analysis error
-        // (analysis errors are handled inside the try block via _clearModalTrace).
-        const _traceElCatch = document.getElementById('add-analysis-trace');
-        const _formElCatch  = document.getElementById('add-modal-form-body');
-        if (_traceElCatch && !_traceElCatch.classList.contains('hidden')) {
-          _traceElCatch.classList.add('hidden');
-          _traceElCatch.classList.remove('add-analysis-trace--done');
-        }
-        if (_formElCatch) _formElCatch.classList.remove('add-modal-form--hidden');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Save JD';
-        _liSourceMeta = null;  // always clear after save attempt
-      }
-    }
+    // ─── Add role modal — retired 15 Apr 2026 ────────────────────────────────
+    // #modal-add markup + openAddModal/closeAddModal/saveRole were removed.
+    // Ingestion now happens exclusively via openIngestionOverlay() (Surface A).
+    // Some orphan wiring below (#add-jd input listener, LinkedIn fetch bar,
+    // truncation warning, Enter-to-save keydown) is null-safe via ?. / if-guards
+    // and silently no-ops; cleaned up in a follow-up.
 
     // ─── CV version helpers ────────────────────────────────────────────────────
     async function loadCvVersions() {
@@ -30981,8 +30669,8 @@ If a field cannot be determined from the message, return null for that field.`,
     // ── "Add JD" button → unified ingestion overlay ──────────────────────────
     document.getElementById('btn-open-add').addEventListener('click', () => openIngestionOverlay({ context: 'add' }));
     // [REMOVED] btn-backfill listener — legacy backfill migrated to one-time SQL (9 Mar 2026).
-    document.getElementById('btn-close-add').addEventListener('click', closeAddModal);
-    document.getElementById('btn-save-add').addEventListener('click', saveRole);
+    // [REMOVED 15 Apr 2026] btn-close-add / btn-save-add listeners — #modal-add
+    // retired; ingestion now flows exclusively through openIngestionOverlay().
 
     // Add Role modal — auto-fill fields on JD paste + truncation warning
     // State stored as data-attr on the textarea so openAddModal can reset it easily.
@@ -31691,9 +31379,7 @@ If a field cannot be determined from the message, return null for that field.`,
       // Just dismiss — user returns to source to copy the full JD
     });
 
-    document.getElementById('modal-add').addEventListener('click', e => {
-      if (e.target === e.currentTarget) closeAddModal();
-    });
+    // [REMOVED 15 Apr 2026] #modal-add outside-click-to-close — modal retired.
 
     document.getElementById('btn-close-share').addEventListener('click', closeShareModal);
     document.getElementById('modal-share').addEventListener('click', e => {
@@ -31754,11 +31440,10 @@ If a field cannot be determined from the message, return null for that field.`,
       if (e.target === e.currentTarget) closeEditRoleModal();
     });
 
-    ['add-company','add-title','add-location','add-source','add-url'].forEach(id => {
-      document.getElementById(id).addEventListener('keydown', e => {
-        if (e.key === 'Enter') saveRole();
-      });
-    });
+    // [REMOVED 15 Apr 2026] Enter-to-save keydown loop over #modal-add inputs —
+    // the target fields (#add-company/#add-title/#add-location/#add-source/#add-url)
+    // were removed with the modal. Ingestion overlay has its own Ctrl/Cmd+Enter
+    // handler wired on #rw-ing-textarea.
 
     // ─── Refresh ──────────────────────────────────────────────────────────────
     // ─── Derive recruiter objects from the roles collection ──────────────────
