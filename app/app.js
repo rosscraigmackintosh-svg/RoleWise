@@ -5,6 +5,18 @@
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
 
+    // ─── Tiny utilities (module scope) ───────────────────────────────────────
+    // Trailing-edge debounce: returns a function that delays calling `fn` until
+    // `wait` ms have elapsed since the last invocation. Used for high-frequency
+    // input handlers (e.g. inbox search) to avoid full re-renders on every keystroke.
+    function _debounce(fn, wait) {
+      let _t;
+      return function (...args) {
+        clearTimeout(_t);
+        _t = setTimeout(() => fn.apply(this, args), wait);
+      };
+    }
+
     // ─── Role Workspace: Object Boundaries ───────────────────────────────────
     //
     // GUARD RAIL 1 — Role is the root.
@@ -30743,7 +30755,8 @@ If a field cannot be determined from the message, return null for that field.`,
     const _clearBtn     = document.getElementById('btn-search-clear');
 
     if (_filterSearch) {
-      _filterSearch.addEventListener('input', () => renderInbox(allRoles));
+      const _debouncedSearchRender = _debounce(() => renderInbox(allRoles), 150);
+      _filterSearch.addEventListener('input', _debouncedSearchRender);
 
       // Escape inside search: clear text first, then blur on second press
       _filterSearch.addEventListener('keydown', e => {
