@@ -4710,123 +4710,11 @@
       position: relative; /* anchor for intake-panel absolute positioning */
     }
 
-    /* ── Intake mode: collapse col-chat column, expand overview ── */
-    .app.intake-mode {
-      grid-template-columns: 254px 0px 310px 1fr; /* RW-LAYOUT-WIDTH-01: chat col removed */
-    }
-    .app.intake-mode .col-chat {
-      display: none;
-      overflow: hidden;
-      pointer-events: none;
-    }
-
-    /* ── Intake panel — centered overlay inside col-center ─────── */
-    .intake-panel {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: var(--z-sticky);
-      background: var(--surface);
-      padding: 0 48px;
-    }
-    .intake-panel[hidden] { display: none; }
-
-    /* Entry fade-in */
-    @keyframes intake-fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-    /* Exit fade-out */
-    @keyframes intake-fadeout { to { opacity: 0; transform: translateY(4px); } }
-
-    .intake-panel:not([hidden]) {
-      animation: intake-fadein 0.22s ease forwards;
-    }
-    .intake-panel--exit {
-      animation: intake-fadeout 0.26s ease forwards;
-    }
-
-    .intake-inner {
-      width: 100%;
-      max-width: 560px;
-    }
-
-    .intake-heading {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 12px;
-      letter-spacing: -0.01em;
-    }
-
-    .intake-textarea {
-      width: 100%;
-      min-height: 120px;
-      max-height: 260px;
-      resize: none;
-      border: 1px solid var(--color-border-primary, var(--border));
-      border-radius: var(--radius-md, 8px);
-      padding: var(--spacing-lg, 12px) var(--spacing-xl, 16px);
-      font-size: 14px;
-      line-height: 1.55;
-      color: var(--color-text-primary, var(--text));
-      background: var(--color-bg-primary, var(--bg));
-      font-family: inherit;
-      outline: none;
-      box-sizing: border-box;
-      display: block;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
-      box-shadow: 0 1px 2px rgba(10,13,18,0.05);
-    }
-    .intake-textarea:focus {
-      border-color: var(--color-border-brand, var(--accent));
-      box-shadow: var(--focus-ring-shadow);
-    }
-
-    .intake-footer {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 12px;
-      margin-top: 10px;
-    }
-
-    .intake-hint {
-      font-size: 11px;
-      color: var(--text-light);
-    }
-
-    .intake-send-btn {
-      padding: var(--spacing-md, 8px) var(--spacing-2xl, 20px);
-      background: var(--color-bg-primary-solid, var(--text));
-      color: var(--color-white, #fff);
-      border: none;
-      border-radius: var(--radius-md, 8px);
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      letter-spacing: 0.01em;
-      transition: opacity 0.15s ease;
-      box-shadow: 0 1px 2px rgba(10,13,18,0.05);
-    }
-    .intake-send-btn:disabled {
-      opacity: 0.3;
-      cursor: not-allowed;
-    }
-    .intake-send-btn:not(:disabled):hover {
-      opacity: 0.8;
-    }
-
-    /* State 2: analysing status */
-    .intake-status-wrap {
-      text-align: center;
-    }
-    .intake-status-wrap[hidden] { display: none; }
-    .intake-status-text {
-      font-size: 14px;
-      color: var(--text-light);
-      line-height: 1.6;
-      transition: opacity 0.4s ease;
-    }
+    /* [REMOVED 15 Apr 2026] Surface C styles — #intake-panel + .intake-mode
+       grid + intake-inner / intake-heading / intake-textarea / intake-footer /
+       intake-hint / intake-send-btn / intake-status-wrap / intake-status-text
+       + intake-fadein/intake-fadeout keyframes. Surface C retired; ingestion
+       now flows through #rw-ingestion-overlay (see below). */
 
     /* ═══════════════════════════════════════════════════════════
        ─── Unified JD Ingestion Overlay ───────────────────────────
@@ -13087,31 +12975,9 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
-       ADD NEW ROLE — intake panel intro copy
-       ─────────────────────────────────────────────────────────────────────
-       Title + description block sits above the textarea in the intake panel.
-       Kept compact — textarea is the focus, copy is supporting context.
+       [REMOVED 15 Apr 2026] ADD NEW ROLE — intake panel intro copy
+       (.intake-intro / .intake-title / .intake-desc). Surface C retired.
        ═══════════════════════════════════════════════════════════════════════ */
-
-    .intake-intro {
-      margin-bottom: 16px;
-    }
-
-    .intake-title {
-      font-family: var(--font-head);
-      font-size: var(--text-xl);
-      font-weight: 700;
-      color: var(--text);
-      line-height: 1.25;
-      margin-bottom: 6px;
-    }
-
-    .intake-desc {
-      font-size: var(--text-sm);
-      color: var(--text-muted);
-      line-height: 1.55;
-      margin: 0;
-    }
 
     /* ── Commute Impact card ─────────────────────────────────────────────── */
     .commute-note {

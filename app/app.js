@@ -2472,89 +2472,9 @@
       if (el) { el.innerHTML = ''; el.style.display = 'none'; }
     }
 
-    // Exit the Add JD intake mode — hide the intake panel and restore the col-chat column.
-    // Safe to call at any time; no-ops if intake mode is not currently active.
-    function _exitIntakeMode() {
-      const intakeEl = document.getElementById('intake-panel');
-      if (intakeEl) {
-        intakeEl._clearTimers?.();
-        intakeEl.setAttribute('hidden', '');
-        intakeEl.classList.remove('intake-panel--exit');
-        delete intakeEl.dataset.cleanupPending;
-      }
-      document.querySelector('.app')?.classList.remove('intake-mode');
-    }
-
-    // Wire the intake panel to the hidden ws-workspace in col-chat.
-    // Called once by openBlankWorkspace after renderWorkspaceView has populated col-chat.
-    function _wireIntakePanel(tempRole) {
-      const intakeEl     = document.getElementById('intake-panel');
-      const textareaEl   = document.getElementById('intake-textarea');
-      const sendBtnEl    = document.getElementById('intake-send-btn');
-      const inputWrapEl  = document.getElementById('intake-input-wrap');
-      const statusWrapEl = document.getElementById('intake-status-wrap');
-      const statusTextEl = document.getElementById('intake-status-text');
-      if (!intakeEl || !textareaEl || !sendBtnEl) return;
-
-      // Reset state — panel may have been used in a previous Add JD session
-      inputWrapEl.removeAttribute('hidden');
-      statusWrapEl.setAttribute('hidden', '');
-      textareaEl.value = '';
-      sendBtnEl.disabled = true;
-
-      // Auto-grow and enable send button
-      textareaEl.addEventListener('input', () => {
-        textareaEl.style.height = 'auto';
-        textareaEl.style.height = Math.min(textareaEl.scrollHeight, 260) + 'px';
-        sendBtnEl.disabled = !textareaEl.value.trim();
-      });
-
-      textareaEl.focus();
-
-      let _intakeSubmitted = false;   // one-shot guard — prevents double-fire
-      const doIntakeSubmit = () => {
-        const text = textareaEl.value.trim();
-        if (!text || sendBtnEl.disabled || _intakeSubmitted) return;
-        _intakeSubmitted = true;
-        sendBtnEl.disabled = true;      // visually disable the button too
-
-        // ── State 2: Analysing ───────────────────────────────────────────
-        inputWrapEl.setAttribute('hidden', '');
-        statusWrapEl.removeAttribute('hidden');
-
-        // Sequential status messages — mirrors _wsRunAnalysis / _ANALYSIS_STAGES timing
-        if (statusTextEl) statusTextEl.textContent = _ANALYSIS_STAGES[0] + '…';
-        let _statusDone = false;
-        const _intakeStageTexts = _ANALYSIS_STAGES.slice(1).map(s => s + '…');
-        const _intakeStageTimes = [2000, 4000, 6000, 8500, 11000];
-        const _statusTimers = _intakeStageTimes.map((t, i) =>
-          setTimeout(() => {
-            if (!_statusDone && statusTextEl?.isConnected && _intakeStageTexts[i]) {
-              statusTextEl.textContent = _intakeStageTexts[i];
-            }
-          }, t)
-        );
-        intakeEl._clearTimers = () => { _statusDone = true; _statusTimers.forEach(clearTimeout); };
-        intakeEl.dataset.cleanupPending = '1';
-
-        // Pass text through the hidden ws-chat-bar (doSend handles the rest)
-        const wsInput = document.getElementById('ws-chat-input');
-        const wsSend  = document.getElementById('ws-chat-send');
-        if (wsInput && wsSend) {
-          wsInput.value = text;
-          wsInput.dispatchEvent(new Event('input'));
-          wsSend.click();
-        }
-      };
-
-      sendBtnEl.addEventListener('click', doIntakeSubmit);
-      textareaEl.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          doIntakeSubmit();
-        }
-      });
-    }
+    // [REMOVED 15 Apr 2026] _exitIntakeMode + _wireIntakePanel — Surface C
+    // (#intake-panel) retired; ingestion now flows exclusively through
+    // openIngestionOverlay() (Surface A).
 
     // Roles with these outcome_state values belong in Archive
     const ARCHIVE_OUTCOME_STATES = new Set(['rejected', 'skipped', 'withdrew', 'offer_accepted', 'closed', 'no_response', 'ghosted']);
@@ -7105,25 +7025,10 @@
       }
       _wsWireSourceCards(timelineEl);
 
-      // ── State 3: Workspace Ready — exit intake mode, reveal col-chat ───────────
-      // If this analysis was triggered via the intake panel (Add JD flow), tear down
-      // the intake overlay and animate col-chat into view. The grid transition on
-      // .app handles the smooth column reveal (0px → 360px).
-      const _intakeEl = document.getElementById('intake-panel');
-      if (_intakeEl && _intakeEl.dataset.cleanupPending) {
-        _intakeEl._clearTimers?.();
-        delete _intakeEl.dataset.cleanupPending;
-        // Exit animation, then hide panel
-        _intakeEl.classList.add('intake-panel--exit');
-        setTimeout(() => {
-          _intakeEl.setAttribute('hidden', '');
-          _intakeEl.classList.remove('intake-panel--exit');
-        }, 280);
-        // Reveal col-chat: remove intake-mode, grid transition animates column in
-        document.querySelector('.app')?.classList.remove('intake-mode');
-        // Render sticky header now that we have extracted role data
-        _renderStickyHeader(role);
-      }
+      // [REMOVED 15 Apr 2026] Intake-panel teardown block — Surface C retired.
+      // Temp roles are no longer created (openBlankWorkspace is gone), so this
+      // State 3 reveal path is unreachable. Saved-role sticky header is still
+      // rendered by renderWorkspaceView + renderRoleDoc.
 
       // Decision bar removed. The overview panel's decision-action-bar
       // (renderDecisionBar) handles Apply / Save / Skip.
@@ -7911,14 +7816,9 @@
 
       card.querySelector('.ws-mismatch-btn-primary').addEventListener('click', () => {
         card.remove();
-        // Open a fresh blank workspace (switches center pane, creates new tempRole)
-        const newTempRole = openBlankWorkspace();
-        // renderWorkspaceView has rebuilt the DOM — get the new timeline element
-        const newTimelineEl = document.getElementById('ws-timeline');
-        // Clear blank state before injecting content
-        document.querySelector('.ws-blank-state')?.remove();
-        // Pass the pasted text into the new workspace as if the user pasted it there
-        _wsHandlePaste(newTempRole, text, newTimelineEl);
+        // Route the pasted text into the canonical ingestion overlay (Surface A)
+        // so the user confirms the new role through the unified entry path.
+        openIngestionOverlay({ context: 'add', prefillText: text });
       });
 
       card.querySelector('.ws-mismatch-btn-ghost').addEventListener('click', () => {
@@ -8010,12 +7910,6 @@
     // resembles an existing role. This is a system-state notice, not a chat message,
     // so it must NOT appear in the chat timeline.
     //
-    // LAYOUT NOTE: During intake mode the intake-panel sits on top of #col-overview-cards
-    // as a position:absolute overlay with z-index:20 and an opaque background.
-    // If we append to col-overview-cards without dismissing the intake panel, the notice
-    // renders behind the overlay and is invisible — silently blocking the user.
-    // Fix: dismiss the intake panel before rendering, same pattern as _wsRunAnalysis.
-    //
     // "Open existing role"  — navigates to the matching role's workspace via selectRole().
     // "Analyse anyway"      — dismisses the notice and proceeds with _wsRunAnalysis normally.
     function _wsRenderFingerprintNotice(match, matchScore, currentRole, text, timelineEl) {
@@ -8073,23 +7967,7 @@
         ? `<div class="ws-fp-preview-detail">${esc(_detailParts.join(' \u00B7 '))}</div>`
         : '';
 
-      // ── Dismiss the intake panel so the overview area becomes visible ─────────
-      // During Add JD flow the intake-panel is a full opaque overlay (z-index 20)
-      // covering #col-overview-cards. Without this step the notice renders invisibly
-      // behind it, silently blocking the user with no visible UI.
-      const _intakeEl = document.getElementById('intake-panel');
-      const _wasIntakeVisible = _intakeEl && !_intakeEl.hasAttribute('hidden');
-      if (_wasIntakeVisible) {
-        _intakeEl._clearTimers?.();
-        delete _intakeEl.dataset.cleanupPending;
-        // Fade out the intake overlay so the overview panel behind it becomes visible.
-        // Keep intake-mode on the app so the grid stays in overview-only layout (no chat).
-        _intakeEl.classList.add('intake-panel--exit');
-        setTimeout(() => {
-          _intakeEl.setAttribute('hidden', '');
-          _intakeEl.classList.remove('intake-panel--exit');
-        }, 280);
-      }
+      // [REMOVED 15 Apr 2026] Intake-panel dismissal — Surface C retired.
 
       // ── Take over the entire middle panel ──────────────────────────────────
       // Target #col-overview-body — the full scroll container that holds the
@@ -8201,11 +8079,7 @@
           `</div>`;
         bodyEl.appendChild(_processingEl);
 
-        // Restore cleanupPending so _wsRunAnalysis's intake teardown fires normally
-        // (removes intake-mode, reveals col-chat). The intake panel is already hidden
-        // but the grid is still in intake layout.
-        const _iEl = document.getElementById('intake-panel');
-        if (_iEl) _iEl.dataset.cleanupPending = '1';
+        // [REMOVED 15 Apr 2026] cleanupPending restore — Surface C retired.
         currentRole._retryText = text;
         _wsRunAnalysis(currentRole, text, timelineEl);
       });
@@ -8310,17 +8184,7 @@
         ? `<div class="ws-fp-preview-detail">${esc(_detailParts.join(' \u00B7 '))}</div>`
         : '';
 
-      // ── Dismiss intake panel ──────────────────────────────────────────────
-      const _intakeEl = document.getElementById('intake-panel');
-      if (_intakeEl && !_intakeEl.hasAttribute('hidden')) {
-        _intakeEl._clearTimers?.();
-        delete _intakeEl.dataset.cleanupPending;
-        _intakeEl.classList.add('intake-panel--exit');
-        setTimeout(() => {
-          _intakeEl.setAttribute('hidden', '');
-          _intakeEl.classList.remove('intake-panel--exit');
-        }, 280);
-      }
+      // [REMOVED 15 Apr 2026] Intake-panel dismissal — Surface C retired.
 
       // ── Take over overview panel ──────────────────────────────────────────
       const bodyEl = document.getElementById('col-overview-body');
@@ -8399,8 +8263,7 @@
           `</div>`;
         bodyEl.appendChild(_processingEl);
 
-        const _iEl = document.getElementById('intake-panel');
-        if (_iEl) _iEl.dataset.cleanupPending = '1';
+        // [REMOVED 15 Apr 2026] cleanupPending restore — Surface C retired.
         currentRole._retryText = text;
         _wsRunAnalysis(currentRole, text, timelineEl);
       });
@@ -9298,9 +9161,7 @@
 
     // Main workspace renderer — blank state + chat input
     async function renderWorkspaceView(role, { skipOverview = false } = {}) {
-      // If a real (saved) role is being opened while the intake panel is showing,
-      // exit intake mode so col-chat is visible and the intake overlay is dismissed.
-      if (!role._isTemp) _exitIntakeMode();
+      // [REMOVED 15 Apr 2026] _exitIntakeMode() call — Surface C retired.
 
       const el = document.getElementById('col-chat');
       el.classList.add('ws-active');
@@ -10632,8 +10493,7 @@
     // ────────────────────────────────────────────────────────────────────────────
 
     async function renderRoleDoc(role) {
-      // Exit intake mode if active (user selected a role while Add JD was open)
-      _exitIntakeMode();
+      // [REMOVED 15 Apr 2026] _exitIntakeMode() call — Surface C retired.
 
       // ── WORKSPACE ROUTING GUARD ──────────────────────────────────────────────
       // Rule: open workspace if:
@@ -14142,51 +14002,14 @@
         el.setAttribute('hidden', '');
         el.classList.remove('rw-ingestion-overlay--exit');
         el._ingDone = false;
-        // Remove the intake-mode class (legacy) if still present
-        document.querySelector('.app')?.classList.remove('intake-mode');
+        // [REMOVED 15 Apr 2026] legacy 'intake-mode' class cleanup — Surface C retired.
       }, 320); // matches rw-ing-fadeout animation duration
     }
 
-    // ─── Open blank workspace (new Add Role path) ────────────────────────────
-    // Does NOT create a DB record immediately.
-    // A real role record is created only after the first successful JD analysis.
-    // Until then the workspace operates on a lightweight in-memory sentinel object.
-    function openBlankWorkspace() {
-      selectedRoleId = '_temp';
-      _setAppFilter('active');
-      switchNav('applications');
-      // Clear any existing inbox selection highlight — nothing in the list maps to temp
-      document.querySelectorAll('.inbox-role').forEach(r => r.classList.remove('selected'));
-      // Build a lightweight temp role object — no DB backing until first analysis
-      const tempRole = {
-        _isTemp:             true,
-        id:                  null,
-        company_name:        null,
-        role_title:          null,
-        job_description_raw: null,
-        analysis:            null,
-        job_url:             null,
-        location_text:       null,
-        current_stage:       'JD Review',
-        role_updates:        [],
-        user_decision:       null,
-        status:              'active',
-      };
-      // ── Enter State 1 (Intake): show centered input, hide col-chat ──────────
-      document.querySelector('.app')?.classList.add('intake-mode');
-      const intakeEl = document.getElementById('intake-panel');
-      if (intakeEl) intakeEl.removeAttribute('hidden');
-
-      // Render workspace scaffold into col-chat (hidden during intake).
-      // This sets up the full chat plumbing (doSend, _wsHandlePaste, etc.)
-      // so the intake panel can delegate submission to it.
-      renderWorkspaceView(tempRole);
-
-      // Wire intake panel submit to the hidden ws-workspace
-      _wireIntakePanel(tempRole);
-
-      return tempRole; // allows callers (e.g. mismatch handler) to reference the new role object
-    }
+    // [REMOVED 15 Apr 2026] openBlankWorkspace() — Surface C retired. The
+    // JD-mismatch "Create new role" branch now routes pasted text into the
+    // canonical ingestion overlay via openIngestionOverlay({ context: 'add',
+    // prefillText: text }).
 
     // ─── Add role modal — retired 15 Apr 2026 ────────────────────────────────
     // #modal-add markup + openAddModal/closeAddModal/saveRole were removed.

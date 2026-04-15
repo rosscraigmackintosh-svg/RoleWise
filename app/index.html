@@ -863,34 +863,9 @@
     <!-- Panel 3: Role Overview (workflow controls + card grid) -->
     <main class="col-center" id="col-center">
 
-      <!-- Intake panel — shown during Add JD flow (States 1 & 2), hidden otherwise -->
-      <div id="intake-panel" class="intake-panel" hidden>
-        <div class="intake-inner">
-          <!-- State 1: Input -->
-          <div class="intake-input-wrap" id="intake-input-wrap">
-            <div class="intake-intro">
-              <div class="intake-title">New role</div>
-              <p class="intake-desc">Paste the job description or link for the role. You can also paste recruiter emails, company links, or anything related to the opportunity.</p>
-            </div>
-            <textarea
-              class="intake-textarea"
-              id="intake-textarea"
-              placeholder="Paste a job description, link, or recruiter email…"
-              rows="5"
-              autocomplete="off"
-              spellcheck="false"
-            ></textarea>
-            <div class="intake-footer">
-              <span class="intake-hint">Ctrl+Enter to submit</span>
-              <button class="intake-send-btn" id="intake-send-btn" disabled>Analyse</button>
-            </div>
-          </div>
-          <!-- State 2: Analysing status -->
-          <div class="intake-status-wrap" id="intake-status-wrap" hidden>
-            <div class="intake-status-text" id="intake-status-text">Analysing job description…</div>
-          </div>
-        </div>
-      </div>
+      <!-- [REMOVED 15 Apr 2026] #intake-panel markup — Surface C retired.
+           Ingestion now flows exclusively through the unified overlay
+           (#rw-ingestion-overlay) opened via openIngestionOverlay(). -->
 
       <div id="col-overview-body">
         <div id="role-sticky-header" class="role-sticky-header" style="display:none;"></div>
