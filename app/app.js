@@ -1,3 +1,48 @@
+    /* ═══════════════════════════════════════════════════════════════════════════
+     * RoleWise — app.js MAP
+     * ───────────────────────────────────────────────────────────────────────────
+     * This file is a single IIFE-style monolith. Approximate section ranges below
+     * (line numbers drift; grep the named symbol if uncertain). Read this map
+     * once when arriving; bookmark audit/WHERE_THINGS_LIVE.md for the long form.
+     *
+     *   Lines      Section
+     *   ────────   ────────────────────────────────────────────────────────────
+     *      1– 30   Supabase client + tiny utilities (_debounce, swallow)
+     *     30– 90   Workspace object boundaries (guard rails, type constants)
+     *     50– 350  Workspace helpers (wsAddMessage, wsAppendDecision, wsLoadMemory)
+     *    350– 720  Decision learning (snapshots, ext rows, counters, patterns)
+     *    900–1500  Setup card / appearance / theme / accent themes
+     *   1500–1900  Brand-asset cache + logo resolution
+     *   1900–2400  Sticky header / role header / decision banner / JD section
+     *   2400–3050  Modals, snapshot UI, stats cards
+     *   3050–3500  Inbox: renderInbox, renderRoleCard, selectRole, compare grid
+     *   3500–4900  Workspace timeline rendering, _wsAppend, document panel
+     *   4900–6700  Workspace chat, decision-bar prompts, chip events
+     *   6700–8500  Ingestion overlay (doIntakeSubmit, phase pipeline)
+     *   8500–9700  Overview cards, click delegates, chat input
+     *   9700–10600 renderRoleDoc, notes textarea + debounced LS save
+     *  10600–11900 Stage rail (renderRail, decision history, outcome forms)
+     *  11900–13500 Add-JD modal, edit-details modal, share modal
+     *  13500–14900 Profile view, candidate setup, learning rebuild
+     *  14900–15600 Section context (_scLoad/_scGet/_scSet/_scPersistToDb)
+     *  15600–17900 Decision lens, intel unlocks, friction surfacing
+     *  17900–18800 renderMatchOutput (the big centre card) + commute panel
+     *  18800–21000 Signals classification glue, intel feature flags
+     *  21000–22500 JD Extraction Engine v2 (runJDExtractionV2 + extractors)
+     *  22500–24700 Workspace memory, conversations, insights, artifacts
+     *  24700–25400 Network/AI calls (callAnalysisAPI, callWorkspaceChatAPI, enrich)
+     *  25400–26900 Recruiters: list, detail, edit, add, auto-link
+     *  26900–27800 Recruiter view mount, next-action, radar view
+     *  27800–29500 Admin view + 10 sub-tab renderers
+     *  29500–30200 Review view, monthly review modal
+     *  30200–30800 Filter panel, search input, clear button, Esc handling
+     *  30800–31100 Top nav routing, +Add JD wiring
+     *  31100–31700 Recruiter auto-detect, LinkedIn JD fetch
+     *  31700–end   Boot: refresh() — load profile/learning/roles → renderInbox
+     *
+     * Globals exposed on window.* — see audit/WHERE_THINGS_LIVE.md §"Globals".
+     * ═══════════════════════════════════════════════════════════════════════════ */
+
     const SUPABASE_URL      = 'https://peuaflazxvkkbpbhhjtu.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBldWFmbGF6eHZra2JwYmhoanR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2NDE1NzgsImV4cCI6MjA4ODIxNzU3OH0.AZhesVch4DgVL_VRPQor_MWGx7EyGtS47D_hKRkFkSw';
 
