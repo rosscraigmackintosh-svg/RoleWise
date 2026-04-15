@@ -1602,7 +1602,6 @@
     let _rwAiOutputCache  = null; // Rendered analysis output — used by Ask AI inline (RW-ROLEPAGE-AI-INTERACTION-01)
     let _candidateProfile = null; // candidate_profile row from DB (loaded at boot)
     let _candidateLearning = null; // candidate_learning row from DB (loaded at boot)
-    let _liSourceMeta      = null; // Set by _fetchLinkedInJD; consumed + cleared by saveRole
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Brand Asset System — reusable logo infrastructure
@@ -30704,154 +30703,15 @@ If a field cannot be determined from the message, return null for that field.`,
     // [REMOVED 15 Apr 2026] btn-close-add / btn-save-add listeners — #modal-add
     // retired; ingestion now flows exclusively through openIngestionOverlay().
 
-    // Add Role modal — auto-fill fields on JD paste + truncation warning
-    // State stored as data-attr on the textarea so openAddModal can reset it easily.
-    const _addJdTextarea   = document.getElementById('add-jd');
-    const _addAutofillHint = document.getElementById('add-autofill-hint');
-    const _jdTruncWarning  = document.getElementById('jd-truncation-warning');
-
-    if (_addJdTextarea) {
-      _addJdTextarea.addEventListener('input', () => {
-        const raw           = _addJdTextarea.value.trim();
-        const pasteAnyway   = _addJdTextarea.dataset.pasteAnyway === '1';
-
-        // ── Truncation warning ──────────────────────────────────────────────
-        if (_jdTruncWarning) {
-          if (!pasteAnyway && raw.length > 0) {
-            const { truncated } = detectLinkedInTruncation(raw);
-            _jdTruncWarning.classList.toggle('hidden', !truncated);
-          } else {
-            _jdTruncWarning.classList.add('hidden');
-          }
-        }
-
-        if (!raw) return;
-
-        // ── Auto-fill metadata from JD ──────────────────────────────────────
-        const meta    = extractJDMetadata(raw, cleanJobDescription(raw));
-        let filled    = false;
-        const compEl  = document.getElementById('add-company');
-        const titleEl = document.getElementById('add-title');
-        const urlEl   = document.getElementById('add-url');
-        const locEl   = document.getElementById('add-location');
-        if (compEl  && !compEl.value.trim()  && meta.company_name) { compEl.value  = meta.company_name;  filled = true; }
-        if (titleEl && !titleEl.value.trim() && meta.role_title)   { titleEl.value = meta.role_title;    filled = true; }
-        if (urlEl   && !urlEl.value.trim()   && meta.job_url)      { urlEl.value   = meta.job_url;       filled = true; }
-        if (locEl   && !locEl.value.trim()   && meta.location)     { locEl.value   = meta.location;      filled = true; }
-
-        // Auto-detect engagement type (non-destructive — only fills if still Unknown)
-        const _addEngEl = document.getElementById('add-engagement-type');
-        let _detectedEngType = null;
-        if (_addEngEl && !_addEngEl.value) {
-          _detectedEngType = _detectEngagementType(raw);
-          if (_detectedEngType) { _addEngEl.value = _detectedEngType; filled = true; }
-        }
-
-        // Auto-detect practical fields (IR35, day rate, contract length, start timeline)
-        let _anyRoleDetails = false;
-        const _ir35El = document.getElementById('add-ir35-status');
-        let _detectedIr35 = null;
-        if (_ir35El && !_ir35El.value) {
-          _detectedIr35 = _detectIr35Status(raw, _detectedEngType);
-          if (_detectedIr35) { _ir35El.value = _detectedIr35; _anyRoleDetails = true; }
-        }
-        const _dayRateEl = document.getElementById('add-day-rate');
-        let _detectedDayRate = null;
-        if (_dayRateEl && !_dayRateEl.value.trim()) {
-          _detectedDayRate = _detectDayRateText(raw);
-          if (_detectedDayRate) { _dayRateEl.value = _detectedDayRate; _anyRoleDetails = true; }
-        }
-        const _contractLenEl = document.getElementById('add-contract-length');
-        let _detectedContractLen = null;
-        if (_contractLenEl && !_contractLenEl.value.trim()) {
-          _detectedContractLen = _detectContractLength(raw);
-          if (_detectedContractLen) { _contractLenEl.value = _detectedContractLen; _anyRoleDetails = true; }
-        }
-        const _startEl = document.getElementById('add-start-timeline');
-        let _detectedStart = null;
-        if (_startEl && !_startEl.value) {
-          _detectedStart = _detectStartTimeline(raw);
-          if (_detectedStart) { _startEl.value = _detectedStart; _anyRoleDetails = true; }
-        }
-        // Auto-open role details section if anything was detected
-        if (_anyRoleDetails) {
-          const _rdSec = document.getElementById('role-details-section');
-          if (_rdSec) _rdSec.setAttribute('open', '');
-          document.getElementById('role-details-autofill-badge')?.classList.remove('hidden');
-          filled = true;
-        }
-
-        // Build a richer autofill hint listing what was detected
-        if (_addAutofillHint) {
-          if (filled || meta.remote_model || meta.salary_annual) {
-            const _detected = [];
-            if (meta.company_name) _detected.push('company');
-            if (meta.role_title)   _detected.push('title');
-            if (meta.location)     _detected.push('location');
-            if (meta.remote_model) _detected.push(`work model (${meta.remote_model})`);
-            if (meta.salary_annual) {
-              const _salStr = meta.salary_monthly
-                ? `${meta.salary_annual} · ${meta.salary_monthly}`
-                : meta.salary_annual;
-              _detected.push(`salary (${_salStr})`);
-            }
-            if (_detectedEngType)     _detected.push(`type (${_detectedEngType})`);
-            if (_detectedIr35)        _detected.push(`IR35 (${_detectedIr35})`);
-            if (_detectedDayRate)     _detected.push(`rate (${_detectedDayRate})`);
-            if (_detectedContractLen) _detected.push(`length (${_detectedContractLen})`);
-            if (_detectedStart)       _detected.push(`start (${_detectedStart})`);
-            _addAutofillHint.textContent = _detected.length
-              ? `Detected from JD: ${_detected.join(', ')}. You can edit the fields above.`
-              : 'Auto-filled from JD. You can edit.';
-            _addAutofillHint.style.display = 'block';
-          } else {
-            _addAutofillHint.style.display = 'none';
-          }
-        }
-      });
-    }
-
-    // Recruiter auto-fill — runs on JD blur (when user tabs away after pasting).
-    // Only fills recruiter section if all fields are currently empty (non-destructive).
-    // Also runs when the URL field changes so LinkedIn profile URLs are detected.
-    function _tryAutoFillRecruiter() {
-      const _jdVal  = _addJdTextarea ? _addJdTextarea.value : '';
-      const _urlVal = (document.getElementById('add-url')?.value || '').trim();
-      // Only auto-fill if recruiter name field is still empty
-      const _recNameEl = document.getElementById('add-rec-name');
-      if (!_recNameEl || _recNameEl.value.trim()) return;
-
-      const _jdDetected  = _jdVal  ? detectRecruiterFromJD(_jdVal)       : null;
-      const _urlDetected = _urlVal ? detectRecruiterFromURL(_urlVal)      : null;
-      const _name     = _jdDetected?.name     || _urlDetected?.nameHint  || '';
-      const _email    = _jdDetected?.email                                || '';
-      const _linkedin = _jdDetected?.linkedin || _urlDetected?.linkedin   || '';
-      const _company  = _urlDetected?.companyHint                         || '';
-
-      if (!_name && !_email && !_linkedin) return;
-
-      const _recEmailEl   = document.getElementById('add-rec-email');
-      const _recUrlEl     = document.getElementById('add-rec-url');
-      const _recCompanyEl = document.getElementById('add-rec-company');
-      const _recTypeEl    = document.getElementById('add-rec-type');
-      if (_name    && _recNameEl    && !_recNameEl.value.trim())    _recNameEl.value    = _name;
-      if (_email   && _recEmailEl   && !_recEmailEl.value.trim())   _recEmailEl.value   = _email;
-      if (_linkedin && _recUrlEl    && !_recUrlEl.value.trim())     _recUrlEl.value     = _linkedin;
-      if (_company && _recCompanyEl && !_recCompanyEl.value.trim()) _recCompanyEl.value = _company;
-      if (_company && _recTypeEl && !_recTypeEl.value && _recruiterTypeLabel(_company) === 'Agency') {
-        _recTypeEl.value = 'Agency';
-      }
-      // Show autofill badge + open section
-      const _badge   = document.getElementById('recruiter-autofill-badge');
-      const _section = document.getElementById('recruiter-details-section');
-      if (_badge)   _badge.classList.remove('hidden');
-      if (_section) _section.setAttribute('open', '');
-    }
-
-    if (_addJdTextarea) {
-      _addJdTextarea.addEventListener('blur', _tryAutoFillRecruiter);
-    }
-    document.getElementById('add-url')?.addEventListener('change', _tryAutoFillRecruiter);
+    // [REMOVED 15 Apr 2026] #modal-add autofill input listener, truncation
+    // warning wiring, `_tryAutoFillRecruiter` + its blur/change wires, and the
+    // `_addJdTextarea` / `_addAutofillHint` / `_jdTruncWarning` consts — all
+    // bound DOM that lived inside #modal-add (add-jd, add-autofill-hint,
+    // jd-truncation-warning, add-company, add-title, add-location, add-url,
+    // add-engagement-type, add-ir35-status, add-day-rate, add-contract-length,
+    // add-start-timeline, role-details-section, role-details-autofill-badge,
+    // add-rec-name, add-rec-email, add-rec-url, add-rec-company, add-rec-type,
+    // recruiter-autofill-badge, recruiter-details-section).
 
     // ─── LinkedIn JD helpers ─────────────────────────────────────────────────
 
@@ -30887,14 +30747,10 @@ If a field cannot be determined from the message, return null for that field.`,
       return ['about', 'responsibilit', 'requirement', 'qualif', 'experience', 'what you'].some(s => lower.includes(s));
     }
 
-    // ─── LinkedIn JD Fetch ───────────────────────────────────────────────────
-    // Detects LinkedIn job URLs in the URL field and offers a one-click fetch
-    // that pre-fills the JD textarea + metadata fields via the fetch-linkedin-jd
-    // edge function (which uses the li_at session cookie stored in profiles).
-
-    const _liBar    = document.getElementById('linkedin-fetch-bar');
-    const _liBtn    = document.getElementById('btn-linkedin-fetch');
-    const _liStatus = document.getElementById('linkedin-fetch-status');
+    // [REMOVED 15 Apr 2026] Surface B fetch-bar section header + _liBar/_liBtn
+    // /_liStatus consts — bound #modal-add DOM (linkedin-fetch-bar/-fetch-status
+    // / btn-linkedin-fetch). `_isLinkedInJobUrl` below is retained: it's reused
+    // by the shared ingestion router `_ingestJdFromUrl`.
 
     function _isLinkedInJobUrl(url) {
       return /linkedin\.com\/(jobs\/view\/\d+|jobs\/collections\/|jobs\/search)/.test(url)
@@ -31025,11 +30881,6 @@ If a field cannot be determined from the message, return null for that field.`,
       return null;
     }
 
-    function _showLinkedInFetchBar(show) {
-      if (_liBar) _liBar.classList.toggle('hidden', !show);
-      if (_liStatus && !show) _liStatus.textContent = '';
-    }
-
     // ─── JD URL ingestion router (Phase 1 multi-board) ─────────────────────
     // Classifies a URL into linkedin | workable | greenhouse | lever | ashby |
     // generic | unknown, and routes to the appropriate fetcher. Returns a
@@ -31053,16 +30904,6 @@ If a field cannot be determined from the message, return null for that field.`,
         if (spec.host.test(host)) return { source_type: key, source_label: spec.label, domain: host };
       }
       return { source_type: 'generic', source_label: host || 'the page', domain: host };
-    }
-
-    // Returns the classification iff the URL should trigger the fetch bar.
-    // LinkedIn requires a specific job URL shape; other supported sources just
-    // need to match the host.
-    function _supportedFetchUrlMeta(url) {
-      const cls = _classifyJdUrl(url);
-      if (cls.source_type === 'linkedin') return _isLinkedInJobUrl(url) ? cls : null;
-      if (['workable','greenhouse','lever','ashby'].includes(cls.source_type)) return cls;
-      return null;
     }
 
     function _ingestCopyFor(status, source_label, failure_reason) {
@@ -31299,119 +31140,11 @@ If a field cannot be determined from the message, return null for that field.`,
     }
     // ─── End JD URL ingestion router ───────────────────────────────────────
 
-    // Show fetch bar when a supported JD URL is typed/pasted into the URL field.
-    // Button label is set dynamically so the user sees which source will be hit.
-    document.getElementById('add-url')?.addEventListener('input', (e) => {
-      const meta = _supportedFetchUrlMeta(e.target.value.trim());
-      _showLinkedInFetchBar(!!meta);
-      if (meta && _liBtn) _liBtn.textContent = `Fetch JD from ${meta.source_label}`;
-    });
-
-    // Also detect if a supported JD URL is pasted directly into the JD textarea
-    if (_addJdTextarea) {
-      _addJdTextarea.addEventListener('paste', (e) => {
-        const pasted = ((e.clipboardData || window.clipboardData)?.getData('text') || '').trim();
-        const meta = _supportedFetchUrlMeta(pasted);
-        if (meta) {
-          e.preventDefault();
-          const _urlEl = document.getElementById('add-url');
-          if (_urlEl && !_urlEl.value.trim()) _urlEl.value = pasted;
-          _showLinkedInFetchBar(true);
-          if (_liBtn) _liBtn.textContent = `Fetch JD from ${meta.source_label}`;
-          if (_liStatus) _liStatus.textContent = `${meta.source_label} URL detected. Click Fetch JD to load it.`;
-        }
-      });
-    }
-
-    async function _fetchLinkedInJD() {
-      const url = document.getElementById('add-url')?.value.trim();
-      if (!url) return;
-      const meta = _supportedFetchUrlMeta(url);
-      if (!meta) return;
-
-      const sourceLabel = meta.source_label;
-      if (_liBtn)    { _liBtn.disabled = true; _liBtn.textContent = `Fetching from ${sourceLabel}\u2026`; }
-      if (_liStatus) { _liStatus.textContent = ''; }
-
-      try {
-        const result = await _ingestJdFromUrl(url, { role_id: null });
-        const { fetch_status, failure_reason } = result;
-
-        // ── Failure / unsupported / too-short states ─────────────────────────
-        if (!result.success) {
-          if (_liStatus) _liStatus.textContent = _ingestCopyFor(fetch_status, sourceLabel, failure_reason);
-          return;
-        }
-
-        // ── Pre-fill JD textarea ─────────────────────────────────────────────
-        const _jdEl = document.getElementById('add-jd');
-        const _descText = result.description_text || '';
-        if (_jdEl && _descText) {
-          _jdEl.value = _descText;
-          _jdEl.dispatchEvent(new Event('input'));   // triggers autofill + truncation check
-        }
-
-        // ── Pre-fill metadata fields (non-destructive) ───────────────────────
-        const compEl   = document.getElementById('add-company');
-        const titleEl  = document.getElementById('add-title');
-        const locEl    = document.getElementById('add-location');
-        const sourceEl = document.getElementById('add-source');
-        if (compEl  && !compEl.value.trim()  && result.company)  compEl.value  = result.company;
-        if (titleEl && !titleEl.value.trim() && result.title)    titleEl.value = result.title;
-        if (locEl   && !locEl.value.trim()   && result.location) locEl.value   = result.location;
-        if (sourceEl && !sourceEl.value)                          sourceEl.value = sourceLabel;
-
-        // ── Source metadata — consumed by saveRole ───────────────────────────
-        // Preserve legacy LinkedIn-specific shape so downstream saveRole keeps
-        // working; add source_type so non-LinkedIn sources persist correctly.
-        if (meta.source_type === 'linkedin') {
-          const _job = result._liJob || {};
-          const _isIntermediary = !_job.company || _recruiterTypeLabel(_job.company) === 'Agency';
-          _liSourceMeta = {
-            captured_via:           'auto_fetch',
-            source_type:            'linkedin',
-            source_url:             url,
-            recruiter_intermediary: _isIntermediary,
-          };
-        } else {
-          _liSourceMeta = {
-            captured_via: 'auto_fetch',
-            source_type:  meta.source_type,
-            source_url:   url,
-          };
-        }
-
-        // ── Status copy + button ─────────────────────────────────────────────
-        if (_liStatus) _liStatus.textContent = _ingestCopyFor(fetch_status, sourceLabel, failure_reason);
-        if (_liBtn) _liBtn.textContent = 'Refetch';
-
-        // ── Auto-analyse: trigger full save+analyse pipeline if JD is long ───
-        if (_descText && _descText.length > 900 && fetch_status === 'success') {
-          setTimeout(() => { saveRole(); }, 800);
-        }
-
-      } catch (_err) {
-        console.warn('[url-ingest] unexpected error in _fetchLinkedInJD', _err);
-        if (_liStatus) _liStatus.textContent = _ingestCopyFor('failed', sourceLabel, 'unexpected_error');
-      } finally {
-        if (_liBtn) _liBtn.disabled = false;
-      }
-    }
-
-    _liBtn?.addEventListener('click', _fetchLinkedInJD);
-    // ─── End LinkedIn JD Fetch ───────────────────────────────────────────────
-
-    // Truncation warning action buttons
-    document.getElementById('btn-jd-paste-anyway')?.addEventListener('click', () => {
-      if (_addJdTextarea) _addJdTextarea.dataset.pasteAnyway = '1';
-      _jdTruncWarning?.classList.add('hidden');
-    });
-    document.getElementById('btn-jd-recopy')?.addEventListener('click', () => {
-      _jdTruncWarning?.classList.add('hidden');
-      // Just dismiss — user returns to source to copy the full JD
-    });
-
-    // [REMOVED 15 Apr 2026] #modal-add outside-click-to-close — modal retired.
+    // [REMOVED 15 Apr 2026] Surface B fetch-bar wiring + `_fetchLinkedInJD`
+    // + truncation-warning button wires + #modal-add outside-click-to-close —
+    // #modal-add retired. Shared router `_ingestJdFromUrl` above is still used
+    // by Surface A (`openIngestionOverlay` → `_runIngestionFlow`) and by the
+    // workspace chat paste flow.
 
     document.getElementById('btn-close-share').addEventListener('click', closeShareModal);
     document.getElementById('modal-share').addEventListener('click', e => {
