@@ -1075,9 +1075,9 @@
   <!-- Analysis layer — signal classification + rendering (must load before app.js) -->
   <script src="analysis/signals.js"></script>
   <script src="analysis/render.js"></script>
-  <!-- Reasoning Map — must load after app.js so the bridge click handler fires after ROLEWISE_REASONING_MAP is set -->
+  <!-- Reasoning Map — lazy-loaded on demand by loadReasoningMap() in app.js (saves ~124 KB at boot) -->
   <script src="app.js?v=li21"></script>
-  <script src="reasoning-map.js"></script>
+  <!-- <script src="reasoning-map.js"></script> -->
   <!-- AI Inspect: inspect-mode.js loads after app.js (needs DOM ready + app state) -->
   <!-- DEV ONLY — remove this line for production builds -->
   <script src="devtools/inspect/inspect-mode.js"></script>

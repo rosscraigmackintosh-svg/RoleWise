@@ -68,6 +68,27 @@
       return (err) => { try { console.warn('[swallow:' + label + ']', err); } catch (_) {} };
     }
 
+    // Lazy-load reasoning-map.js (~124 KB) on first invocation. The script is an
+    // IIFE that writes window.openReasoningMap when it loads, so we inject a
+    // <script> tag, await its `load` event, then call through.
+    let _reasoningMapLoading = null;
+    function loadReasoningMap(role) {
+      if (window.openReasoningMap) { window.openReasoningMap(role); return; }
+      if (!_reasoningMapLoading) {
+        _reasoningMapLoading = new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'reasoning-map.js';
+          s.async = true;
+          s.onload = () => resolve();
+          s.onerror = (e) => { _reasoningMapLoading = null; reject(e); };
+          document.body.appendChild(s);
+        });
+      }
+      _reasoningMapLoading
+        .then(() => { if (window.openReasoningMap) window.openReasoningMap(role); })
+        .catch(swallow('loadReasoningMap'));
+    }
+
     // ─── Role Workspace: Object Boundaries ───────────────────────────────────
     //
     // GUARD RAIL 1 — Role is the root.
@@ -8801,7 +8822,7 @@
         }
         if (e.target.closest('#rw-sidebar-reasoning-map')) {
           const _role = selectedRoleId ? allRoles.find(r => r.id === selectedRoleId) : null;
-          if (_role && window.openReasoningMap) window.openReasoningMap(_role);
+          if (_role) loadReasoningMap(_role);
           return;
         }
         // ── Admin actions (RW-SIDEBAR-ADMIN) — delegated from sidebar buttons ──
@@ -31692,9 +31713,9 @@ If a field cannot be determined from the message, return null for that field.`,
     // + the one button line above to fully disable this feature.
     document.getElementById('col-center').addEventListener('click', e => {
       const btn = e.target.closest('#rh-btn-reasoning-map');
-      if (!btn || !window.openReasoningMap) return;
+      if (!btn) return;
       const role = allRoles.find(r => r.id === btn.dataset.roleId);
-      if (role) window.openReasoningMap(role);
+      if (role) loadReasoningMap(role);
     });
 
     // Edit details modal wiring
