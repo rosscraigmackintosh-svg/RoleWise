@@ -4906,6 +4906,43 @@
       gap: 6px;
     }
 
+    /* Role identity strip — shown only for context: 'unanalysed' */
+    .rw-ing-role-identity {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      color: var(--text-muted, var(--text-light));
+      margin-bottom: 2px;
+      line-height: 1.4;
+    }
+    .rw-ing-role-identity[hidden] { display: none; }
+    .rw-ing-role-company {
+      font-weight: 600;
+      color: var(--text, #181d27);
+    }
+    .rw-ing-role-title {
+      color: var(--text, #181d27);
+    }
+    .rw-ing-role-company + .rw-ing-role-title::before {
+      content: "\00b7"; /* middle dot */
+      margin-right: 6px;
+      color: var(--text-muted, var(--text-light));
+    }
+    .rw-ing-role-wm {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: var(--surface-soft, #f2f4f7);
+      color: var(--text-muted, var(--text-light));
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+    }
+    .rw-ing-role-wm[hidden] { display: none; }
+
     .rw-ing-headline {
       font-size: 22px;
       font-weight: 600;

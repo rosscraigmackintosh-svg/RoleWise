@@ -13635,6 +13635,38 @@
         _sub.textContent = 'Paste a job description or a link to one';
       }
 
+      // ── Role identity strip — only for 'unanalysed' context ─────────────────
+      // Shows which role is about to be re-analysed (company · title · work model)
+      // so the user can tell at a glance what they're acting on.
+      const _identityEl = document.getElementById('rw-ing-role-identity');
+      const _identCompEl = document.getElementById('rw-ing-role-company');
+      const _identTitleEl = document.getElementById('rw-ing-role-title');
+      const _identWmEl = document.getElementById('rw-ing-role-wm');
+      if (_identityEl) {
+        const _shouldShow = context === 'unanalysed' && role && (role.company_name || role.role_title);
+        if (_shouldShow) {
+          if (_identCompEl)  _identCompEl.textContent  = role.company_name || '';
+          if (_identTitleEl) _identTitleEl.textContent = role.role_title   || '';
+          // Work model badge — only if role.work_model is a known value
+          if (_identWmEl) {
+            const _wmLabel = role.work_model ? (WORK_MODEL_LABELS[role.work_model] || null) : null;
+            if (_wmLabel) {
+              _identWmEl.textContent = _wmLabel;
+              _identWmEl.removeAttribute('hidden');
+            } else {
+              _identWmEl.textContent = '';
+              _identWmEl.setAttribute('hidden', '');
+            }
+          }
+          _identityEl.removeAttribute('hidden');
+        } else {
+          _identityEl.setAttribute('hidden', '');
+          if (_identCompEl)  _identCompEl.textContent  = '';
+          if (_identTitleEl) _identTitleEl.textContent = '';
+          if (_identWmEl)    { _identWmEl.textContent  = ''; _identWmEl.setAttribute('hidden', ''); }
+        }
+      }
+
       // ── Show overlay ────────────────────────────────────────────────────────
       _overlay.removeAttribute('hidden');
       if (!prefillText) setTimeout(() => _textarea.focus(), 60);

@@ -519,6 +519,13 @@
     <!-- ── State: idle ──────────────────────────────────────── -->
     <div id="rw-ing-idle" class="rw-ing-idle">
       <div class="rw-ing-intro">
+        <!-- Role identity — shown only when re-analysing an existing role
+             (context: 'unanalysed'). Populated by openIngestionOverlay(). -->
+        <div id="rw-ing-role-identity" class="rw-ing-role-identity" hidden>
+          <span id="rw-ing-role-company" class="rw-ing-role-company"></span>
+          <span id="rw-ing-role-title" class="rw-ing-role-title"></span>
+          <span id="rw-ing-role-wm" class="rw-ing-role-wm" hidden></span>
+        </div>
         <p id="rw-ing-headline" class="rw-ing-headline">Add a role</p>
         <p id="rw-ing-sub" class="rw-ing-sub">Paste a job description or a link to one</p>
       </div>
