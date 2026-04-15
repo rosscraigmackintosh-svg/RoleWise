@@ -2888,12 +2888,6 @@
       color: var(--text-muted);
       line-height: 1.6;
     }
-    .snap-divider {
-      border: none;
-      border-top: 1px solid var(--border-light);
-      margin: 0 0 20px 20px;
-    }
-
     /* ─── New Stats page cards ───────────────────────────────────── */
     .stat-card {
       background: var(--surface);
@@ -4470,23 +4464,6 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-
-    /* ─── Application Response Status badges ───────────────────── */
-    .ars-badge {
-      display: inline-block;
-      font-size: 9px;
-      font-weight: 600;
-      padding: 1px 5px;
-      border-radius: var(--radius-sm);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      vertical-align: middle;
-      flex-shrink: 0;
-    }
-    .ars-active  { background: var(--success-bg); color: var(--success); }
-    .ars-waiting { background: var(--warning-bg); color: var(--warning); }
-    .ars-stale   { background: var(--warning-bg-alt); color: var(--warning); }
-    .ars-ghosted { background: var(--error-bg); color: var(--error); }
 
     /* ─── Mini reason line — up to 2 decision signals ──────────── */
     .inbox-mini-reasons {
@@ -11027,74 +11004,6 @@
       gap: 2px;
     }
 
-    /* ─── Your Lens panel ─────────────────────────────────────────────────────
-       Quiet contextual panel showing the user's recurring preference patterns.
-       Shown in role workspace when ≥3 decided roles exist. Non-intrusive.    */
-
-    .yl-panel {
-      margin: 0 0 8px;
-      padding: 12px 14px 10px;
-      background: var(--bg-subtle, #F9FAFB);
-      border: 1px solid var(--border-light);
-      border-radius: 8px;
-    }
-
-    .yl-heading {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: var(--text-muted);
-      margin-bottom: 8px;
-    }
-
-    .yl-label {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-bottom: 5px;
-      margin-top: 6px;
-    }
-
-    .yl-label--weaker {
-      margin-top: 10px;
-    }
-
-    .yl-list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-    }
-
-    .yl-list li {
-      font-size: 12.5px;
-      color: var(--text);
-      line-height: 1.45;
-      padding-left: 12px;
-      position: relative;
-    }
-
-    .yl-list li::before {
-      content: '·';
-      position: absolute;
-      left: 0;
-      color: var(--text-light);
-    }
-
-    .yl-list--weaker li {
-      color: var(--text-muted);
-    }
-
-    .yl-note {
-      font-size: 11.5px;
-      color: var(--text-light);
-      font-style: italic;
-      margin-top: 9px;
-      line-height: 1.4;
-    }
-
     /* ─── Structured mini-briefing response ──────────────────────────────────
        Used for practical AI answers (commute, salary, etc.) that fit a
        fact → uncertainty → implication structure. Reuses doc section styles.  */
@@ -11611,17 +11520,6 @@
       margin-top: 6px;
     }
 
-    /* Hiring signal badge variants */
-    .ars-interviewing { background: #DBEAFE; color: #1e40af; }
-    .ars-offer        { background: var(--success-bg); color: var(--success); }
-    .ars-accepted     { background: var(--success-bg); color: var(--success); }
-    .ars-rejected     { background: var(--error-bg); color: var(--error); }
-    .ars-ghosted      { background: var(--gray-100); color: var(--gray-500); } /* grey/muted: no response */
-    .ars-withdrew     { background: var(--gray-100); color: var(--gray-500); }
-    .ars-waiting      { background: var(--warning-bg); color: var(--warning); }
-    .ars-stale        { background: var(--warning-bg-alt); color: var(--warning); }
-    .ars-active       { background: var(--success-bg); color: var(--success); } /* responded */
-
     /* ── Role Overview Card Grid ─────────────────────────────────────────────── */
     /*
      * Two-column fixed-order grid for the role overview panel.
@@ -11776,13 +11674,6 @@
 
     #section-your-lens {
       background: var(--bg-card);
-    }
-
-    /* When .yl-panel lives inside the rw-card-grid, suppress its legacy chat-timeline
-       margin (grid row-gap handles spacing instead). Padding and border come from
-       .rw-card (later in the stylesheet) and already win on specificity. */
-    .rw-card.yl-panel {
-      margin: 0;
     }
 
     /* Search Pattern — white background, same as all overview cards */
@@ -13092,19 +12983,6 @@
       vertical-align: 0.15em;   /* fine-tuned to sit centrally against 14px cap height */
     }
 
-    /* ── ARS hiring-signal badges: dark mode tint overrides ─────────────── */
-    /* All variants use hardcoded light-mode backgrounds. These use the      */
-    /* utility palette dark swatches (already defined in tokens.css).        */
-    [data-theme="dark"] .ars-active    { background: var(--utility-success-100, #074d31); color: var(--utility-success-700, #75e0a7); }
-    [data-theme="dark"] .ars-waiting   { background: var(--utility-warning-50, #4e1d09); color: var(--utility-warning-700, #fec84b); }
-    [data-theme="dark"] .ars-stale     { background: var(--utility-warning-100, #7a2e0e); color: var(--utility-warning-600, #fdb022); }
-    [data-theme="dark"] .ars-ghosted   { background: var(--utility-gray-100, #22262f); color: var(--utility-gray-600, #94979c); }
-    [data-theme="dark"] .ars-withdrew  { background: var(--utility-gray-100, #22262f); color: var(--utility-gray-600, #94979c); }
-    [data-theme="dark"] .ars-interviewing { background: var(--utility-blue-100, #194185); color: var(--utility-blue-700, #84caff); }
-    [data-theme="dark"] .ars-offer,
-    [data-theme="dark"] .ars-accepted  { background: var(--utility-success-100, #074d31); color: var(--utility-success-700, #75e0a7); }
-    [data-theme="dark"] .ars-rejected  { background: var(--utility-error-100, #7a271a); color: var(--utility-error-700, #fda29b); }
-
     /* ── Stage tags: dark mode tint overrides ────────────────────────────── */
     /* Same issue — all stage-tag variants use hardcoded light tints.        */
     [data-theme="dark"] .stage-tag {
@@ -13333,20 +13211,6 @@
    BADGE — Pill color  (Untitled UI PRO v7.0 › Badge group)
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Base pill */
-.badge-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border-radius: var(--badge-radius);       /* 9999px */
-  padding: var(--badge-pad-md);             /* 2px 8px */
-  font-size: var(--badge-font-size-md);     /* 12px */
-  font-weight: var(--badge-font-weight);    /* 500 */
-  line-height: var(--badge-line-height-md); /* 1.5 */
-  border: 1px solid;
-  white-space: nowrap;
-}
-
 /* Size modifier */
 .badge-pill--lg {
   padding: var(--badge-pad-lg);             /* 2px 10px */
@@ -13359,11 +13223,6 @@
   background: var(--badge-gray-bg);
   border-color: var(--badge-gray-border);
   color: var(--badge-gray-text);
-}
-.badge-pill--brand {
-  background: var(--badge-brand-bg);
-  border-color: var(--badge-brand-border);
-  color: var(--badge-brand-text);
 }
 .badge-pill--error {
   background: var(--badge-error-bg);
@@ -13973,40 +13832,6 @@
   overflow: hidden;           /* Clip photo to circle */
 }
 
-/* Photo avatar */
-.avatar--photo {
-  border: 1px solid var(--avatar-border-photo);
-  overflow: hidden;
-}
-.avatar--photo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: var(--radius-pill);
-  display: block;
-}
-
-/* Placeholder / initials */
-.avatar--placeholder,
-.avatar--initials {
-  background: var(--avatar-placeholder-bg);
-  border: 1px solid var(--avatar-placeholder-border);
-  overflow: hidden;
-}
-.avatar--initials {
-  font-weight: var(--avatar-initials-weight);
-  color: var(--avatar-initials-color);
-  letter-spacing: 0;
-}
-
-/* Sizes */
-.avatar--xs   { width: var(--avatar-xs);  height: var(--avatar-xs);  font-size: var(--text-sm); /* 12px */ }
-.avatar--sm   { width: var(--avatar-sm);  height: var(--avatar-sm);  font-size: var(--text-md); }
-.avatar--md   { width: var(--avatar-md);  height: var(--avatar-md);  font-size: var(--text-xl); }
-.avatar--lg   { width: var(--avatar-lg);  height: var(--avatar-lg);  font-size: var(--text-xl); }
-.avatar--xl   { width: var(--avatar-xl);  height: var(--avatar-xl);  font-size: 20px; }
-.avatar--2xl  { width: var(--avatar-2xl); height: var(--avatar-2xl); font-size: 24px; }
-
 /* Status badge base (shared by online-dot and company-icon) */
 .avatar__status {
   position: absolute;
@@ -14021,12 +13846,6 @@
 .avatar__online {
   background: var(--avatar-online-bg);
 }
-.avatar--xs   .avatar__online  { width: var(--avatar-online-xs);  height: var(--avatar-online-xs);  bottom: -0.5px; right: -0.5px; }
-.avatar--sm   .avatar__online  { width: var(--avatar-online-sm);  height: var(--avatar-online-sm);  bottom: -0.75px; right: -0.75px; }
-.avatar--md   .avatar__online  { width: var(--avatar-online-md);  height: var(--avatar-online-md); }
-.avatar--lg   .avatar__online  { width: var(--avatar-online-lg);  height: var(--avatar-online-lg); }
-.avatar--xl   .avatar__online  { width: var(--avatar-online-xl);  height: var(--avatar-online-xl); }
-.avatar--2xl  .avatar__online  { width: var(--avatar-online-2xl); height: var(--avatar-online-2xl); }
 
 /* Company icon badge — white ring around a company logo */
 .avatar__company {
@@ -14035,12 +13854,6 @@
   bottom: -3px;
   right: -3px;
 }
-.avatar--xs   .avatar__company { width: var(--avatar-company-xs);  height: var(--avatar-company-xs);  bottom: -2.5px; right: -2.5px; }
-.avatar--sm   .avatar__company { width: var(--avatar-company-sm);  height: var(--avatar-company-sm);  bottom: -2.75px; right: -2.75px; }
-.avatar--md   .avatar__company { width: var(--avatar-company-md);  height: var(--avatar-company-md); }
-.avatar--lg   .avatar__company { width: var(--avatar-company-lg);  height: var(--avatar-company-lg); }
-.avatar--xl   .avatar__company { width: var(--avatar-company-xl);  height: var(--avatar-company-xl); }
-.avatar--2xl  .avatar__company { width: var(--avatar-company-2xl); height: var(--avatar-company-2xl); }
 .avatar__company img {
   width: 100%;
   height: 100%;
@@ -14076,20 +13889,6 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    MODAL  (Untitled UI PRO v7.0 › Modal)
    ═══════════════════════════════════════════════════════════════════════════ */
-
-/* Backdrop / overlay */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(10, 13, 18, 0.70);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
-  z-index: var(--z-modal);
-}
 
 /* Modal card */
 .modal {
@@ -14496,86 +14295,6 @@
   width: 100%;
 }
 
-/* Featured icon — outlined ring style used by alert */
-.alert__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-pill);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  position: relative;
-}
-/* Light fill variants */
-.alert__icon--default { background: var(--gray-100); color: var(--gray-600); }
-.alert__icon--brand   { background: #f9f5ff; color: var(--brand-600); }
-.alert__icon--success { background: #dcfae6; color: #079455; }
-.alert__icon--warning { background: #fef0c7; color: #dc6803; }
-.alert__icon--error   { background: #fee4e2; color: #d92d20; }
-.alert__icon--gray    { background: var(--gray-100); color: var(--gray-600); }
-.alert__icon svg { width: 20px; height: 20px; }
-
-/* Content */
-.alert__content {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-.alert__title {
-  font-size: var(--text-sm);            /* 14px */
-  font-weight: 600;
-  color: var(--gray-700);               /* #414651 */
-  line-height: 20px;
-}
-.alert__desc {
-  font-size: var(--text-sm);
-  font-weight: 400;
-  color: var(--gray-600);               /* #535862 */
-  line-height: 20px;
-}
-
-/* Optional actions row */
-.alert__actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 12px;
-  flex-wrap: wrap;
-}
-.alert__action {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--gray-700);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  line-height: 20px;
-}
-.alert__action:hover { text-decoration: underline; }
-.alert__action--primary { color: var(--brand-700); }
-
-/* Close button */
-.alert__close {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--gray-500);
-  flex-shrink: 0;
-  transition: background 0.1s, color 0.1s;
-  margin: -4px -4px 0 0;
-}
-.alert__close:hover { background: var(--gray-100); color: var(--gray-700); }
-.alert__close svg { width: 20px; height: 20px; }
-
 /* ── Full-width alert ── */
 .alert--full {
   border-radius: 0;
@@ -14588,7 +14307,6 @@
   gap: 12px;
   padding: 12px 24px;
 }
-.alert--full .alert__content { flex: 0; flex-direction: row; gap: 12px; align-items: center; }
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
