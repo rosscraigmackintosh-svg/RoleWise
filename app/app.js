@@ -1314,6 +1314,37 @@
     // Returns "City, Country" format, or the original string if no normalisation needed.
     function normaliseLocation(raw) {
       if (!raw || typeof raw !== 'string') return raw;
+
+      // ── Pre-normalisation: repair known LinkedIn-scraper artifacts ────────
+      // Two glitch patterns observed in historic capture data:
+      //
+      //   A. "HybridLondon" / "RemoteLondon" / "OnsiteLondon" / "On-siteLondon"
+      //      — work-model token and city glued together with no separator.
+      //      Lowercased to "hybridlondon" etc., which breaks the \blondon\b
+      //      word-boundary checks in downstream UK-location gates.
+      //
+      //   B. "Area" / "Area (Hybrid)" / "Area (On-site)" / "Area (Remote)"
+      //      — LinkedIn's "{City} Area" label where the city prefix was
+      //      stripped during earlier scraping. Observed exclusively on
+      //      London-area roles in historic captures. We only apply the
+      //      London inference when the string reduces exactly to "Area"
+      //      (optionally followed by a work-model parenthetical) — i.e. no
+      //      other city name, comma, or content is present.
+      //
+      // Both repairs are narrow, string-local, and only match the exact
+      // artefact shape — correctly-captured strings fall through untouched.
+      {
+        var _trimmed = raw.trim();
+        var _concatRe = /^(Hybrid|Remote|On[-\s]?site|Onsite)([A-Z][a-zA-Z]+)$/;
+        var _cm = _trimmed.match(_concatRe);
+        if (_cm && _cm[2]) {
+          raw = _cm[2];
+        } else {
+          var _bareAreaRe = /^Area(?:\s*\([^)]*\))?$/i;
+          if (_bareAreaRe.test(_trimmed)) raw = 'London, United Kingdom';
+        }
+      }
+
       // Strip parenthetical work model suffixes e.g. " (Remote)", " (Hybrid)"
       let loc = raw.replace(/\s*\([^)]*\)\s*$/, '').trim();
       // Country name normalisation map (lowercase input → canonical output)
@@ -1600,6 +1631,7 @@
     let _cachedCvVersions = null; // Loaded once on first use; re-used by computeFitAssessment
     let _boundaryKeyCache = null; // Set<string> of saved blocker keys; null = not yet loaded
     let _rwAiOutputCache  = null; // Rendered analysis output — used by Ask AI inline (RW-ROLEPAGE-AI-INTERACTION-01)
+    let _rwCurrentRoleForRender = null; // The full role row being rendered now — stashed by _renderRolePageTabs so renderMatchOutput can resolve role_title even when selectedRoleId / allRoles lookup is stale (salary baseline gating)
     let _candidateProfile = null; // candidate_profile row from DB (loaded at boot)
     let _candidateLearning = null; // candidate_learning row from DB (loaded at boot)
 
@@ -1969,6 +2001,174 @@
       if (/^[£€$]/.test(val) && _firstNum <= 1) return 'Not stated';
       // Actual value — pass through
       return val;
+    }
+
+    // ─── Salary baseline (internal, UK Product Design only — high-confidence) ─
+    // Derives a "typical range for similar roles" from role archetype, seniority,
+    // location, and employment type. Returns null when confidence is low so the
+    // caller can hide the context line entirely. Ranges are internal baselines
+    // (not sourced from external providers). Calibrated offline; no exact market
+    // averages are implied.
+    function _salaryBaselineRange(ctx) {
+      if (!ctx) return null;
+      var loc  = (ctx.location || '').toLowerCase();
+      var arch = (ctx.archetype || '').toLowerCase();
+      var sen  = (ctx.seniority || '').toLowerCase();
+      var et   = (ctx.employmentType || '').toLowerCase();
+      var wm   = (ctx.workModel || '').toLowerCase();
+
+      // UK-only baselines. Require an explicit UK signal.
+      var _ukCities = /\b(london|manchester|edinburgh|bristol|leeds|birmingham|glasgow|cambridge|oxford|brighton|reading|sheffield|liverpool|nottingham|cardiff|belfast)\b/;
+      var _ukRegion = /\b(uk|united\s+kingdom|england|scotland|wales|northern\s+ireland|remote\s*[-,]?\s*uk|uk[-\s]?based|uk[-\s]?remote)\b/;
+      var isUK = _ukCities.test(loc) || _ukRegion.test(loc);
+      if (!isUK) return null;
+
+      // Normalise absent-sentinel strings so "Not stated" / "Unknown" / "Not disclosed"
+      // collapse to '' and fall through the same path as a truly absent value. This
+      // happens when rss.role_type is null but _pdObj.employment_type carries the
+      // literal string "Not stated" (or similar) through to the gate.
+      if (et === 'not stated' || et === 'not disclosed' || et === 'unknown' || et === 'not specified') et = '';
+
+      // Permanent vs contract → different baselines. Anything else (internship,
+      // apprenticeship, etc.) returns null. An absent value ('') is allowed
+      // through as a cautious fallback and treated as permanent — gated further
+      // below on explicit seniority confidence.
+      var etAbsent   = !et;
+      var isPermanent = etAbsent || et === 'permanent' || et === 'full-time' || et === 'fulltime' || et === 'full_time';
+      var isContract = et === 'contract' || et === 'freelance' || et === 'contract-to-perm' || et === 'temporary' || et === 'fixed-term' || et === 'fixed_term';
+      if (!isPermanent && !isContract) return null;
+
+      // Only cover the Product Design / Design family with confidence.
+      // Matches: product designer, UX/UI designer, interaction designer,
+      // design lead / head of design / design director / VP Design / CDO,
+      // and the broad "designer" role family. Excludes Product Management.
+      var isDesign = /product\s*design|ux\s*design|ui\s*design|ux\/ui|ux\s*\/\s*ui|interaction\s*design|\bux\b|\bui\b|experience\s*design|service\s*design|visual\s*design|brand\s*design|design\s*lead|design\s*director|head\s*of\s*design|vp\s*design|chief\s*design|\bdesigner\b|\bdesign\b/.test(arch);
+      // Explicit PM exclusion so a mixed archetype string like "product manager / designer" doesn't leak.
+      var isPM = /product\s*manager|product\s*lead|head\s*of\s*product|director\s*of\s*product|vp\s*product|chief\s*product|\bpm\b/.test(arch);
+      if (!isDesign || isPM) return null;
+
+      // Seniority bucket — prefer explicit seniority signal, fall back to archetype text.
+      // bucketFromExplicitSeniority tracks whether we hit a seniority-word match (high
+      // confidence) vs. the designer-only fallback (weak — any design title lands in 'mid').
+      var bucket = null;
+      var bucketFromExplicitSeniority = false;
+      var combined = arch + ' ' + sen;
+      if (/chief\s*design|cdo\b/.test(combined))                              { bucket = 'cdo';       bucketFromExplicitSeniority = true; }
+      else if (/vp\s*design|vice\s*president/.test(combined))                 { bucket = 'vp';        bucketFromExplicitSeniority = true; }
+      else if (/design\s*director|director\s*of\s*design|\bdirector\b/.test(combined)) { bucket = 'director'; bucketFromExplicitSeniority = true; }
+      else if (/head\s*of\s*design|\bhead\b/.test(combined))                  { bucket = 'head';      bucketFromExplicitSeniority = true; }
+      else if (/principal|staff/.test(combined))                              { bucket = 'principal'; bucketFromExplicitSeniority = true; }
+      else if (/\blead\b/.test(combined))                                     { bucket = 'lead';      bucketFromExplicitSeniority = true; }
+      else if (/senior|\bsr\b/.test(combined))                                { bucket = 'senior';    bucketFromExplicitSeniority = true; }
+      else if (/junior|associate|graduate|\bjr\b|entry/.test(combined))       { bucket = 'junior';    bucketFromExplicitSeniority = true; }
+      else if (/\bdesigner\b|product\s*design|ux\s*design|ui\s*design|interaction\s*design/.test(combined)) bucket = 'mid';
+      if (!bucket) return null;
+
+      // Cautious fallback guard: when employment type is absent (not explicitly
+      // permanent or contract), only proceed if seniority is confidently derived
+      // from an explicit seniority word in the title/archetype. Suppresses the
+      // weak 'mid' fallback that fires on a bare "Designer" / "Product Designer"
+      // title where actual seniority could be junior → senior.
+      if (etAbsent && !bucketFromExplicitSeniority) return null;
+
+      var isLondon = /london/.test(loc);
+
+      if (isContract) {
+        // UK Product Design day-rate bands (GBP, London-weighted).
+        // Conservative internal estimates for outside-IR35 contract market.
+        // Day-rate context is shown as "Typical contract range" and is not
+        // compared against stated annual salary — we only surface the typical
+        // range for similar contract roles when salary is not stated.
+        var DAILY = {
+          junior:    [300,  450],
+          mid:       [400,  600],
+          senior:    [550,  800],
+          lead:      [700,  900],
+          principal: [750, 1000],
+          head:      [900, 1200],
+          director: [1100, 1400],
+          vp:       [1300, 1700],
+          cdo:      [1500, 2000],
+        };
+        var dBase = DAILY[bucket];
+        if (!dBase) return null;
+        var dFactor = isLondon ? 1.0 : 0.9;
+        // Round day rates to the nearest £25 to keep numbers clean.
+        var _round25 = function (n) { return Math.round(n / 25) * 25; };
+        var dLow  = _round25(dBase[0] * dFactor);
+        var dHigh = _round25(dBase[1] * dFactor);
+        return { low: dLow, high: dHigh, currency: 'GBP', bucket: bucket, kind: 'daily' };
+      }
+
+      // Baseline ranges in £ (London-weighted) for UK Product Design — permanent.
+      // Conservative internal estimates; design bands sit slightly below PM
+      // at equivalent seniority, with top design leadership narrower at the top.
+      var RANGES = {
+        junior:    [40000,  55000],
+        mid:       [55000,  75000],
+        senior:    [75000, 100000],
+        lead:      [95000, 125000],
+        principal:[110000, 140000],
+        head:     [120000, 160000],
+        director: [140000, 190000],
+        vp:       [170000, 230000],
+        cdo:      [200000, 280000],
+      };
+      var base = RANGES[bucket];
+      if (!base) return null;
+
+      // Non-London adjustment (~10% lower). Pure-remote UK without a city → treat as national.
+      var factor = isLondon ? 1.0 : 0.9;
+      var low  = Math.round((base[0] * factor) / 1000) * 1000;
+      var high = Math.round((base[1] * factor) / 1000) * 1000;
+
+      return { low: low, high: high, currency: 'GBP', bucket: bucket, kind: 'annual' };
+    }
+
+    // Parse a stated salary string into {low, high} GBP numbers, or null.
+    function _parseStatedSalaryRange(val) {
+      if (!val) return null;
+      var s = String(val).toLowerCase();
+      // Skip non-numeric variants
+      if (s === 'not stated' || s.includes('not specified') || s.includes('mentioned but not')
+          || s === 'competitive' || s === 'tbd' || s === 'negotiable' || s === 'doe') return null;
+      // Only handle £ / GBP for now.
+      if (!/£|gbp|\bpounds?\b/.test(s) && !/\d/.test(s)) return null;
+
+      var nums = [];
+      var re = /(\d+(?:[,\.]\d+)*)\s*(k)?/gi;
+      var m;
+      while ((m = re.exec(s)) !== null) {
+        var raw = m[1].replace(/,/g, '');
+        var n = parseFloat(raw);
+        if (!isFinite(n)) continue;
+        if (m[2]) n *= 1000;              // "80k" → 80000
+        else if (n < 1000 && n >= 15) n *= 1000; // "80" treated as 80k
+        if (n >= 15000 && n <= 1000000) nums.push(n);
+      }
+      if (!nums.length) return null;
+      var lo = Math.min.apply(null, nums);
+      var hi = Math.max.apply(null, nums);
+      return { low: lo, high: hi };
+    }
+
+    // Compare stated range vs baseline range. Returns 'below' | 'within' | 'above'.
+    function _compareSalaryToBaseline(stated, baseline) {
+      if (!stated || !baseline) return null;
+      if (stated.high < baseline.low) return 'below';
+      if (stated.low  > baseline.high) return 'above';
+      return 'within';
+    }
+
+    // Format a GBP range as "£Xk–£Yk" (no trailing decimals).
+    function _formatBaselineRangeGBP(low, high) {
+      var _k = function (n) { return '£' + Math.round(n / 1000) + 'k'; };
+      return _k(low) + '–' + _k(high);
+    }
+
+    // Format a GBP day-rate range as "£X–£Y/day".
+    function _formatBaselineDayRateGBP(low, high) {
+      return '£' + low + '–£' + high + '/day';
     }
 
     // ─── Analysis trace stages ────────────────────────────────────────────────
@@ -3394,21 +3594,24 @@
           return `<div class="inbox-boundary-match">Boundary flagged</div>`;
         })();
 
-        // ── Decision marker (✕ / ✓ / ○) — small inline icon ──────────────
-        const _decMarker = role.user_decision === 'skip'
-          ? '<span class="rw-dm rw-dm--skip" title="Skipped">\u2715</span>'
-          : role.user_decision === 'apply'
-          ? '<span class="rw-dm rw-dm--apply" title="Applied">\u2713</span>'
-          : role.user_decision === 'save'
-          ? '<span class="rw-dm rw-dm--save" title="Saved">\u2713</span>'
-          : '<span class="rw-dm rw-dm--none" title="No decision">\u25CB</span>';
+        // ── Company avatar — reuses the same source/fallback logic as the
+        //    main Role Detail header (_companyAvatarHtml → _getCompanyLogoUrl).
+        //    Uses the small 30px variant so the list scans quickly.
+        //    Replaces the inline decision marker (✕/✓/○) that previously sat
+        //    before the company name. Decision state is already carried by the
+        //    left-border colour (decAttr) and state badges on the right, so the
+        //    inline marker was redundant noise.
+        const _avatarHtml = _companyAvatarHtml(role, 'sm');
 
         return `<div class="rw-role-card inbox-role${role.id === selectedRoleId ? ' active' : ''}"${decAttr} data-meta-state="${_metaState}" data-id="${esc(role.id)}">
-          <div class="rw-role-card__company inbox-company inbox-role-company${company ? '' : ' inbox-company-unknown rw-role-card__company--unknown'}">${_decMarker}${esc(company || 'Unknown company')}</div>
-          <div class="rw-role-card__title inbox-title inbox-role-title">${esc(title)}</div>
-          ${intelSigHtml}
-          ${footerHtml}
-          ${_boundaryMatchHtml}
+          <div class="rw-role-card__avatar inbox-role-avatar">${_avatarHtml}</div>
+          <div class="rw-role-card__content inbox-role-content">
+            <div class="rw-role-card__company inbox-company inbox-role-company${company ? '' : ' inbox-company-unknown rw-role-card__company--unknown'}">${esc(company || 'Unknown company')}</div>
+            <div class="rw-role-card__title inbox-title inbox-role-title">${esc(title)}</div>
+            ${intelSigHtml}
+            ${footerHtml}
+            ${_boundaryMatchHtml}
+          </div>
         </div>`;
       };
 
@@ -10031,6 +10234,12 @@
     // ═══════════════════════════════════════════════════════════════════════════
 
     function _renderRolePageTabs(role, analysisOutput) {
+      // Stash the current role on a module-level cache so renderMatchOutput can
+      // reliably resolve role_title for the salary baseline even when
+      // selectedRoleId / allRoles lookup is stale or the role hasn't been
+      // indexed into allRoles yet (async fetch, fresh render). Read by
+      // renderMatchOutput via _rwCurrentRoleForRender.
+      try { _rwCurrentRoleForRender = role || null; } catch (_) {}
       const _parts = renderMatchOutput(analysisOutput, { partsOnly: true });
       const _mainHtml = _parts && _parts.mainHtml != null ? _parts.mainHtml : '';
       const _sidebarInner = _parts && _parts.sidebarInnerHtml != null ? _parts.sidebarInnerHtml : '';
@@ -17789,11 +17998,87 @@
 
         const _salLabel = _normaliseSalaryDisplay(_pdObj.salary_annual);
 
-        // ── Role facts (structured items) ──
+        // ── Salary context — "typical range for similar roles" ──
+        // Baseline is internal, derived from role archetype + seniority + location
+        // + employment type. Only rendered when confidence is high. Tone is factual:
+        // Below / Within / Above typical range. No narrative explanation.
+        //
+        // output.role_archetype is strictly validated against a closed set of 8
+        // canonical archetype names (see _parseRawMatchOutput). When the AI returns
+        // a primary outside that set, or when the non-AI path writes a narrative
+        // sentence string, role_archetype can be null or a string — collapsing
+        // _salArchPrimary to ''. Fall back to the raw role title so the design-
+        // family + seniority regexes still have signal to work with (e.g. a
+        // "Founding Lead Product Designer" title feeds "designer" and "lead").
+        const _salArchPrimary = (output.role_archetype && typeof output.role_archetype === 'object' && output.role_archetype.primary) || '';
+        // Prefer the role stashed directly by _renderRolePageTabs (it always has
+        // the correct row for this render); fall back to allRoles.find() for
+        // paths that don't go through _renderRolePageTabs; then to output._roleTitle.
+        // This eliminates stale-selectedRoleId / async-indexing failures that
+        // can leave _salRoleTitle empty on a fresh Role Detail render.
+        const _salRoleObj = _rwCurrentRoleForRender
+          || ((typeof selectedRoleId !== 'undefined' && Array.isArray(allRoles))
+                ? allRoles.find(function (r) { return r.id === selectedRoleId; })
+                : null);
+        const _salRoleTitle = (_salRoleObj && _salRoleObj.role_title) || (output && output._roleTitle) || '';
+        const _salArch = (_salArchPrimary + ' ' + _salRoleTitle).trim();
+        const _salSeniority = _pdObj.seniority_level || '';
+        // Location priority: AI-extracted _pdObj.location first, then fall
+        // back to the role row's stored location_text (normalised through the
+        // same parser) when the AI didn't extract one. Scoped strictly to the
+        // salary gate input — doesn't change other render paths. Catches
+        // historic captures where the AI output_json had no location but
+        // roles.location_text carries a value (incl. repaired LinkedIn
+        // artefacts like "Area (Hybrid)" / "HybridLondon").
+        let _salLocation = _pdObj.location || '';
+        if ((!_salLocation || _salLocation === 'Not stated') && _rwCurrentRoleForRender && _rwCurrentRoleForRender.location_text) {
+          const _rl = normaliseLocation(_rwCurrentRoleForRender.location_text);
+          if (_rl) _salLocation = _rl;
+        }
+        const _salBaseline = _salaryBaselineRange({
+          archetype:      _salArch,
+          seniority:      _salSeniority,
+          location:       _salLocation,
+          employmentType: _rt,
+          workModel:      _wm,
+        });
+        const _salStatedRange = _parseStatedSalaryRange(_pdObj.salary_annual);
+        let _salContextLine = '';
+        if (_salBaseline) {
+          if (_salBaseline.kind === 'daily') {
+            // Contract day-rate baseline. We do not compare against stated annual salary
+            // (different units) — we only surface typical contract market context when
+            // salary isn't stated or is stated as a day rate we can't reliably parse.
+            const _baseDayStr = _formatBaselineDayRateGBP(_salBaseline.low, _salBaseline.high);
+            if (!_salStatedRange && (_salLabel === 'Not stated' || _salLabel === 'Mentioned but not specified')) {
+              _salContextLine = `Typical contract range for similar roles: ${_baseDayStr}`;
+            }
+          } else {
+            const _baseStr = _formatBaselineRangeGBP(_salBaseline.low, _salBaseline.high);
+            if (_salStatedRange) {
+              const _cmp = _compareSalaryToBaseline(_salStatedRange, _salBaseline);
+              const _cmpLabel = _cmp === 'below'  ? 'Below typical range'
+                              : _cmp === 'above'  ? 'Above typical range'
+                              : 'Within typical range';
+              _salContextLine = `${_cmpLabel} · Typical: ${_baseStr}`;
+            } else if (_salLabel === 'Not stated' || _salLabel === 'Mentioned but not specified') {
+              _salContextLine = `Typical range for similar roles: ${_baseStr}`;
+            }
+          }
+        }
+
+        // Salary row — context is rendered inline (in parentheses) alongside the
+        // value, not as a separate sub-line. Keeps the baseline feeling like part
+        // of the Salary fact rather than a detached footnote.
+        const _salValueHtml = _salContextLine
+          ? `${esc(_salLabel)} <span class="rw-meta-inline-context">(${esc(_salContextLine)})</span>`
+          : esc(_salLabel);
+        const _salRowHtml = `<div class="rw-meta-row"><span class="rw-meta-label">Salary:</span><span class="rw-meta-value">${_salValueHtml}</span></div>`;
+
+        // ── Role facts (structured items) — salary rendered separately below ──
         const _roleFactRows = [
           ['Work model:', _wmLabel],
           ['Role type:', _rtLabel],
-          ['Salary:', _salLabel],
         ];
 
         // ── Role shape (selected decision signals, human-readable) ──
@@ -17828,15 +18113,17 @@
           `<div class="rw-meta-row"><span class="rw-meta-label">${esc(k)}</span><span class="rw-meta-value">${esc(v)}</span></div>`
         ).join('');
 
-        const _roleShapeBlock = _roleShapeRows.length
-          ? `<div class="rw-meta-group-label">Role shape</div><div class="rw-meta-list">${_renderMetaRows(_roleShapeRows)}</div>`
+        // Role characteristics render as a second block with a subtle spacing
+        // break from the core facts above. No subgroup label — the gap is the
+        // only separator.
+        const _roleShapeBlockHtml = _roleShapeRows.length
+          ? `<div class="rw-meta-list rw-meta-list--shape">${_renderMetaRows(_roleShapeRows)}</div>`
           : '';
 
         _inlineKeyDetailsHtml = `<div class="rw-doc-section" id="section-key-details">
           <h2 class="rw-doc-h2">Key details</h2>
-          <div class="rw-meta-group-label">Role facts</div>
-          <div class="rw-meta-list">${_renderMetaRows(_roleFactRows)}</div>
-          ${_roleShapeBlock}
+          <div class="rw-meta-list">${_renderMetaRows(_roleFactRows)}${_salRowHtml}</div>
+          ${_roleShapeBlockHtml}
         </div>`;
 
         // ── Operational signal data (for Hiring Reality prose) ─────────
@@ -18289,43 +18576,11 @@
           // Hybrid/on-site are ambiguous — classified as NEEDS_CLARITY, not BREAKS.
           const _dbNotViable = _dbIsHardNo || _dbHasCoding;
 
-          // 1. Fit reality
-          // Hard blockers are woven into the prose by the AI, not rendered as a banner.
-          // When a local viability veto (_dbNotViable) overrides the decision,
-          // the narrative fit text may still reflect the pre-veto "maybe/worth exploring"
-          // assessment. Override it so it doesn't contradict the decision block.
-          // _fitHtml: standalone Fit Reality section content.
-          // Only rendered when the content is genuinely additive beyond the
-          // decision block's compact signal chips:
-          //   - Veto path: explains WHY the role isn't viable (decision block only shows the verdict)
-          //   - Narrative path: AI-written paragraphs with deeper reasoning
-          // The generic fallback (_fa.summary) is suppressed — it duplicates the
-          // decision block's "Fit reality" signal and adds visual weight without
-          // new information.
-          let _fitHtml = '';
-          if (_dbNotViable) {
-            let _vetoText = '';
-            if (_dbIsHardNo && output.hard_no_reason) {
-              _vetoText = output.hard_no_reason;
-            } else {
-              const _vetoReasons = [];
-              if (_dbHasCoding) _vetoReasons.push('production coding requirement');
-              if (_dbIsHybrid) _vetoReasons.push('office or hybrid work model');
-              _vetoText = _vetoReasons.length
-                ? `This role is not viable due to ${_vetoReasons.join(' and ')}.`
-                : 'This role is not aligned with your current preferences.';
-            }
-            _fitHtml = `<p class="rw-doc-prose">${esc(_vetoText)}</p>`;
-          } else if (_narr?.fit_reality?.paragraphs) {
-            _fitHtml = _paragraphs(_narr.fit_reality.paragraphs);
-          }
-          // Generic _fa.summary fallback deliberately omitted — the decision
-          // block already covers this signal at the same or higher fidelity.
-          // Append location constraint qualifier when commute is a practical concern
-          // but the role is otherwise viable. One sentence, no duplication with Commute.
-          if (!_dbNotViable && _isPracticalConstraint && !_officeFreqKnown) {
-            _fitHtml += `<p class="rw-doc-prose">Some signals align, but whether this works depends on how often the office expects you in.</p>`;
-          }
+          // 1. Fit reality — canonical source is the styled decision block
+          // rendered at #section-decision-line (see _decisionBlockHtml below).
+          // The prior parallel prose block was removed to avoid duplicate
+          // "Fit reality" sections. renderDecisionBlock() in analysis/render.js
+          // is the single source of truth.
 
           // 2. What this role actually is
           let _whatIsItHtml = '';
@@ -18570,14 +18825,23 @@
           // ═══════════════════════════════════════════════════════════════════
 
           // ── Classify signals ──────────────────────────────────────────
-          // Resolve engagement_type: role-level (structured) → AI practical_details fallback
+          // Resolve engagement_type using the SAME source-of-truth priority as
+          // Key details (rss.role_type || _pdObj.employment_type), with role-level
+          // engagement_type as an additional fallback. This keeps Fit reality's
+          // "Role type not stated — worth confirming" signal consistent with what
+          // Key details renders; otherwise the page can show "Role type: Contract"
+          // in Key details while Fit reality flags role type as missing.
           var _engTypeForSignals = (function() {
-            var _role = (typeof selectedRoleId !== 'undefined') ? allRoles.find(function(r) { return r.id === selectedRoleId; }) : null;
-            var _et = (_role && _role.engagement_type && _role.engagement_type !== 'Unknown')
-              ? _role.engagement_type
-              : (_dbPd.employment_type || null);
-            // Filter out "Not stated" — absence is not a value
-            return (_et && _et !== 'Not stated' && _et !== 'Not disclosed') ? _et : null;
+            var _rssEt = (output && output.role_shape_signals && output.role_shape_signals.role_type) || null;
+            var _pdEt  = _dbPd.employment_type || null;
+            var _role  = (typeof selectedRoleId !== 'undefined') ? allRoles.find(function(r) { return r.id === selectedRoleId; }) : null;
+            var _roleEt = (_role && _role.engagement_type && _role.engagement_type !== 'Unknown') ? _role.engagement_type : null;
+            var _et = _rssEt || _pdEt || _roleEt;
+            // Filter out absence sentinels — absence is not a value.
+            if (!_et) return null;
+            var _etLc = String(_et).toLowerCase();
+            if (_etLc === 'not stated' || _etLc === 'not disclosed' || _etLc === 'unknown') return null;
+            return _et;
           })();
 
           var _signals = classifySignals(output, _narr,
@@ -18627,12 +18891,6 @@
             ${_roleSummaryHtml ? `<div class="rw-doc-section" id="section-role-summary">
               <h2 class="rw-doc-h2">Role summary</h2>
               ${_roleSummaryHtml}
-              ${_secEnriching}
-            </div>` : ''}
-
-            ${_fitHtml ? `<div class="rw-doc-section" id="section-fit-reality">
-              <h2 class="rw-doc-h2">Fit reality</h2>
-              ${_fitHtml}
               ${_secEnriching}
             </div>` : ''}
 
@@ -24545,7 +24803,8 @@
     //   section-comp-snapshot
     // Note: Sidebar signal sections removed (RW-SINGLE-COL-LAYOUT).
     const _PATCHABLE_SECTIONS = [
-      'section-key-details', 'section-decision-line', 'section-match-break', 'section-role-summary',
+      'section-key-details',
+      'section-decision-line', 'section-match-break', 'section-role-summary',
       'section-what-role-is', 'section-what-they-need',
       'section-what-you-do', 'section-hiring-reality', 'section-commute-detail',
       'section-practical-details', 'section-company-context',

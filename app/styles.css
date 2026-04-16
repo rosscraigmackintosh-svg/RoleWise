@@ -3340,38 +3340,63 @@
     .rw-doc-section .rw-doc-dl + .rw-doc-prose         { margin-top: var(--space-block, 16px); }
     .rw-doc-section .rw-doc-prose + .rw-doc-dl         { margin-top: 12px; }
 
-    /* ── Key Details meta list — vertical stacked layout ──────────────── */
-    /* Same rhythm as rw-doc-dl: 2px label→value, 16px between pairs.    */
-    .rw-meta-group-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: var(--text-tertiary, #9ca3af);
-      margin-bottom: 4px;
-    }
-    .rw-meta-group-label + .rw-meta-list {
-      margin-bottom: 14px;
-    }
+    /* ── Key Details meta list — compact editorial single-line rows ──── */
+    /* Each row renders "Label: value" on one line. Calm tone: sentence case,
+       no uppercase, no letter-spacing, matches the Fit reality body text. */
     .rw-meta-list {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
+      display: block;
+    }
+    /* Continue the in-list rhythm across the facts/shape boundary.
+       Matches the 4px row cadence so the Key details list reads as one
+       continuous editorial list rather than two stacked chunks. */
+    .rw-meta-list--shape {
+      margin-top: 4px;
     }
     .rw-meta-row {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      line-height: 1.5;
+      display: block;
+      font-size: 14px;
+      line-height: 1.55;
+      color: #374151;
+      margin: 0;
+    }
+    .rw-meta-row + .rw-meta-row {
+      margin-top: 4px;
     }
     .rw-meta-label {
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 14px;
+      font-weight: 500;
       color: var(--text-secondary, #6b7280);
+      letter-spacing: normal;
+      text-transform: none;
     }
     .rw-meta-value {
       font-size: 14px;
-      color: var(--text-primary, #1f2937);
+      color: #374151;
+      font-weight: 400;
+      margin-left: 0.35em;
+    }
+    /* Secondary context line beneath a meta value (e.g. salary baseline range).
+       Block-level so it wraps to its own line under the salary row.
+       NOTE: Orphaned after salary-context moved inline (Apr 2026). Retained in
+       case a future meta row needs a sub-line treatment — no current consumer. */
+    .rw-meta-sub {
+      display: block;
+      font-size: 12px;
+      color: var(--text-tertiary, #9ca3af);
+      line-height: 1.4;
+      margin-top: 2px;
+      font-weight: 400;
+      letter-spacing: normal;
+      text-transform: none;
+    }
+
+    /* Inline context rendered alongside a meta value (e.g. salary baseline range
+       in parentheses after "Salary: £90,000"). Same size as the value, only a
+       small opacity lift so the parenthetical reads as secondary without feeling
+       like a footnote. */
+    .rw-meta-inline-context {
+      color: var(--text-secondary, #6b7280);
+      font-weight: 400;
     }
 
     .rw-doc-prose--muted {
@@ -4570,7 +4595,11 @@
       font-weight: 500;
     }
 
-    /* Decision markers — small inline icons on role list rows */
+    /* Decision markers — small inline icons that previously sat before the
+       company name on role list rows. Orphaned after the list row was
+       restructured to show the company logo on the left (Apr 2026); the
+       marker is no longer emitted. Classes retained in case the marker
+       treatment is reintroduced elsewhere — no current consumer. */
     .rw-dm {
       display: inline-block;
       width: 14px;
@@ -4593,6 +4622,34 @@
       cursor: pointer;
       background: var(--color-bg-primary, var(--bg));
       transition: background 0.15s, border-color 0.15s;
+      /* ── SINGLE SOURCE OF TRUTH for role-row media-object layout ──────
+         Company logo (left) + text block (right).
+         flex-direction:row is explicit to defend against any inherited
+         column-layout tokens from ancestor lists. align-items:flex-start
+         keeps the avatar pinned to the cap-height of the company line
+         so long titles wrap beneath the text block, not beneath the logo.
+         ⚠ The Tailwind block in index.html must NOT set `display` on
+         .rw-role-card — Tailwind Play CDN injects late and would
+         override this rule via source-order. See index.html comment. */
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    /* Avatar slot — fixed 30px footprint matches .rw-co-avatar-sm.
+       Explicit width prevents the slot from collapsing to 0 or expanding
+       to full-row if the inner avatar is momentarily absent (e.g. during
+       async logo swap). flex:0 0 auto locks the size against flex sizing. */
+    .inbox-role-avatar {
+      flex: 0 0 30px;
+      width: 30px;
+      margin-top: 1px; /* baseline-nudge the avatar to the cap-height of the company line */
+    }
+    /* Content column — claims remaining space. min-width:0 prevents long
+       titles from blowing out the flex container. */
+    .inbox-role-content {
+      flex: 1 1 auto;
+      min-width: 0;
     }
     .inbox-role:hover  { background: var(--color-bg-secondary, #fafafa); }
     .inbox-role.active {
@@ -15718,3 +15775,4 @@ a.rw-rail-contact-name:hover {
 /* ═══════════════════════════════════════════════════════════════════════════
    End RW-CMP-PANEL
    ═══════════════════════════════════════════════════════════════════════════ */
+

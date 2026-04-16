@@ -13,7 +13,62 @@ RM-04 and RM-06 closed 2026-03-12 (audit-verified as already fully implemented).
 
 ---
 
+## Open Data-Quality Issues
+
+### DQ-LOC-01 — Empty `roles.location_text` on historic captures (34 roles)
+
+**Observed:** 2026-04-15 (during salary-baseline coverage audit).
+
+**Scope:** 34 of 191 active roles have both `roles.location_text` empty AND `jd_matches.output_json.parsed_details.location` empty/null, so no downstream consumer (salary baseline, commute reality, UK gating) has a location to work with. Audit query:
+
+```sql
+SELECT r.id, r.role_title, r.company_name
+FROM public.roles r
+LEFT JOIN LATERAL (
+  SELECT output_json FROM public.jd_matches
+  WHERE role_id = r.id ORDER BY created_at DESC LIMIT 1
+) l ON true
+WHERE r.archived IS NOT TRUE
+  AND COALESCE(r.location_text,'') = ''
+  AND COALESCE(l.output_json->'parsed_details'->>'location','') = '';
+```
+
+**Shape of the 34:** split roughly into two groups.
+
+1. **Non-role captures (~13 rows)** — list-page / search-result / directory snippets that were saved as if they were single roles: "Recent Product Designer hires at Revolut" (×6), "Senior Product Designer Jobs in London", "4. The contact appears in the Recruiters directory", title `null`, `company_name: "Now"`, etc. These probably should never have become `roles` rows. Candidates for a cleanup / archive pass, not a parser fix.
+2. **Real roles with dropped location (~21 rows)** — "Founding Designer" (×4), "Principal Product Designer", "Staff Product Designer", "Head of Product Design", "UI/UX Product Designer", "Sr. Design Systems Designer" (×3 Flexera), "Senior Product Designer" (Experience), "Senior Product Designer, CLM" (linkedin source), etc. The capture pipeline lost the location for these at ingest time.
+
+**Why not solved in salary logic:** confirmed out-of-scope. The salary baseline correctly suppresses when location is absent — widening the gate to guess UK from title/company would introduce false positives on US/EU roles. Fix belongs at ingest.
+
+**Recommended owner / next step:**
+- Audit the LinkedIn-paste / manual-add / bookmarklet capture paths to confirm which fail to persist `location_text`. The LI-01 pipeline (shipped 2026-03-22) should populate `location_text` from JSON-LD `jobLocation`; older roles predate this.
+- Separate cleanup pass: archive the non-role snippets (Revolut hires list, Jobs By Workable search result, "4. The contact appears …", rows with null title).
+- For recoverable real roles: consider a one-off backfill that re-runs location extraction against `job_description_raw`.
+
+**Not in scope:** do not attempt to infer location from title / company inside the salary baseline — that widens beyond the "only surface when confidence is high" invariant.
+
+---
+
 ## Recent Changes
+
+### 2026-04-15
+**Task: Salary baseline — location-parsing recovery**
+
+Narrow repair to `normaliseLocation(raw)` for two known LinkedIn-scraper artefacts:
+- **Concat glitch** — `"HybridLondon"` / `"RemoteLondon"` / `"OnsiteLondon"` / `"On-siteLondon"` (work-model token glued to city). Split pre-normalisation so downstream `\blondon\b` matches work.
+- **Orphan "Area"** — `"Area"` / `"Area (Hybrid)"` / `"Area (On-site)"` / `"Area (Remote)"` where LinkedIn's `"{City} Area"` label lost its `{City}` prefix at scrape. Historic captures observed exclusively on London-area roles. Repair is narrow: only fires when the string reduces to exactly `"Area"` (optionally followed by a work-model parenthetical).
+
+Added a local fallback inside the Key-details salary block: when `_pdObj.location` is empty, fall back to `_rwCurrentRoleForRender.location_text` (re-normalised). Scoped strictly to the salary-gate input — doesn't alter other render paths.
+
+Salary-context coverage: 116 → 124 passing (of 191 active roles). The 8-role gain covers the `"Area (Hybrid)"` (×7) + `"HybridLondon"` (×1 design role) group. Remaining `fail_uk` dropped 47 → 37, all attributable to genuinely empty locations (see DQ-LOC-01 above).
+
+No change to the salary confidence gates; cautious-seniority gate left intact.
+
+Files: `app/app.js` (`normaliseLocation` + salary-block location fallback).
+
+Harnesses: 19/19, 20/20. `node --check` clean. Isolated unit test on `normaliseLocation`: 14/14 repair cases pass, including 4 negative controls (`"Area Manager"`, `"London Area, United Kingdom"`, etc. unchanged).
+
+---
 
 ### 2026-03-22
 **Task: LI-01 — LinkedIn JD Fetch (feature ship + corrections pass)**

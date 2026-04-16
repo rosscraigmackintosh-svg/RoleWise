@@ -122,10 +122,19 @@
        ──────────────────────────────────────────────────────────────────── */
 
     .rw-role-card {
-      display: block;
+      /* ⚠ DO NOT set `display` here.
+         Tailwind Play CDN injects this block AFTER styles.css, so any
+         display value here wins the cascade and overrides the flex layout
+         defined on `.inbox-role` in styles.css.  The media-object row
+         layout (avatar left, text right) is owned exclusively by the
+         `.inbox-role` / `.inbox-role-avatar` / `.inbox-role-content`
+         rules in styles.css — that is the single source of truth. */
       cursor: pointer;
       position: relative;
     }
+    /* ⚠ .rw-role-card__avatar / .rw-role-card__content layout is owned
+       by `.inbox-role-avatar` / `.inbox-role-content` in styles.css.
+       Only add non-layout properties (typography, colour) here. */
 
     .rw-role-card__company {
       font-size: var(--text-md, 14px);
@@ -495,7 +504,7 @@
 
   </style>
 
-  <link rel="stylesheet" href="styles.css?v=sp5">
+  <link rel="stylesheet" href="styles.css?v=sp6">
   <!-- Overview v1 — calm career-home styles -->
   <link rel="stylesheet" href="overview/overview.css?v=ov1">
   <!-- Reasoning Map — advanced internal feature. Remove this line + reasoning-map.js to disable. -->
