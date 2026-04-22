@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "prototype",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-l", "5050", "/Users/rmacs/Library/CloudStorage/Dropbox/Claude/02_Products/RoleWise/Prototype"],
+      "port": 5050
+    }
+  ]
+}

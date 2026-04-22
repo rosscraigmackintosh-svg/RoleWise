@@ -15,10 +15,9 @@ const WEEKS = [
     basedOn: '12 roles reviewed',
 
     activity: [
-      { k: 'Roles seen',    v: 12 },
-      { k: 'Roles saved',   v: 4  },
-      { k: 'Roles applied', v: 3  },
-      { k: 'Roles skipped', v: 5  },
+      { k: 'Roles reviewed', v: 12 },
+      { k: 'Roles applied',  v: 3  },
+      { k: 'Roles skipped',  v: 5  },
     ],
 
     market: [
@@ -64,10 +63,9 @@ const WEEKS = [
     basedOn: '16 roles reviewed',
 
     activity: [
-      { k: 'Roles seen',    v: 16 },
-      { k: 'Roles saved',   v: 6  },
-      { k: 'Roles applied', v: 5  },
-      { k: 'Roles skipped', v: 5  },
+      { k: 'Roles reviewed', v: 16 },
+      { k: 'Roles applied',  v: 5  },
+      { k: 'Roles skipped',  v: 5  },
     ],
 
     market: [
@@ -113,10 +111,9 @@ const WEEKS = [
     basedOn: '9 roles reviewed',
 
     activity: [
-      { k: 'Roles seen',    v: 9 },
-      { k: 'Roles saved',   v: 3 },
-      { k: 'Roles applied', v: 2 },
-      { k: 'Roles skipped', v: 4 },
+      { k: 'Roles reviewed', v: 9 },
+      { k: 'Roles applied',  v: 2 },
+      { k: 'Roles skipped',  v: 4 },
     ],
 
     market: [

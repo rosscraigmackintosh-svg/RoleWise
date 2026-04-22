@@ -7,10 +7,10 @@
 // bullets, max 2–3, surfaced from analysis + user input.
 
 const DECISION_SUMMARY = {
-  reviewed: 32,
-  applied:  12,
-  skipped:  20,
-  revisited: 3,
+  reviewed: 15,
+  applied:  6,
+  skipped:  7,
+  revisited: 2,
   window:   'Past 6 weeks',
 };
 
@@ -34,10 +34,10 @@ const GROUP_PATTERNS = {
     ],
   },
   revisited: {
-    headline: 'Roles you’ve come back to usually…',
+    headline: "Roles you've come back to usually…",
     points: [
-      'had a vague listing you wanted to clarify',
-      'matched preferences you adjusted afterwards',
+      'had updated their listing after you first looked',
+      'aligned better once your preferences shifted',
     ],
   },
 };

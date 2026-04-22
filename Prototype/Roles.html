@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=1440" />
-<title>Rolewise — Overview</title>
+<title>Rolewise — Roles</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -13,10 +13,13 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
 <style>
+  /* ══════════════════════════════════════════════════════════════════
+     GLOBAL SYSTEM — identical to Overview (DO NOT redefine values)
+     Reused: sidebar nav, typography, card system, spacing, tone
+     ══════════════════════════════════════════════════════════════════ */
   :root {
-    /* Warm, document-first palette */
-    --bg:          oklch(99% 0.003 80);     /* main canvas — faintest warm white */
-    --bg-sidebar:  oklch(97.2% 0.004 80);   /* sidebar — subtly darker warm */
+    --bg:          oklch(99% 0.003 80);
+    --bg-sidebar:  oklch(97.2% 0.004 80);
     --bg-card:    #ffffff;
     --bg-hover:   oklch(96% 0.004 80);
     --bg-subtle:  oklch(97.8% 0.004 80);
@@ -24,15 +27,15 @@
     --border:     oklch(92% 0.004 80);
     --border-strong: oklch(87% 0.005 80);
 
-    --ink:        oklch(22% 0.01 80);       /* body text, near black warm */
+    --ink:        oklch(22% 0.01 80);
     --ink-heading: oklch(18% 0.012 80);
     --ink-muted:  oklch(50% 0.01 80);
     --ink-subtle: oklch(62% 0.008 80);
 
-    --accent:     oklch(45% 0.06 250);      /* muted ink-blue */
+    --accent:     oklch(45% 0.06 250);
     --accent-bg:  oklch(95% 0.015 250);
 
-    --risk:       oklch(45% 0.08 40);       /* warm amber for risk signals only */
+    --risk:       oklch(45% 0.08 40);
 
     --sidebar-w:  240px;
     --content-max: 1100px;
@@ -57,26 +60,21 @@
     font-feature-settings: "cv11", "ss01";
   }
 
-  button { font-family: inherit; }
-
-  /* Numerics always in mono for that calm ledger feel */
+  button, a { font-family: inherit; }
   .num { font-family: 'Geist Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
-
   ::selection { background: var(--accent-bg); color: var(--ink-heading); }
 
-  /* Scrollbar */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: oklch(88% 0.005 80); border-radius: 6px; border: 2px solid var(--bg); }
   ::-webkit-scrollbar-thumb:hover { background: oklch(80% 0.005 80); }
 
-  /* === Layout === */
   .app {
     display: grid;
     grid-template-columns: var(--sidebar-w) 1fr;
     min-height: 100vh;
   }
 
-  /* === Sidebar === */
+  /* === Sidebar (reused exactly) === */
   .sidebar {
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border);
@@ -114,7 +112,6 @@
     padding-left: 22px;
     letter-spacing: 0.005em;
   }
-
   .nav-group { margin-bottom: 20px; }
   .nav-label {
     font-size: 11px;
@@ -122,7 +119,6 @@
     padding: 0 8px 6px;
     letter-spacing: 0.04em;
   }
-
   .nav-item {
     display: flex; align-items: center; justify-content: space-between;
     padding: 7px 10px;
@@ -158,7 +154,6 @@
     color: var(--ink-subtle);
     font-weight: 400;
   }
-
   .sidebar-footer {
     margin-top: auto;
     padding-top: 16px;
@@ -182,7 +177,6 @@
   }
   .profile-name { font-size: 13px; color: var(--ink); line-height: 1.1; }
   .profile-mail { font-size: 11px; color: var(--ink-subtle); line-height: 1.2; margin-top: 1px; }
-
   .upgrade {
     margin-top: 10px;
     padding: 10px 12px;
@@ -196,27 +190,19 @@
   .upgrade:hover { border-color: var(--border-strong); }
   .upgrade-t { color: var(--ink-heading); font-weight: 500; font-size: 12.5px; }
 
-  /* === Main === */
-  .main {
-    min-width: 0;
-    padding: 40px 48px 80px;
-  }
-  .content {
-    max-width: var(--content-max);
-    margin: 0 auto;
-  }
-
+  /* === Main / page shell (reused) === */
+  .main { min-width: 0; padding: 40px 48px 80px; }
+  .content { max-width: var(--content-max); margin: 0 auto; }
   .page-header {
     display: flex; align-items: flex-end; justify-content: space-between;
     margin-bottom: 40px;
-    padding-bottom: 24px;
-    border-bottom: 1px solid var(--border);
   }
   .page-title {
-    font-size: 22px;
-    font-weight: 500;
+    font-size: 28px;
+    font-weight: 400;
     color: var(--ink-heading);
-    letter-spacing: -0.015em;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
     margin: 0 0 4px;
   }
   .page-sub {
@@ -244,107 +230,11 @@
     border-color: var(--ink-heading);
   }
   .btn-primary:hover { background: oklch(28% 0.012 80); }
-  .plus {
-    display: inline-block;
-    width: 12px; height: 12px;
-    position: relative;
-  }
-  .plus::before, .plus::after {
-    content: ''; position: absolute; background: currentColor;
-  }
+  .plus { display: inline-block; width: 12px; height: 12px; position: relative; }
+  .plus::before, .plus::after { content: ''; position: absolute; background: currentColor; }
   .plus::before { left: 5px; top: 0; width: 2px; height: 12px; border-radius: 1px; }
   .plus::after { left: 0; top: 5px; width: 12px; height: 2px; border-radius: 1px; }
 
-  /* === Sections === */
-  section { margin-bottom: 48px; }
-  section:last-child { margin-bottom: 0; }
-
-  .sec-head {
-    display: flex; align-items: baseline; justify-content: space-between;
-    margin-bottom: 14px;
-  }
-  .sec-title {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--ink-heading);
-    letter-spacing: 0.01em;
-    margin: 0;
-  }
-  .sec-sub {
-    font-size: 12px;
-    color: var(--ink-subtle);
-  }
-
-  .card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    padding: 24px;
-  }
-
-  /* Activity row — bare, no card */
-  .pipeline-bare {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 0;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-  }
-  .pipeline-item-bare {
-    all: unset;
-    padding: 22px 4px 20px;
-    cursor: pointer;
-    transition: background var(--dur) var(--ease);
-    position: relative;
-    display: block;
-    font-family: inherit;
-  }
-  .pipeline-item-bare + .pipeline-item-bare {
-    border-left: 1px dashed var(--border);
-  }
-  .pipeline-item-bare:hover { background: var(--bg-subtle); }
-  .pipeline-item-bare.filter-active .pipeline-num { color: var(--accent); }
-  .pipeline-item-bare.filter-active::after {
-    content: ''; position: absolute;
-    left: 0; right: 0; bottom: -1px;
-    height: 2px; background: var(--accent);
-  }
-  .pipeline-num {
-    font-family: 'Geist Mono', monospace;
-    font-size: 30px;
-    font-weight: 400;
-    color: var(--ink-heading);
-    letter-spacing: -0.03em;
-    line-height: 1;
-    margin-bottom: 10px;
-    padding: 0 20px;
-  }
-  .pipeline-label {
-    font-size: 12.5px;
-    color: var(--ink-muted);
-    padding: 0 20px;
-  }
-  .pipeline-delta {
-    font-size: 11px;
-    color: var(--ink-subtle);
-    margin-top: 3px;
-    font-family: 'Geist Mono', monospace;
-    padding: 0 20px;
-  }
-
-  /* Live dot */
-  .live-dot {
-    display: inline-block;
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: oklch(55% 0.12 150);
-    margin-right: 7px;
-    vertical-align: middle;
-    position: relative;
-    top: -1px;
-    box-shadow: 0 0 0 0 oklch(55% 0.12 150 / 0.5);
-    animation: pulse 2.4s var(--ease) infinite;
-  }
   .live-dot-sm {
     display: inline-block;
     width: 5px; height: 5px;
@@ -354,229 +244,353 @@
     vertical-align: middle;
     position: relative;
     top: -1px;
-    opacity: 0.8;
-  }
-  @keyframes pulse {
-    0%   { box-shadow: 0 0 0 0 oklch(55% 0.12 150 / 0.5); }
-    70%  { box-shadow: 0 0 0 6px oklch(55% 0.12 150 / 0); }
-    100% { box-shadow: 0 0 0 0 oklch(55% 0.12 150 / 0); }
+    opacity: 0.9;
   }
 
-  /* Active Pipeline (stacked rows) */
-  .stages { padding: 4px 0; }
-  .stage-row {
-    display: grid;
-    grid-template-columns: 1fr auto auto;
+  /* ══════════════════════════════════════════════════════════════════
+     ROLES-SPECIFIC STYLES
+     ══════════════════════════════════════════════════════════════════ */
+
+  /* Lens (filter) bar — switching perspective, not configuring data */
+  .lens-bar {
+    display: flex;
     align-items: center;
-    gap: 20px;
-    padding: 14px 24px;
-    border-top: 1px solid var(--border);
+    gap: 2px;
+    padding: 0;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .lens {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    border-radius: 7px;
+    font-size: 13px;
+    color: var(--ink-muted);
     cursor: pointer;
-    transition: background var(--dur) var(--ease);
+    position: relative;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
   }
-  .stage-row:first-child { border-top: none; }
-  .stage-row:hover { background: var(--bg-subtle); }
-  .stage-name { font-size: 14px; color: var(--ink); display: flex; align-items: center; }
-  .stage-meta { font-size: 12px; color: var(--ink-subtle); margin-top: 2px; margin-left: 13px; }
-  .stage-last { font-size: 12px; color: var(--ink-subtle); font-family: 'Geist Mono', monospace; }
-  .stage-count {
-    font-family: 'Geist Mono', monospace;
-    font-size: 16px;
+  .lens:hover { background: var(--bg-hover); color: var(--ink); }
+  .lens.on {
     color: var(--ink-heading);
-    min-width: 28px;
-    text-align: right;
+    font-weight: 500;
   }
-  .stage-count.zero { color: oklch(78% 0.005 80); }
-
-  /* Two-column row: Response + Market */
-  .two-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
+  .lens.on::after {
+    content: '';
+    position: absolute;
+    left: 12px; right: 12px; bottom: -21px;
+    height: 2px;
+    background: var(--accent);
   }
-
-  /* Response — stacked rows */
-  .resp-stack > .resp-row {
-    display: flex; justify-content: space-between; align-items: baseline;
-    padding: 10px 0;
-    border-bottom: 1px dashed var(--border);
-  }
-  .resp-stack > .resp-row:last-child { border-bottom: none; }
-  .resp-k { font-size: 13px; color: var(--ink); }
-  .resp-v { }
-  .resp-mono { font-family: 'Geist Mono', monospace; font-size: 12.5px; color: var(--ink-muted); }
-  .resp-num {
-    font-family: 'Geist Mono', monospace;
-    font-size: 18px;
-    color: var(--ink-heading);
-    font-weight: 400;
-    letter-spacing: -0.01em;
-  }
-  .resp-unit {
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    color: var(--ink-muted);
-    margin-left: 4px;
-  }
-  .resp-note-line {
-    margin-top: 16px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
-    font-size: 12.5px;
-    color: var(--ink-muted);
-    font-style: italic;
-  }
-
-  /* Market Signals */
-  .market-group { margin-bottom: 20px; }
-  .market-group:last-child { margin-bottom: 0; }
-  .market-label {
+  .lens-count {
     font-size: 11px;
     color: var(--ink-subtle);
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+  }
+  .lens.on .lens-count { color: var(--accent); border-color: oklch(88% 0.025 250); background: var(--accent-bg); }
+  .lens-sep { flex: 1; }
+  .lens-ghost {
+    font-size: 12px;
+    color: var(--ink-subtle);
+    pointer-events: none;
+    gap: 5px;
+  }
+
+  /* Sections by group */
+  .rl-sections { display: flex; flex-direction: column; gap: 32px; }
+  .rl-group { }
+  .rl-group-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0 2px 0;
     margin-bottom: 10px;
-    letter-spacing: 0.04em;
   }
-  .market-rows > div {
-    display: flex; justify-content: space-between; align-items: baseline;
-    padding: 7px 0;
-    border-bottom: 1px dashed var(--border);
+  .rl-group-left { display: flex; align-items: center; gap: 10px; }
+  .rl-group-title {
     font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-heading);
+    margin: 0;
+    letter-spacing: 0.01em;
   }
-  .market-rows > div:last-child { border-bottom: none; }
-  .market-rows .v {
-    font-family: 'Geist Mono', monospace;
-    color: var(--ink);
-    font-size: 13px;
-  }
-  .market-rows .k { color: var(--ink); }
-
-  /* Risk Signals */
-  .risk-list > div {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 16px;
-    padding: 13px 24px;
-    border-top: 1px solid var(--border);
-    align-items: center;
-  }
-  .risk-list > div:first-child { border-top: none; }
-  .risk-list > div:hover { background: var(--bg-subtle); }
-  .risk-k { font-size: 13.5px; color: var(--ink); }
-  .risk-v {
-    font-family: 'Geist Mono', monospace;
-    font-size: 13px;
-    color: var(--ink-muted);
-  }
-  .risk-dot {
-    display: inline-block;
-    width: 6px; height: 6px;
-    background: var(--risk);
-    border-radius: 50%;
-    margin-right: 10px;
-    opacity: 0.7;
-    vertical-align: middle;
-    position: relative;
-    top: -1px;
-  }
-
-  /* Recent Roles */
-  .roles {
-    padding: 0;
-  }
-  .role-row {
-    display: grid;
-    grid-template-columns: 70px 28px 1fr auto auto;
-    gap: 16px;
-    align-items: center;
-    padding: 14px 24px;
-    border-top: 1px solid var(--border);
-    cursor: pointer;
-    transition: background var(--dur) var(--ease);
-  }
-  .role-row:first-child { border-top: none; }
-  .role-row:hover { background: var(--bg-subtle); }
-  .role-time {
-    font-family: 'Geist Mono', monospace;
-    font-size: 11.5px;
+  .rl-group-count {
+    font-size: 12px;
     color: var(--ink-subtle);
   }
-  .role-logo {
-    width: 26px; height: 26px;
-    border-radius: 5px;
+  .rl-group-hint {
+    font-size: 12px;
+    color: var(--ink-subtle);
+  }
+  .rl-group-mark {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--risk);
+    opacity: 0.75;
+    display: inline-block;
+  }
+
+  /* Role list — cards as briefings */
+  .rl-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .role-card {
+    display: grid;
+    grid-template-columns: 44px 1fr 200px 0px;
+    gap: 20px;
+    align-items: flex-start;
+    padding: 20px 22px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    cursor: pointer;
+    position: relative;
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+    outline: none;
+  }
+  .role-card:hover {
+    background: var(--bg-subtle);
+    border-color: var(--border-strong);
+  }
+  .role-card:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-bg);
+  }
+  /* On hover, reveal actions column by expanding it */
+  .role-card:hover .rl-col-actions,
+  .role-card:focus-within .rl-col-actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+
+  /* Subtle group treatment — no colour-coding traffic lights */
+  .role-card.group-attention {
+    border-left: 2px solid oklch(65% 0.09 40 / 0.5);
+  }
+  .role-card.group-progress {
+    /* no extra chrome — stage badge already communicates */
+  }
+  .role-card.group-closed {
+    opacity: 0.72;
+  }
+  .role-card.group-closed:hover {
+    opacity: 1;
+  }
+
+  .rl-col-logo { padding-top: 2px; }
+  .rl-logo {
+    width: 36px; height: 36px;
+    border-radius: 7px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 10px; font-weight: 500;
+    font-size: 12px; font-weight: 500;
     letter-spacing: 0.02em;
   }
-  .role-title { font-size: 14px; color: var(--ink-heading); font-weight: 500; }
-  .role-company { color: var(--ink-muted); font-weight: 400; }
-  .role-event { color: var(--ink); }
-  .role-meta { font-size: 12px; color: var(--ink-subtle); margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
-  .role-meta span { display: inline-flex; align-items: center; }
-  .role-meta .sep { color: var(--border-strong); }
-  .role-stage {
-    font-size: 12px; color: var(--ink-muted);
-    font-family: 'Geist Mono', monospace;
+
+  .rl-col-main { min-width: 0; }
+  .rl-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
   }
-  .role-decision {
+  .rl-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--ink-heading);
+    letter-spacing: -0.005em;
+    margin: 0;
+    line-height: 1.3;
+  }
+  .rl-company {
+    font-size: 13.5px;
+    color: var(--ink-muted);
+    font-weight: 400;
+  }
+  .rl-meta {
+    font-size: 12.5px;
+    color: var(--ink-muted);
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .rl-meta .sep { color: var(--border-strong); }
+  .rl-salary { font-family: 'Geist Mono', monospace; font-size: 12px; color: var(--ink); }
+  .rl-salary.is-missing {
+    color: var(--ink-subtle);
+    font-style: italic;
+    font-family: 'Geist', sans-serif;
+    font-size: 12.5px;
+  }
+
+  .rl-signals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .rl-signal {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-size: 11.5px;
-    padding: 3px 9px;
+    padding: 3px 8px;
     border-radius: 10px;
-    font-family: 'Geist Mono', monospace;
+    background: var(--bg-subtle);
     border: 1px solid var(--border);
     color: var(--ink-muted);
-    background: var(--bg-subtle);
+    font-family: 'Geist Mono', monospace;
+    letter-spacing: 0;
   }
-  .role-decision.applied {
-    color: var(--accent);
-    border-color: oklch(85% 0.03 250);
-    background: var(--accent-bg);
+  .rl-signal-warn {
+    color: var(--risk);
+    background: oklch(97% 0.015 40);
+    border-color: oklch(90% 0.03 40);
   }
-  .role-decision.skipped { opacity: 0.7; }
-
-  /* Single observation — bare, no card chrome */
-  .insight-bare {
-    padding: 4px 0;
-    border-top: 1px solid var(--border);
-    padding-top: 24px;
+  .rl-signal-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--risk);
+    opacity: 0.8;
   }
-  .insight-label {
-    font-size: 11px;
+  .rl-note {
+    margin-top: 10px;
+    font-size: 12.5px;
     color: var(--ink-subtle);
-    letter-spacing: 0.04em;
-    margin-bottom: 8px;
+    font-style: italic;
+    line-height: 1.4;
+    max-width: 520px;
   }
-  .insight-text {
-    font-size: 17px;
+
+  /* Stage column — ONE clear state, subtle */
+  .rl-col-stage {
+    text-align: right;
+    padding-top: 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+  .rl-stage {
+    display: inline-flex;
+    align-items: center;
+    font-size: 12.5px;
     color: var(--ink-heading);
-    line-height: 1.45;
-    letter-spacing: -0.01em;
-    font-weight: 400;
-    max-width: 560px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+  }
+  .rl-stage.stage-attention { color: var(--risk); }
+  .rl-stage.stage-progress { color: var(--ink-heading); }
+  .rl-stage.stage-applied { color: var(--ink); }
+  .rl-stage.stage-saved { color: var(--ink-muted); font-weight: 400; }
+  .rl-stage.stage-closed { color: var(--ink-subtle); font-weight: 400; }
+  .rl-substage {
+    font-size: 11.5px;
+    color: var(--ink-subtle);
+    font-family: 'Geist Mono', monospace;
+    line-height: 1.3;
+  }
+  .rl-updated {
+    font-size: 11px;
+    color: oklch(72% 0.006 80);
+    margin-top: 2px;
   }
 
-  /* Filter banner above Recent Roles when a metric is clicked */
-  .filter-note {
-    display: flex; align-items: center; gap: 10px;
-    font-size: 12px;
-    color: var(--ink-muted);
-    padding: 8px 12px;
-    background: var(--accent-bg);
-    border: 1px solid oklch(88% 0.025 250);
-    border-radius: 8px;
-    margin-bottom: 12px;
+  /* Actions column — hidden until hover, appears to the right */
+  .rl-col-actions {
+    position: absolute;
+    right: 22px;
+    top: 50%;
+    transform: translateY(-50%) translateX(4px);
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 5px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+    box-shadow: 0 4px 14px oklch(20% 0.01 80 / 0.06);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+    z-index: 2;
   }
-  .filter-note button {
-    background: none; border: none;
-    color: var(--accent);
+  .rl-act {
+    all: unset;
     font-size: 12px;
+    color: var(--ink);
+    padding: 5px 10px;
+    border-radius: 5px;
     cursor: pointer;
-    padding: 0;
-    margin-left: auto;
-    font-family: inherit;
+    font-weight: 500;
+    transition: background var(--dur) var(--ease);
   }
-  .filter-note button:hover { text-decoration: underline; }
+  .rl-act:hover { background: var(--bg-hover); }
+  .rl-act-subtle { color: var(--ink-muted); font-weight: 400; }
+  .rl-act-more {
+    color: var(--ink-muted);
+    padding: 5px 8px;
+    border-left: 1px solid var(--border);
+    border-radius: 0 5px 5px 0;
+    letter-spacing: 0.05em;
+  }
 
-  /* Modal */
+  /* Empty state */
+  .rl-empty {
+    padding: 80px 24px;
+    text-align: center;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-card);
+    background: var(--bg-card);
+  }
+  .rl-empty-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border-strong);
+    margin: 0 auto 14px;
+  }
+  .rl-empty-title {
+    font-size: 15px;
+    color: var(--ink-heading);
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+  .rl-empty-sub {
+    font-size: 13px;
+    color: var(--ink-muted);
+  }
+
+  /* Toast */
+  .rl-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 16px;
+    background: var(--ink-heading);
+    color: var(--bg);
+    border-radius: 8px;
+    font-size: 12.5px;
+    box-shadow: 0 8px 30px oklch(20% 0.01 80 / 0.2);
+    z-index: 60;
+    animation: toast-in 200ms var(--ease);
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translate(-50%, 6px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+  }
+
+  /* Modal (reused) */
   .modal-backdrop {
     position: fixed; inset: 0;
     background: oklch(20% 0.01 80 / 0.22);
@@ -615,12 +629,8 @@
   .field input:focus, .field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 
-  /* Page switch stubs */
-  .stub-page {
-    padding: 80px 40px;
-    text-align: center;
-    color: var(--ink-muted);
-  }
+  /* Stub */
+  .stub-page { padding: 80px 40px; text-align: center; color: var(--ink-muted); }
   .stub-page h2 { font-weight: 500; color: var(--ink-heading); font-size: 20px; letter-spacing: -0.01em; }
 
   /* Tweaks panel */
@@ -667,14 +677,11 @@
   .swatch.on { border-color: var(--bg-card); box-shadow: 0 0 0 1px var(--ink-heading); }
 
   /* Density: compact */
-  .density-compact .card { padding: 18px; }
-  .density-compact .pipeline-item { padding: 14px 20px; }
-  .density-compact .pipeline-num { font-size: 24px; }
-  .density-compact .stage-row,
-  .density-compact .role-row,
-  .density-compact .risk-list > div { padding: 10px 20px; }
-  .density-compact section { margin-bottom: 36px; }
-
+  .density-compact .role-card { padding: 14px 18px; gap: 16px; }
+  .density-compact .rl-title { font-size: 14px; }
+  .density-compact .rl-signals { margin-top: 8px; }
+  .density-compact .rl-list { gap: 6px; }
+  .density-compact .rl-sections { gap: 24px; }
 
   .nav-plus-dot {
     width: 5px; height: 5px;
@@ -711,20 +718,18 @@
 <div id="root"></div>
 
 <script>
-  // Edit mode defaults — host rewrites this block on disk
   window.__TWEAKS__ = /*EDITMODE-BEGIN*/{
     "density": "comfortable",
     "dataState": "active",
     "accent": "ink-blue",
-    "fontPair": "geist",
-    "showMarket": true,
-    "showRisk": true,
-    "showInsight": true
+    "grouped": true,
+    "showSignals": true
   }/*EDITMODE-END*/;
 </script>
 
 <script type="text/babel" src="./data.jsx"></script>
-<script type="text/babel" src="./app.jsx"></script>
+<script type="text/babel" src="./roles-data.jsx"></script>
+<script type="text/babel" src="./roles.jsx"></script>
 
 </body>
 </html>

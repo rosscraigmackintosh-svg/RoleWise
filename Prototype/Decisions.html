@@ -35,7 +35,7 @@
     --accent-bg:  oklch(95% 0.015 250);
 
     --sidebar-w:  240px;
-    --content-max: 920px;
+    --content-max: 1100px;
 
     --radius-card: 12px;
     --radius-sm: 6px;
@@ -111,7 +111,7 @@
   .upgrade.is-active { background: var(--accent-bg); border-color: oklch(88% 0.025 250); }
   .upgrade-on { font-family: 'Geist Mono', monospace; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); padding: 1px 6px; border-radius: 3px; background: var(--bg-card); border: 1px solid oklch(88% 0.025 250); font-weight: 500; }
 
-  .main { min-width: 0; padding: 64px 48px 96px; }
+  .main { min-width: 0; padding: 40px 48px 80px; }
   .content { max-width: var(--content-max); margin: 0 auto; }
 
   /* Tweaks panel (shared) */
@@ -139,7 +139,6 @@
     gap: 32px;
     align-items: flex-end;
     padding: 4px 0 28px;
-    border-bottom: 1px solid var(--border);
   }
   .dh-eyebrow {
     display: inline-flex;
@@ -251,7 +250,6 @@
     align-items: start;
   }
   .dh-group + .dh-group {
-    border-top: 1px solid var(--border);
     padding-top: 40px;
     margin-top: 8px;
   }
@@ -314,15 +312,13 @@
   /* Pattern callout — a small reflection at the top of each group */
   .dh-pattern {
     margin: 6px 0 22px;
-    padding: 16px 18px 18px;
-    background: var(--bg-subtle);
-    border-radius: 10px;
-    border: 1px solid var(--border);
+    padding: 10px 0 10px 16px;
+    border-left: 2px solid var(--border);
   }
   .dh-pattern-t {
-    font-size: 13.5px;
-    color: var(--ink-heading);
-    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--ink-muted);
+    margin-bottom: 7px;
     letter-spacing: -0.003em;
     font-style: italic;
     font-weight: 400;
@@ -335,20 +331,21 @@
     gap: 2px;
   }
   .dh-pattern-list li {
-    font-size: 13.5px;
-    color: var(--ink);
+    font-size: 13px;
+    color: var(--ink-muted);
     line-height: 1.55;
     letter-spacing: -0.003em;
-    padding: 2px 0 2px 18px;
+    padding: 2px 0 2px 14px;
     position: relative;
     text-wrap: pretty;
   }
   .dh-pattern-list li::before {
     content: '';
     position: absolute;
-    left: 0; top: 12px;
-    width: 8px;
-    border-top: 1px solid var(--border-strong);
+    left: 2px; top: 9px;
+    width: 3px; height: 3px;
+    border-radius: 50%;
+    background: var(--ink-subtle);
   }
 
   /* Decision list */
@@ -362,7 +359,6 @@
     gap: 10px 20px;
     align-items: baseline;
     padding: 20px 0 22px;
-    border-bottom: 1px dashed var(--border);
     text-decoration: none;
     color: inherit;
     cursor: pointer;
@@ -443,10 +439,10 @@
   .dh-reasons li::before {
     content: '';
     position: absolute;
-    left: 0; top: 10px;
-    width: 8px;
-    border-top: 1px solid var(--ink-subtle);
-    opacity: 0.6;
+    left: 2px; top: 8px;
+    width: 3px; height: 3px;
+    border-radius: 50%;
+    background: var(--ink-subtle);
   }
 
   .dh-signals {
@@ -539,7 +535,7 @@
   [data-density='compact'] .dh-item { padding: 14px 10px 15px; }
   [data-density='compact'] .dh-item-role { font-size: 14px; }
   [data-density='compact'] .dh-reasons li { font-size: 13.5px; }
-  [data-density='compact'] .dh-pattern { padding: 12px 14px 14px; margin-bottom: 16px; }
+  [data-density='compact'] .dh-pattern { padding: 8px 0 8px 16px; margin-bottom: 16px; }
 
   /* Hide patterns */
   [data-show-patterns='false'] .dh-pattern { display: none; }

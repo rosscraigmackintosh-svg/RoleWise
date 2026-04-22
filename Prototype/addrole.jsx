@@ -442,8 +442,7 @@ function App() {
         if (sampleKey) {
           reset();
         } else {
-          setToast('Would close overlay');
-          setTimeout(() => setToast(null), 1500);
+          window.history.length > 1 ? window.history.back() : window.location.href = 'Roles.html';
         }
       }
     };
@@ -572,7 +571,7 @@ function App() {
 
   return (
     <div className="ar-overlay" data-screen-label="Add Role">
-      <ArHeader onCancel={() => { setToast('Would close overlay'); setTimeout(() => setToast(null), 1500); }} />
+      <ArHeader onCancel={() => { window.history.length > 1 ? window.history.back() : window.location.href = 'Roles.html'; }} />
 
       <div className="ar-body">
         <div className="ar-stage">

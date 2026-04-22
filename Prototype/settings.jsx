@@ -559,7 +559,7 @@ function App() {
     <div className={cnS('app', densityCls, !tweaks.showNumbers && 'no-numbers')}>
       <SettingsSidebar current="settings" />
       <main className="main" data-screen-label="Settings">
-        <div className="content content-narrow">
+        <div className="content">
           <Header savedNote={savedLabel} subStyle={tweaks.subStyle} />
 
           <SectionProfile s={profile} set={setProfile} num={num()} />

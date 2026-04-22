@@ -73,6 +73,8 @@ function RoleCard({ role, idx, onAction, hoverHint }) {
     <article
       className={cnR('role-card', `group-${role.group}`)}
       tabIndex={0}
+      onClick={() => { window.location.href = 'RoleAnalysis.html'; }}
+      style={{ cursor: 'pointer' }}
     >
       <div className="rl-col-logo">
         <RoleLogo short={role.short} idx={idx} />

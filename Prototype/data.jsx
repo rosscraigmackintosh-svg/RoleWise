@@ -4,7 +4,6 @@ const DATASETS = {
   active: {
     pipeline: [
       { key: 'seen',    label: 'Seen',       value: 312, delta: '+28 this wk' },
-      { key: 'saved',   label: 'Saved',      value: 67,  delta: '+12 this wk' },
       { key: 'applied', label: 'Applied',    value: 48,  delta: '+9 this wk'  },
       { key: 'process', label: 'In process', value: 11,  delta: '3 moving'    },
       { key: 'closed',  label: 'Closed',     value: 24,  delta: '2 this wk'   },
@@ -59,7 +58,6 @@ const DATASETS = {
   heavy: {
     pipeline: [
       { key: 'seen',    label: 'Seen',       value: 1842, delta: '+142 this wk' },
-      { key: 'saved',   label: 'Saved',      value: 203,  delta: '+31 this wk' },
       { key: 'applied', label: 'Applied',    value: 127,  delta: '+18 this wk' },
       { key: 'process', label: 'In process', value: 28,   delta: '7 moving'    },
       { key: 'closed',  label: 'Closed',     value: 76,   delta: '6 this wk'   },
@@ -114,7 +112,6 @@ const DATASETS = {
   early: {
     pipeline: [
       { key: 'seen',    label: 'Seen',       value: 18, delta: '+18 this wk' },
-      { key: 'saved',   label: 'Saved',      value: 5,  delta: '+5 this wk'  },
       { key: 'applied', label: 'Applied',    value: 2,  delta: '+2 this wk'  },
       { key: 'process', label: 'In process', value: 1,  delta: '1 moving'    },
       { key: 'closed',  label: 'Closed',     value: 0,  delta: '—'           },

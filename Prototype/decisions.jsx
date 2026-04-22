@@ -21,9 +21,10 @@ function Sidebar({ current }) {
 // ─────────────────────────────────────────────────────────────────────
 function Header({ filter, setFilter, counts }) {
   const options = [
-    { k: 'all',     label: 'All',     ct: counts.all     },
-    { k: 'applied', label: 'Applied', ct: counts.applied },
-    { k: 'skipped', label: 'Skipped', ct: counts.skipped },
+    { k: 'all',       label: 'All',       ct: counts.all       },
+    { k: 'applied',   label: 'Applied',   ct: counts.applied   },
+    { k: 'skipped',   label: 'Skipped',   ct: counts.skipped   },
+    { k: 'revisited', label: 'Revisited', ct: counts.revisited },
   ];
   return (
     <header className="dh-head">
@@ -267,16 +268,17 @@ function App() {
   }, []);
 
   const counts = {
-    all:     DECISIONS.filter(d => d.outcome !== 'revisited').length,
-    applied: groups.applied.length,
-    skipped: groups.skipped.length,
+    all:       DECISIONS.length,
+    applied:   groups.applied.length,
+    skipped:   groups.skipped.length,
+    revisited: groups.revisited.length,
   };
 
   // Apply filter
   const visible = {
-    applied:   (filter === 'all' || filter === 'applied') ? groups.applied : [],
-    skipped:   (filter === 'all' || filter === 'skipped') ? groups.skipped : [],
-    revisited: (filter === 'all') ? groups.revisited : [],
+    applied:   (filter === 'all' || filter === 'applied')   ? groups.applied   : [],
+    skipped:   (filter === 'all' || filter === 'skipped')   ? groups.skipped   : [],
+    revisited: (filter === 'all' || filter === 'revisited') ? groups.revisited : [],
   };
 
   const anyVisible = visible.applied.length + visible.skipped.length + visible.revisited.length > 0;

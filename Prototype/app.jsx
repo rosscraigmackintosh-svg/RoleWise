@@ -412,7 +412,6 @@ function App() {
     if (pipelineFilter) {
       const map = {
         seen: ['Seen'],
-        saved: ['Saved'],
         applied: ['Applied'],
         process: ['Recruiter screen', 'Hiring manager', 'Task', 'Panel', 'Final'],
         closed: ['Closed'],
