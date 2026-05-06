@@ -25303,11 +25303,16 @@
     // live pages yet. They render a calm placeholder rather than inventing
     // page content. Each entry has a title and a one-line description.
     const PLACEHOLDER_PAGES = {
-      decisions:             { title: 'Decision history', description: 'A record of decisions you have made on roles.' },
-      insights:              { title: 'Insights', description: 'Patterns and observations from your job search.' },
-      patterns:              { title: 'Pattern history', description: 'Recurring patterns surfaced from your decisions over time.' },
-      documents:             { title: 'Documents', description: 'CVs, cover letters, and other documents related to your applications.' },
-      settings:              { title: 'Settings', description: 'Application preferences and account settings.' },
+      decisions:     { title: 'Decision History', description: 'This area will collect decisions made on roles once available.' },
+      insights:      { title: 'Insights',          description: 'This area will collect patterns and observations from your search once available.' },
+      patterns:      { title: 'Patterns',          description: 'This area will collect recurring patterns surfaced from your decisions once available.' },
+      career_memory: { title: 'Career Memory',     description: 'This area will collect long-term context from your search once available.' },
+      snapshots:     { title: 'Snapshots',         description: 'This area will collect saved snapshots of roles and decisions once available.' },
+      documents:     { title: 'Documents',         description: 'This area will collect CVs, cover letters, and other documents once available.' },
+      saved_views:   { title: 'Saved Views',       description: 'This area will collect saved filters and lenses once available.' },
+      preferences:   { title: 'Preferences',       description: 'This area will collect application preferences once available.' },
+      notifications: { title: 'Notifications',     description: 'This area will collect alerts and reminders once available.' },
+      settings:      { title: 'Settings',          description: 'This area will collect account settings once available.' },
     };
 
     // ─── Recruiter data ───────────────────────────────────────────────────────
@@ -31380,6 +31385,86 @@ If a field cannot be determined from the message, return null for that field.`,
       document.getElementById('col-rail-section').innerHTML = ''; _setRailVisible(false);
     }
 
+    // ─── Sidebar v2: nav config + icons ──────────────────────────────────────
+    // Structured nav config rendered into the sidebar at startup. Internal
+    // route ids are preserved (e.g. Roles still maps to "applications").
+    // TODO: Rename internal applications route to roles once legacy
+    // inbox cleanup is complete.
+    const NAV_GROUPS = [
+      { label: 'Core', items: [
+        { id: 'overview',              label: 'Overview',         icon: 'home' },
+        { id: 'applications',          label: 'Roles',            icon: 'briefcase',       countKey: 'roles' },
+        { id: 'applications_timeline', label: 'Applications',     icon: 'clipboard-check', countKey: 'applications' },
+        { id: 'recruiters',            label: 'Recruiters',       icon: 'users',           countKey: 'recruiters' },
+      ]},
+      { label: 'Intelligence', items: [
+        { id: 'review',         label: 'Weekly Review',    icon: 'calendar-check' },
+        { id: 'decisions',      label: 'Decision History', icon: 'history' },
+        { id: 'insights',       label: 'Insights',         icon: 'lightbulb' },
+        { id: 'patterns',       label: 'Patterns',         icon: 'activity' },
+        { id: 'career_memory',  label: 'Career Memory',    icon: 'archive' },
+      ]},
+      { label: 'Library', items: [
+        { id: 'snapshots',   label: 'Snapshots',   icon: 'layers' },
+        { id: 'documents',   label: 'Documents',   icon: 'file-text' },
+        { id: 'saved_views', label: 'Saved Views', icon: 'bookmark' },
+      ]},
+      { label: 'Account', items: [
+        { id: 'profile',       label: 'Profile',       icon: 'user' },
+        { id: 'preferences',   label: 'Preferences',   icon: 'sliders' },
+        { id: 'notifications', label: 'Notifications', icon: 'bell' },
+        { id: 'settings',      label: 'Settings',      icon: 'settings' },
+      ]},
+    ];
+
+    // Line icons — 16×16, stroke-width 1.5, currentColor, no fill.
+    const _RWL_ICONS = {
+      'home':            '<path d="M3 11.5L8 3l5 8.5"/><path d="M4.5 10.5V13a.5.5 0 0 0 .5.5h2.5v-3h1v3H11a.5.5 0 0 0 .5-.5v-2.5"/>',
+      'briefcase':       '<rect x="2.5" y="5" width="11" height="8" rx="1"/><path d="M6 5V3.5A.5.5 0 0 1 6.5 3h3a.5.5 0 0 1 .5.5V5"/><path d="M2.5 8.5h11"/>',
+      'clipboard-check': '<rect x="3.5" y="3.5" width="9" height="10" rx="1"/><path d="M5.5 3.5V3a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 .5.5v.5"/><path d="M6 9l1.5 1.5L10 7.5"/>',
+      'users':           '<circle cx="6" cy="6" r="2.25"/><path d="M2.5 13c.5-1.8 1.9-2.75 3.5-2.75S9 11.2 9.5 13"/><path d="M10 6.25a2 2 0 0 0 0-3"/><path d="M11 12c1.5 0 2.5-.75 2.5-2"/>',
+      'calendar-check':  '<rect x="2.5" y="3.5" width="11" height="10" rx="1"/><path d="M2.5 6.5h11"/><path d="M5 2.5V4M11 2.5V4"/><path d="M6 9.5l1.5 1.5L10 8"/>',
+      'history':         '<path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9"/><path d="M2.5 4v3h3"/><path d="M8 5v3l2 1.5"/>',
+      'lightbulb':       '<path d="M5.5 11.5h5"/><path d="M6 13.5h4"/><path d="M5 9.5C4 8.5 3.5 7.4 3.5 6a4.5 4.5 0 0 1 9 0c0 1.4-.5 2.5-1.5 3.5L11 11H5z"/>',
+      'activity':        '<path d="M2 8h2.5L6 4l3 8 1.5-4H14"/>',
+      'archive':         '<rect x="2" y="3" width="12" height="3" rx=".5"/><path d="M3 6v7a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5V6"/><path d="M6.5 9h3"/>',
+      'layers':          '<path d="M8 2L2 5l6 3 6-3z"/><path d="M2 8l6 3 6-3"/><path d="M2 11l6 3 6-3"/>',
+      'file-text':       '<path d="M9 2.5H4a.5.5 0 0 0-.5.5v10a.5.5 0 0 0 .5.5h8a.5.5 0 0 0 .5-.5V6z"/><path d="M9 2.5V6h3.5"/><path d="M5.5 9h5M5.5 11h5M5.5 7h2"/>',
+      'bookmark':        '<path d="M4 2.5h8v11l-4-2.5-4 2.5z"/>',
+      'user':            '<circle cx="8" cy="6" r="2.5"/><path d="M3.5 13.5c.5-2.2 2.3-3.25 4.5-3.25s4 1.05 4.5 3.25"/>',
+      'sliders':         '<path d="M2.5 4.5h7M11 4.5h2.5"/><path d="M2.5 8h2.5M6.5 8h7"/><path d="M2.5 11.5h9M13 11.5h.5"/><circle cx="10.25" cy="4.5" r="1.25"/><circle cx="5.75" cy="8" r="1.25"/><circle cx="12.25" cy="11.5" r="1.25"/>',
+      'bell':            '<path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 1 0-7 0v3z"/><path d="M6.5 11.5a1.5 1.5 0 0 0 3 0"/>',
+      'settings':        '<circle cx="8" cy="8" r="2"/><path d="M12.5 8a4.5 4.5 0 0 0-.1-1l1.3-1-1-1.7-1.6.5a4.5 4.5 0 0 0-1.7-1L9 2H7l-.4 1.7a4.5 4.5 0 0 0-1.7 1L3.3 4.3 2.3 6l1.3 1A4.5 4.5 0 0 0 3.5 8c0 .35.04.7.1 1l-1.3 1 1 1.7 1.6-.5c.5.4 1 .75 1.7 1L7 14h2l.4-1.7a4.5 4.5 0 0 0 1.7-1l1.6.5 1-1.7-1.3-1c.06-.3.1-.65.1-1z"/>',
+      'chevron-down':    '<path d="M4 6l4 4 4-4"/>',
+    };
+    function _navIcon(name) {
+      const body = _RWL_ICONS[name] || '';
+      return '<svg class="rwl-nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + body + '</svg>';
+    }
+
+    function _renderSidebarNav() {
+      const navEl = document.querySelector('.rwl-nav');
+      if (!navEl) return;
+      const html = NAV_GROUPS.map((g, gi) => {
+        const showLabel = gi > 0; // Core has no visible label
+        const items = g.items.map(it => {
+          const countSpan = it.countKey
+            ? '<span class="rwl-nav-count" data-nav-count="' + esc(it.countKey) + '"></span>'
+            : '';
+          return '<button class="nav-item rwl-nav-item" data-nav="' + esc(it.id) + '" type="button">' +
+                   _navIcon(it.icon) +
+                   '<span class="rwl-nav-text">' + esc(it.label) + '</span>' +
+                   countSpan +
+                 '</button>';
+        }).join('');
+        return '<div class="rwl-nav-group">' +
+                 (showLabel ? '<div class="rwl-nav-section-label">' + esc(g.label) + '</div>' : '') +
+                 items +
+               '</div>';
+      }).join('');
+      navEl.innerHTML = html;
+    }
+
     // ─── Sidebar v2: count update from live data ─────────────────────────────
     // Roles      = total roles in the user's pipeline (allRoles.length)
     // Applications = roles with an _appliedDate set
@@ -31649,6 +31734,10 @@ If a field cannot be determined from the message, return null for that field.`,
       }
     });
 
+    // Render the structured nav from NAV_GROUPS, then bind click handlers
+    // and sync the active state with currentNav.
+    _renderSidebarNav();
+    _syncNavActive();
     document.getElementById('btn-logo').addEventListener('click', () => switchNav('overview'));
     document.querySelectorAll('.nav-item').forEach(btn => {
       btn.addEventListener('click', () => switchNav(btn.dataset.nav));

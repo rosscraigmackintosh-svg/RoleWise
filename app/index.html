@@ -896,51 +896,7 @@
       </button>
       <div class="rwl-tagline">Better role decisions</div>
 
-      <nav class="rwl-nav">
-        <div class="rwl-nav-group">
-          <button class="nav-item rwl-nav-item active" data-nav="overview" type="button">
-            <span class="rwl-nav-text">Overview</span>
-          </button>
-          <button class="nav-item rwl-nav-item" data-nav="applications" type="button">
-            <span class="rwl-nav-text">Roles</span>
-            <span class="rwl-nav-count" data-nav-count="roles"></span>
-          </button>
-          <button class="nav-item rwl-nav-item" data-nav="applications_timeline" type="button">
-            <span class="rwl-nav-text">Applications</span>
-            <span class="rwl-nav-count" data-nav-count="applications"></span>
-          </button>
-          <button class="nav-item rwl-nav-item" data-nav="recruiters" type="button">
-            <span class="rwl-nav-text">Recruiters</span>
-            <span class="rwl-nav-count" data-nav-count="recruiters"></span>
-          </button>
-        </div>
-
-        <div class="rwl-nav-group">
-          <div class="rwl-nav-section-label">More</div>
-          <button class="nav-item rwl-nav-item" data-nav="review" type="button">
-            <span class="rwl-nav-text">Weekly review</span>
-          </button>
-          <button class="nav-item rwl-nav-item" data-nav="decisions" type="button">
-            <span class="rwl-nav-text">Decision history</span>
-          </button>
-          <button class="nav-item rwl-nav-item" data-nav="insights" type="button">
-            <span class="rwl-nav-text">Insights</span>
-          </button>
-          <button class="nav-item rwl-nav-item" data-nav="patterns" type="button">
-            <span class="rwl-nav-text">Pattern history</span>
-            <span class="rwl-nav-dot" id="rwl-patterns-dot" hidden></span>
-          </button>
-          <button class="nav-item rwl-nav-item" data-nav="documents" type="button">
-            <span class="rwl-nav-text">Documents</span>
-          </button>
-          <button class="nav-item rwl-nav-item" data-nav="profile" type="button">
-            <span class="rwl-nav-text">Profile</span>
-          </button>
-          <button class="nav-item rwl-nav-item" data-nav="settings" type="button">
-            <span class="rwl-nav-text">Settings</span>
-          </button>
-        </div>
-      </nav>
+      <nav class="rwl-nav" aria-label="Primary"><!-- populated by _renderSidebarNav() from NAV_GROUPS --></nav>
 
       <!-- Maintenance utility: hidden from main UI -->
       <button class="btn-backfill" id="btn-backfill" style="display:none">Fix missing updates</button>
@@ -949,7 +905,7 @@
       <div class="rwl-footer">
         <button class="rwl-plus" type="button" aria-label="Rolewise Plus">
           <span class="rwl-plus-title">Rolewise Plus</span>
-          <span class="rwl-plus-sub">Unlock pattern history</span>
+          <span class="rwl-plus-sub">Unlock deeper role intelligence</span>
         </button>
         <button class="nav-profile-row rwl-profile" id="btn-nav-profile" data-nav="profile" aria-label="Profile">
           <span class="rwl-profile-avatar" aria-hidden="true"><span id="nav-profile-initials">P</span></span>
@@ -957,6 +913,7 @@
             <span class="rwl-profile-name" id="nav-profile-name">Profile</span>
             <span class="rwl-profile-email" id="nav-profile-email"></span>
           </span>
+          <svg class="rwl-profile-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
         </button>
       </div>
     </aside>
