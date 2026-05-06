@@ -13754,12 +13754,19 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         });
       }
 
-      // Staggered progress lines (cosmetic — mirrors analysis timing)
-      _addLine(_ANALYSIS_STAGES[0]);
-      const _lineTimers = _ANALYSIS_TIMINGS.map((t, i) => setTimeout(() => {
-        if (overlay._ingDone) return;
-        _addLine(_ANALYSIS_STAGES[i + 1] || '');
-      }, t));
+      // Add Role v2 — start the state-machine animator. This drives the
+      // reading stream, the Extracted panel reveal, the One Thing card and
+      // the Ready CTA. The legacy _addLine / _completeLine helpers stay
+      // available for compatibility but the v2 animator owns all UI state
+      // from this point on.
+      const _arAnimator = _startArAnimator(overlay, {
+        linesEl: linesEl,
+        fieldsEl: document.getElementById('rw-ing-extracted'),
+        sourceKind:  overlay._ingSourceKind  || 'text',
+        sourceLabel: overlay._ingSourceLabel || 'pasted text',
+        stepMs: 380,
+      });
+      const _lineTimers = []; // legacy variable; kept for the cleanup loop below
 
       // Track whether user is engaged with optional context questions
       let _userFocusedContext = false;
@@ -13827,6 +13834,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         // ── Track source kind for the v2 completed-reading sequence ──────────
         // Defaults to "pasted text"; overridden below when a URL is detected
         // or when the pasted body looks like a recruiter outreach message.
+        // Push the resolved source kind into the animator so its first
+        // "Recognised …" step uses the right phrasing.
         overlay._ingSourceKind  = 'text';
         overlay._ingSourceLabel = 'pasted text';
         if (!url && text) {
@@ -13835,6 +13844,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             overlay._ingSourceLabel = 'recruiter message';
           }
         }
+        if (_arAnimator) _arAnimator.setSource(overlay._ingSourceKind, overlay._ingSourceLabel);
 
         // ── If a URL was provided, attempt to fetch the JD content first ──────
         // Uses the multi-board router: LinkedIn stays wrapped as-is; Workable,
@@ -13844,7 +13854,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           const _cls = _classifyJdUrl(url);
           overlay._ingSourceKind  = 'url';
           overlay._ingSourceLabel = _cls.source_label || 'link';
-          _addLine(`Fetching job description from ${_cls.source_label}\u2026`);
+          if (_arAnimator) _arAnimator.setSource('url', _cls.source_label || 'link');
           console.log('[url-ingest] Starting fetch for URL:', url, '| source_type:', _cls.source_type);
 
           const _result = await _ingestJdFromUrl(url, { role_id: null });
@@ -13968,6 +13978,15 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           }
         }
 
+        // Feed the animator: at this point we have full local metadata
+        // (title/company/location/salary/work_model). The animator unveils
+        // the title/company/extract steps off this data; analysis arrives a
+        // beat later.
+        if (_arAnimator) {
+          _arAnimator.setMetaReady(savedRole);
+          _arAnimator.setRole(savedRole);
+        }
+
         // ── Call analysis API ────────────────────────────────────────────────
         _tPass1Start = performance.now();
         analysis = await callAnalysisAPI(jd);
@@ -13999,6 +14018,14 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
               catch (_) { /* non-fatal: company/title backfill */ }
             })();
           }
+        }
+
+        // Feed the animator: analysis output now available. The animator
+        // unveils the "requirements" tag off this and lets the seniority/
+        // industry sub-lines render if the LLM provided them.
+        if (_arAnimator) {
+          _arAnimator.setRole(savedRole);
+          _arAnimator.setAnalysis(analysis);
         }
 
         // ── Save jd_matches row ──────────────────────────────────────────────
@@ -14050,37 +14077,30 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           runRecruiterAutoDetection(savedRole, jd_raw || jd).catch(() => {});
 
       } catch (err) {
-        // Analysis failed — show error, return to idle state
+        // v2: drive failure through the animator so the user sees a calm
+        // error card in place of the half-finished extracted panel, instead
+        // of bouncing back to the idle state with the inline error.
         _lineTimers.forEach(clearTimeout);
         _ingestionTimerStop(overlay);
         overlay._ingDone = true;
-        // Reset the one-shot submission guard so user can retry
         if (typeof overlay._ingSubmittedReset === 'function') overlay._ingSubmittedReset();
-        const _errorEl = document.getElementById('rw-ing-error');
-        const _idleEl  = document.getElementById('rw-ing-idle');
-        const _procEl  = document.getElementById('rw-ing-processing');
-        const _textarea = document.getElementById('rw-ing-textarea');
-        const _submitRow = document.getElementById('rw-ing-submit-row');
-        if (_procEl) _procEl.setAttribute('hidden', '');
-        if (_idleEl) _idleEl.removeAttribute('hidden');
-        // Preserve the pasted input — do NOT clear the textarea.
-        // The user can see what they entered, clear it themselves, and paste again.
-        // v2: submit row stays hidden (auto-trigger handles re-entry on edit).
-        if (_submitRow) _submitRow.setAttribute('hidden', '');
-        const _submitBtnRetry = document.getElementById('rw-ing-submit');
-        if (_submitBtnRetry) {
-          if (_textarea?.value.trim()) {
-            _submitBtnRetry.removeAttribute('disabled');
-            _submitBtnRetry.setAttribute('aria-disabled', 'false');
-          } else {
-            _submitBtnRetry.setAttribute('disabled', '');
-            _submitBtnRetry.setAttribute('aria-disabled', 'true');
+        if (_arAnimator) {
+          _arAnimator.failPipeline(err);
+          // _ingFinalize ensures the Cancel/Esc/error-retry paths have a
+          // single way to close the overlay.
+          overlay._ingFinalize = () => _closeIngestionOverlay(overlay);
+        } else {
+          // Defensive fallback: if the animator wasn't set up for any
+          // reason, surface the raw error inline like the legacy flow did.
+          const _errorEl = document.getElementById('rw-ing-error');
+          const _idleEl  = document.getElementById('rw-ing-idle');
+          const _procEl  = document.getElementById('rw-ing-processing');
+          if (_procEl) _procEl.setAttribute('hidden', '');
+          if (_idleEl) _idleEl.removeAttribute('hidden');
+          if (_errorEl) {
+            _errorEl.textContent = err.message || 'Something went wrong. Please try again.';
+            _errorEl.removeAttribute('hidden');
           }
-        }
-        if (_textarea) setTimeout(() => _textarea.focus(), 60);
-        if (_errorEl) {
-          _errorEl.textContent = err.message || 'Something went wrong. Please try again.';
-          _errorEl.removeAttribute('hidden');
         }
         return;
       }
@@ -14122,17 +14142,24 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         }
       }
 
-      // Add Role v2 — show the calm Ready state instead of auto-closing.
-      // The user clicks "Open role overview" to commit the transition; the
-      // analysis view is already pre-rendered behind the overlay so the swap
-      // is instant. The legacy context-typing branches are dead code in v2
-      // (the Q1/Q2/Q3 inputs are hidden) but the path stays correct: if a
-      // future flow re-enables them, _ingFinalize is still the single exit.
-      //
-      // Replace the sparse in-flight trace (the legacy 3-line _ANALYSIS_STAGES
-      // pipeline, often cut short when analysis returns fast) with a complete
-      // factual reading narrative built from real extracted data, so the user
-      // sees the full understanding flow instead of a stalled partial trace.
+      // Add Role v2 — hand completion off to the animator. The animator
+      // owns the reading stream, the Extracted panel, the One Thing card
+      // and the Ready CTA. It already has role + analysis fed in via the
+      // checkpoints above, so completePipeline() just unblocks the gated
+      // "done" step (or detects an ambiguity and routes to the One Thing
+      // card instead). The Open role overview button calls _ingFinalize.
+      if (_arAnimator) {
+        _arAnimator.setRole(savedRole);
+        _arAnimator.setAnalysis(analysis);
+        _arAnimator.completePipeline();
+      }
+      overlay._ingFinalize = _doFadeOut;
+    }
+    // ─── Legacy completed-trace path (replaced by animator above) ─────────────
+    // Kept commented for reference. The animator now drives the full UI:
+    // reading lines, extracted fields, One Thing prompt, and Ready CTA.
+    /* eslint-disable no-unreachable */
+    function _legacyCompletedRenderPath_unused(linesEl, savedRole, analysis, overlay, _doFadeOut) {
       _renderCompletedReadingSequence(linesEl, {
         role:        savedRole,
         analysis:    analysis,
@@ -14144,14 +14171,551 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       overlay._ingFinalize = _doFadeOut;
     }
 
-    // ─── Add Role v2: completed reading sequence ─────────────────────────────
-    // The legacy pipeline only schedules 2-3 staggered progress lines, and
-    // _lineTimers.forEach(clearTimeout) cancels any remaining ones the moment
-    // the API resolves — which leaves a stalled-looking partial trace whenever
-    // analysis returns faster than the timers can fire. v2 fixes this by
-    // replacing the entire #rw-ing-progress-lines content with a complete,
-    // factual reading narrative built from what was actually extracted, so
-    // the user sees the full understanding flow on completion.
+    // ─── Add Role v2: state-machine orchestrator (mock-aligned) ──────────────
+    // Drives the live ingestion UI through the same model the mock used:
+    //
+    //   steps[]    →   shown   →   unveiledTags   →   field reveal
+    //                                  ↓
+    //                          ask (one thing) │ done (ready) │ fail (error)
+    //
+    // The animator builds its step list from an internal state object, ticks
+    // a single `shown` counter at stepMs intervals, and unveils Extracted
+    // panel rows as the corresponding tag becomes revealed. The pipeline is
+    // unchanged — checkpoints (`setMeta`, `setRole`, `setAnalysis`,
+    // `completePipeline`, `failPipeline`, `setAsk`) feed real data in as it
+    // arrives. If the pipeline outpaces the animation, the animation finishes
+    // naturally; if the animation outpaces the pipeline, it holds at the
+    // last gated step until real data lands.
+    //
+    // Tags used:
+    //   read | source | title | company | extract | requirements |
+    //   understand | ask | done | fail
+    //
+    // Field-tag map (which tag unveils which row):
+    //   title/company → head section
+    //   extract       → location, work model, salary
+    //   requirements  → type, seniority, industry
+    //   source        → source
+
+    const _AR_FIELD_TAG = {
+      location: 'extract',
+      model:    'extract',
+      salary:   'extract',
+      type:     'requirements',
+      level:    'requirements',
+      industry: 'requirements',
+      source:   'source',
+    };
+    const _AR_FIELD_LABELS = [
+      { k: 'location', label: 'Location'   },
+      { k: 'model',    label: 'Work model' },
+      { k: 'salary',   label: 'Salary'     },
+      { k: 'type',     label: 'Type'       },
+      { k: 'level',    label: 'Seniority'  },
+      { k: 'industry', label: 'Industry'   },
+      { k: 'source',   label: 'Source'     },
+    ];
+
+    function _arBuildSteps(state) {
+      // Failure path: a short narrative that explains the broken-link case.
+      if (state.pipelineError) {
+        const reason = state.pipelineError.message || 'Couldn’t reach the page';
+        return [
+          { tag: 'read',   t: 'Reading role…' },
+          { tag: 'source', t: state.sourceKind === 'url'
+              ? `Trying to open ${state.sourceLabel || 'link'}…`
+              : 'Looking at the pasted text…' },
+          { tag: 'fail',   t: reason, terminal: true },
+        ];
+      }
+
+      const steps = [{ tag: 'read', t: 'Reading role…' }];
+
+      // Source recognition
+      if (state.sourceKind === 'url') {
+        steps.push({ tag: 'source', t: `Recognised link source — ${state.sourceLabel || 'link'}` });
+      } else if (state.sourceKind === 'recruiter') {
+        steps.push({ tag: 'source', t: 'Recognised recruiter message' });
+      } else {
+        steps.push({ tag: 'source', t: 'Recognised pasted text' });
+      }
+
+      // Title / company — gated on availability of basic metadata. These
+      // become available very quickly (extractJDMetadata is synchronous), so
+      // they typically render right after the source line.
+      steps.push({
+        tag: 'title',
+        gate: () => !state.metaReady,
+        skipIf: () => !state.role?.role_title,
+        t: () => state.role?.role_title ? `Found title — ${state.role.role_title}` : null,
+      });
+      steps.push({
+        tag: 'company',
+        gate: () => !state.metaReady,
+        skipIf: () => !(state.role?.company_name),
+        t: () => {
+          const c = (typeof sanitiseCompanyName === 'function'
+            ? sanitiseCompanyName(state.role?.company_name)
+            : state.role?.company_name) || null;
+          return c ? `Found company — ${c}` : null;
+        },
+      });
+
+      // Extract phase — present as a calm two-line block, salary line
+      // composed from real fields.
+      steps.push({ tag: 'extract', t: 'Extracting location and salary…' });
+      steps.push({
+        tag: 'extract',
+        t: () => {
+          const r = state.role || {};
+          const _wmLabel = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+          const _wm = r.work_model ? (_wmLabel[String(r.work_model).toLowerCase()]
+            || (String(r.work_model).charAt(0).toUpperCase() + String(r.work_model).slice(1))) : null;
+          const sal = (r.salary_text_raw || '').trim() || null;
+          const loc = r.location_text || _wm || null;
+          if (sal && loc)  return `Salary — ${sal} · ${loc}`;
+          if (sal)         return `Salary — ${sal}`;
+          if (loc)         return `Salary not stated · ${loc}`;
+          return 'Salary not stated';
+        },
+      });
+
+      // Requirements phase — gated on analysis arriving. The first line is
+      // always emitted ("Identifying key requirements…"); the seniority and
+      // industry sub-lines render only when the LLM provided them.
+      steps.push({ tag: 'requirements', gate: () => !state.analysis, t: 'Identifying key requirements…' });
+      steps.push({
+        tag: 'requirements',
+        skipIf: () => !state.analysis?.role_archetype?.primary,
+        t: () => {
+          const s = state.analysis?.role_archetype?.primary;
+          return s ? `Seniority reads as ${s}` : null;
+        },
+      });
+      steps.push({
+        tag: 'requirements',
+        skipIf: () => {
+          const ind = state.analysis?.role_archetype?.industry
+            || state.analysis?.practical_details?.industry;
+          return !ind;
+        },
+        t: () => {
+          const ind = state.analysis?.role_archetype?.industry
+            || state.analysis?.practical_details?.industry;
+          return ind ? `Industry — ${ind}` : null;
+        },
+      });
+
+      // Final synthesis
+      steps.push({ tag: 'understand', t: 'Understanding requirements…' });
+
+      // Branch: ask vs done. The ask line is added if the detector found a
+      // supported ambiguity (the ask card itself replaces the ready CTA
+      // until the user resolves it).
+      if (state.ask) {
+        const askLabel = (state.ask.label || 'one detail').toLowerCase();
+        steps.push({ tag: 'ask', terminal: true, t: `Needs your input — ${askLabel}` });
+      } else {
+        steps.push({ tag: 'done', terminal: true, gate: () => !state.pipelineDone, t: 'Ready — opening role overview' });
+      }
+
+      return steps;
+    }
+
+    function _arRenderFields(fieldsEl, state) {
+      if (!fieldsEl) return;
+      const _esc = (typeof esc === 'function') ? esc : (s) => String(s ?? '');
+      const _capitalise = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+      const _wmLabel = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+      const _initials = (name) => {
+        if (!name) return '?';
+        const parts = String(name).trim().split(/\s+/);
+        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+        return parts[0].slice(0, 2);
+      };
+
+      const tags = state.unveiledTags || new Set();
+      const role = state.role || {};
+      const analysis = state.analysis || {};
+
+      const _title    = role.role_title || analysis._roleTitle || null;
+      const _company  = (typeof sanitiseCompanyName === 'function'
+        ? sanitiseCompanyName(role.company_name)
+        : role.company_name) || analysis._company || null;
+      const _location = role.location_text || null;
+      const _wmRaw    = (role.work_model || '').toLowerCase();
+      const _wm       = _wmRaw ? (_wmLabel[_wmRaw] || _capitalise(_wmRaw)) : null;
+      const _salary   = (role.salary_text_raw || '').trim() || null;
+      const _type     = role.engagement_type || analysis?.practical_details?.contract_type || null;
+      const _sen      = analysis?.role_archetype?.primary
+        || analysis?.what_they_are_really_looking_for?.seniority
+        || null;
+      const _industry = analysis?.role_archetype?.industry
+        || analysis?.practical_details?.industry
+        || null;
+      const _src = (() => {
+        const url = role.job_url || '';
+        if (state.sourceKind === 'recruiter') return 'Recruiter';
+        if (!url) return 'Pasted text';
+        if (/linkedin\./i.test(url))    return 'LinkedIn';
+        if (/greenhouse\./i.test(url))  return 'Greenhouse';
+        if (/lever\./i.test(url))       return 'Lever';
+        if (/workable\./i.test(url))    return 'Workable';
+        if (/ashbyhq\./i.test(url))     return 'Ashby';
+        try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return 'Web'; }
+      })();
+
+      const VALUES = {
+        location: _location,
+        model:    _wm,
+        salary:   _salary,
+        type:     _type,
+        level:    _sen,
+        industry: _industry,
+        source:   _src,
+      };
+
+      const headUnveiled = tags.has('title') || tags.has('company');
+      let html = '';
+      if (headUnveiled && (_title || _company)) {
+        html += '<div class="ar-field-head">'
+          + (_title   ? '<div class="ar-field-head-title">' + _esc(_title) + '</div>' : '')
+          + (_company ? '<span class="ar-field-head-company"><span class="ar-field-head-logo">' + _esc(_initials(_company)) + '</span>' + _esc(_company) + '</span>' : '')
+          + '</div>';
+      } else if (headUnveiled) {
+        // Tags revealed but no concrete title/company — leave a blank head
+      } else {
+        // Pre-reveal: pending shimmer for both
+        html += '<div class="ar-field-head">'
+          +   '<div class="ar-field-head-title"><span class="ar-field-v is-pending is-pending--long"></span></div>'
+          +   '<span class="ar-field-head-company"><span class="ar-field-v is-pending is-pending--short"></span></span>'
+          + '</div>';
+      }
+
+      _AR_FIELD_LABELS.forEach((row, i) => {
+        const tag = _AR_FIELD_TAG[row.k];
+        const unveiled = tags.has(tag);
+        const v = VALUES[row.k];
+        let valHtml;
+        if (!unveiled) {
+          // Shimmer
+          const cls = (i % 3 === 0) ? 'is-pending--long' : (i % 3 === 2) ? 'is-pending--short' : '';
+          valHtml = '<span class="ar-field-v is-pending ' + cls + '"></span>';
+        } else if (!v) {
+          valHtml = '<span class="ar-field-v is-missing">Not stated</span>';
+        } else {
+          valHtml = '<span class="ar-field-v">' + _esc(v) + '</span>';
+        }
+        html += '<div class="ar-field-row">'
+          +   '<span class="ar-field-k">' + _esc(row.label) + '</span>'
+          +   valHtml
+          + '</div>';
+      });
+
+      fieldsEl.innerHTML = html;
+    }
+
+    function _arRenderErrorCard(fieldsEl, msg, onPaste, onRetry) {
+      if (!fieldsEl) return;
+      const _esc = (typeof esc === 'function') ? esc : (s) => String(s ?? '');
+      fieldsEl.innerHTML =
+        '<div class="ar-error-card">'
+        +   '<span class="ar-error-k">Couldn’t read</span>'
+        +   '<div>'
+        +     '<h3 class="ar-error-h">Couldn’t read this role clearly</h3>'
+        +     '<p class="ar-error-p">' + _esc(msg || 'The link didn’t open, or there wasn’t enough detail. Try pasting the full description, or pull it from another source.') + '</p>'
+        +     '<div class="ar-error-acts">'
+        +       '<button type="button" class="ar-error-act" data-ar-error="paste">Paste full description</button>'
+        +       '<button type="button" class="ar-error-act" data-ar-error="retry">Try another source</button>'
+        +     '</div>'
+        +   '</div>'
+        + '</div>';
+      fieldsEl.querySelector('[data-ar-error="paste"]')?.addEventListener('click', () => { if (onPaste) onPaste(); });
+      fieldsEl.querySelector('[data-ar-error="retry"]')?.addEventListener('click', () => { if (onRetry) onRetry(); });
+    }
+
+    function _arDetectAsk(state) {
+      // Returns { key, label, question, choices: [...], skip } or null.
+      // Only surfaces a prompt when supported by real signals — falls back
+      // to null if no useful ambiguity exists.
+      const role = state.role || {};
+      const analysis = state.analysis || {};
+
+      // Recruiter-mediated → calm acknowledgement (no choices needed; just
+      // surfaces the context). Skipped when other ambiguities are stronger.
+      // Salary missing
+      if (!(role.salary_text_raw || '').trim()) {
+        return {
+          key: 'salary',
+          label: 'Salary not stated',
+          question: 'No salary listed — track anyway?',
+          choices: [
+            { k: 'track', label: 'Track anyway', primary: true },
+            { k: 'note',  label: 'Add a note',   primary: false },
+          ],
+          skip: 'Skip',
+        };
+      }
+      // Production coding hard_no
+      const hardNo = analysis?.hard_no?.signals
+        || analysis?.hard_no_signals
+        || (analysis?.hard_no?.summary ? [analysis.hard_no.summary] : []);
+      if (Array.isArray(hardNo) && hardNo.some(s => /production.{0,3}coding|live.{0,3}coding/i.test(typeof s === 'string' ? s : (s?.label || '')))) {
+        return {
+          key: 'production-coding',
+          label: 'Production coding mentioned',
+          question: 'Production coding required — keep reviewing?',
+          choices: [
+            { k: 'continue', label: 'Keep reviewing', primary: true },
+            { k: 'flag',     label: 'Flag as blocker', primary: false },
+          ],
+          skip: 'Skip',
+        };
+      }
+      // Unclear work model: missing, or contains "remote" + "office"/"on-site"
+      const wm = (role.work_model || '').toLowerCase();
+      const wmText = (role.location_text || '') + ' ' + (analysis?.practical_details?.work_model || '');
+      if (!wm && /remote/i.test(wmText) && /(on.?site|office|hybrid)/i.test(wmText)) {
+        return {
+          key: 'work-model',
+          label: 'Work model unclear',
+          question: 'Mostly remote with occasional office — how should we track this?',
+          choices: [
+            { k: 'remote', label: 'Remote', primary: true },
+            { k: 'hybrid', label: 'Hybrid', primary: false },
+          ],
+          skip: 'Let Rolewise decide',
+        };
+      }
+      return null;
+    }
+
+    function _startArAnimator(overlay, opts) {
+      const linesEl  = opts.linesEl  || document.getElementById('rw-ing-progress-lines');
+      const fieldsEl = opts.fieldsEl || document.getElementById('rw-ing-extracted');
+      const stepMs   = opts.stepMs || 380;
+      const _esc = (typeof esc === 'function') ? esc : (s) => String(s ?? '');
+
+      const state = {
+        revealed:       [],          // [{ tag, t (resolved string) }]
+        unveiledTags:   new Set(),
+        role:           null,
+        analysis:       null,
+        metaReady:      false,
+        sourceKind:     opts.sourceKind  || 'text',
+        sourceLabel:    opts.sourceLabel || 'pasted text',
+        pipelineDone:   false,
+        pipelineError:  null,
+        ask:            null,
+        askResolved:    false,
+        timer:          null,
+        terminal:       null,        // 'done' | 'ask' | 'fail' once the
+                                     //  animation hits a terminal step
+      };
+      overlay._ingState = state;
+
+      // Stream "reading"/"read" label flip
+      const _streamLabelEl = document.querySelector('.ar-overlay .ar-stream-k-label');
+      const _streamWrap    = document.querySelector('.ar-overlay .ar-stream');
+
+      function _appendStepLine(text) {
+        if (!linesEl) return;
+        // Mark previous current as past
+        linesEl.querySelectorAll('.rw-ing-progress-line--current').forEach(el => {
+          el.classList.remove('rw-ing-progress-line--current');
+          el.classList.add('rw-ing-progress-line--done');
+        });
+        const div = document.createElement('div');
+        div.className = 'rw-ing-progress-line rw-ing-progress-line--current';
+        div.textContent = text;
+        linesEl.appendChild(div);
+      }
+      function _markLastAsDone() {
+        if (!linesEl) return;
+        linesEl.querySelectorAll('.rw-ing-progress-line--current').forEach(el => {
+          el.classList.remove('rw-ing-progress-line--current');
+          el.classList.add('rw-ing-progress-line--done');
+        });
+      }
+
+      function _showReadyState() {
+        _markLastAsDone();
+        if (_streamLabelEl) _streamLabelEl.textContent = 'read';
+        if (_streamWrap)    _streamWrap.classList.add('is-done');
+        const role = state.role || {};
+        const readyEl    = document.getElementById('rw-ing-ready');
+        const readyLabel = document.getElementById('rw-ing-ready-label');
+        if (readyLabel) {
+          const t = role.role_title || (state.analysis && state.analysis._roleTitle) || 'this role';
+          const _rawC = role.company_name || (state.analysis && state.analysis._company) || '';
+          const c = (typeof sanitiseCompanyName === 'function' ? sanitiseCompanyName(_rawC) : _rawC) || '';
+          readyLabel.innerHTML = c
+            ? _esc(t) + ' · ' + _esc(c) + ' — ready to open.'
+            : _esc(t) + ' — ready to open.';
+        }
+        if (readyEl) readyEl.removeAttribute('hidden');
+        const cta = document.getElementById('rw-ing-open-role');
+        if (cta) setTimeout(() => cta.focus(), 80);
+      }
+
+      function _showAskCard(ask) {
+        _markLastAsDone();
+        const slot = document.getElementById('rw-ing-onething');
+        if (!slot) return;
+        slot.innerHTML =
+          '<span class="ar-ask-k">One thing</span>'
+          + '<span class="ar-ask-q">' + _esc(ask.question) + '</span>'
+          + '<span class="ar-ask-choices">'
+          +   ask.choices.map(c =>
+                '<button type="button" class="ar-ask-choice' + (c.primary ? ' is-primary' : '') + '" data-ar-ask-choice="' + _esc(c.k) + '">' + _esc(c.label) + '</button>'
+              ).join('')
+          +   '<button type="button" class="ar-ask-skip" data-ar-ask-skip="1">' + _esc(ask.skip || 'Skip') + '</button>'
+          + '</span>';
+        slot.removeAttribute('hidden');
+        slot.querySelectorAll('[data-ar-ask-choice], [data-ar-ask-skip]').forEach(b => {
+          b.addEventListener('click', () => {
+            slot.setAttribute('hidden', '');
+            slot.innerHTML = '';
+            state.askResolved = true;
+            state.ask = null;
+            // Continue: append the final "Ready" line and show ready state.
+            _appendStepLine('Ready — opening role overview');
+            state.unveiledTags.add('done');
+            // Re-render fields once more in case ask resolution touched any
+            _arRenderFields(fieldsEl, state);
+            _markLastAsDone();
+            _showReadyState();
+          });
+        });
+      }
+
+      function _showErrorState() {
+        _markLastAsDone();
+        if (_streamLabelEl) _streamLabelEl.textContent = 'failed';
+        if (_streamWrap)    _streamWrap.classList.add('is-done');
+        _arRenderErrorCard(fieldsEl,
+          state.pipelineError?.message,
+          () => {
+            // "Paste full description" → reset to idle to allow re-entry
+            const idle = document.getElementById('rw-ing-idle');
+            const proc = document.getElementById('rw-ing-processing');
+            const ta   = document.getElementById('rw-ing-textarea');
+            if (proc) proc.setAttribute('hidden', '');
+            if (idle) idle.removeAttribute('hidden');
+            if (ta)   { ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus(); }
+            if (overlay._ingSubmittedReset) overlay._ingSubmittedReset();
+          },
+          () => {
+            const idle = document.getElementById('rw-ing-idle');
+            const proc = document.getElementById('rw-ing-processing');
+            if (proc) proc.setAttribute('hidden', '');
+            if (idle) idle.removeAttribute('hidden');
+            if (overlay._ingSubmittedReset) overlay._ingSubmittedReset();
+          }
+        );
+      }
+
+      function _tick() {
+        state.timer = null;
+        const seq = _arBuildSteps(state);
+        // Walk past steps already revealed
+        const i = state.revealed.length;
+        if (i >= seq.length) return; // nothing left to reveal right now
+
+        const step = seq[i];
+        // Terminal-step gating: hold here if not yet ready
+        if (typeof step.gate === 'function' && step.gate()) {
+          state.timer = setTimeout(_tick, 250);
+          return;
+        }
+        // Skip optional step if the data won't arrive
+        if (typeof step.skipIf === 'function' && step.skipIf()) {
+          state.revealed.push({ tag: step.tag, skipped: true });
+          state.timer = setTimeout(_tick, 0);
+          return;
+        }
+        // Resolve text
+        const text = (typeof step.t === 'function') ? step.t() : step.t;
+        if (text === null || text === undefined) {
+          // Couldn't resolve right now — hold a short moment in case data arrives
+          state.timer = setTimeout(_tick, 200);
+          return;
+        }
+
+        _appendStepLine(text);
+        state.revealed.push({ tag: step.tag, t: text });
+        state.unveiledTags.add(step.tag);
+        _arRenderFields(fieldsEl, state);
+
+        if (step.terminal) {
+          state.terminal = step.tag;
+          if (step.tag === 'fail') { _showErrorState(); return; }
+          if (step.tag === 'ask')  { _showAskCard(state.ask); return; }
+          if (step.tag === 'done') { _showReadyState(); return; }
+        }
+
+        state.timer = setTimeout(_tick, stepMs);
+      }
+
+      // Initial paint: reset slots + render shimmer fields
+      if (linesEl)  linesEl.innerHTML = '';
+      _arRenderFields(fieldsEl, state);
+      if (_streamLabelEl) _streamLabelEl.textContent = 'reading';
+      if (_streamWrap)    _streamWrap.classList.remove('is-done');
+
+      // Start
+      state.timer = setTimeout(_tick, 60);
+
+      // Public handle
+      return {
+        state,
+        setSource(kind, label) {
+          state.sourceKind  = kind || state.sourceKind;
+          state.sourceLabel = label || state.sourceLabel;
+        },
+        setMetaReady(meta) {
+          state.metaReady = true;
+          if (meta) state.role = Object.assign({}, state.role, meta);
+          _arRenderFields(fieldsEl, state);
+        },
+        setRole(role) {
+          state.role = role || state.role;
+          _arRenderFields(fieldsEl, state);
+        },
+        setAnalysis(analysis) {
+          state.analysis = analysis || state.analysis;
+          _arRenderFields(fieldsEl, state);
+        },
+        setAsk(ask) {
+          state.ask = ask || null;
+        },
+        completePipeline() {
+          state.pipelineDone = true;
+          // Detect ask if not set yet
+          if (!state.ask && !state.askResolved) {
+            const ask = _arDetectAsk(state);
+            if (ask) state.ask = ask;
+          }
+        },
+        failPipeline(err) {
+          state.pipelineError = err || new Error('Couldn’t read this role.');
+          // Cancel any pending tick and re-tick to enter the failure path
+          clearTimeout(state.timer);
+          state.revealed = [];      // restart with the failure step list
+          state.unveiledTags = new Set();
+          if (linesEl) linesEl.innerHTML = '';
+          state.timer = setTimeout(_tick, 60);
+        },
+        stop() {
+          clearTimeout(state.timer);
+          state.timer = null;
+        },
+      };
+    }
+
+    // ─── Add Role v2: legacy completed reading helper (deprecated, kept
+    // only because the unused _legacyCompletedRenderPath_unused above still
+    // references it; safe to delete with the legacy block in a follow-up). ──
     function _renderCompletedReadingSequence(linesEl, opts) {
       if (!linesEl) return;
       const _esc = (typeof esc === 'function') ? esc : (s) => String(s ?? '');
