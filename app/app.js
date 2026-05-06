@@ -30009,19 +30009,21 @@ If a field cannot be determined from the message, return null for that field.`,
       // ── Render ─────────────────────────────────────────────────────────────
       el.innerHTML = `
         <div class="rwo-page">
-          ${_headerHtml}
-          <div class="rwo-divider"></div>
-          ${_activityHtml}
-          ${_motionHtml}
-          ${_twoColHtml}
-          ${_frictionHtml}
-          ${_recentHtml}
-          ${_noticeHtml}
+          <div class="rwo-page-inner">
+            ${_headerHtml}
+            <div class="rwo-divider"></div>
+            ${_activityHtml}
+            ${_motionHtml}
+            ${_twoColHtml}
+            ${_frictionHtml}
+            ${_recentHtml}
+            ${_noticeHtml}
+          </div>
         </div>`;
 
       // While-you-were-away banner (preserved from previous overview)
-      const _ovPage = el.querySelector('.rwo-page');
-      if (_ovPage) _renderAwaySummaryBanner(_ovPage);
+      const _ovInner = el.querySelector('.rwo-page-inner');
+      if (_ovInner) _renderAwaySummaryBanner(_ovInner);
 
       // KPI click → toggle Recent activity filter (lightweight, in-page)
       el.querySelectorAll('.rwo-kpi').forEach(btn => {
