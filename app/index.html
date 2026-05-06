@@ -514,15 +514,19 @@
        continues to drive the flow without duplication. -->
   <div id="rw-ingestion-overlay" class="rw-ingestion-overlay ar-overlay" hidden aria-modal="true" role="dialog" aria-label="Add a role">
 
-    <!-- Top bar -->
+    <!-- Top bar — background and border span the full viewport; the inner
+         row mirrors the v2 page-inner shell so the title aligns with the
+         body content beneath. -->
     <header class="ar-head">
-      <div class="ar-title-wrap">
-        <h1 class="ar-title">Add a role</h1>
-        <span class="ar-title-sub">rolewise / ingest</span>
+      <div class="ar-head-inner">
+        <div class="ar-title-wrap">
+          <h1 class="ar-title">Add a role</h1>
+          <span class="ar-title-sub">rolewise / ingest</span>
+        </div>
+        <button type="button" id="rw-ing-cancel" class="ar-cancel">
+          Cancel <kbd>Esc</kbd>
+        </button>
       </div>
-      <button type="button" id="rw-ing-cancel" class="ar-cancel">
-        Cancel <kbd>Esc</kbd>
-      </button>
     </header>
 
     <!-- Body -->
