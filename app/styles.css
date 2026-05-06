@@ -48,9 +48,16 @@
     /* ─── Sidebar v2 (editorial) ──────────────────────────────────────────────
        Document-toned, calm, low-pressure. Width is set by .app grid (254px).
        Internal route names are unchanged: see the TODO above the markup in
-       index.html — Roles still maps to data-nav="applications". */
+       index.html — Roles still maps to data-nav="applications".
+
+       Visual surface: a touch cooler and very slightly darker than the warm-
+       white content area so the nav feels like its own calm surface — never
+       a contrasting panel. The right-edge divider sits a hair darker than the
+       sidebar background so it stays visible but quiet. Both tokens flip
+       correctly under dark mode. */
     .rwl-sidebar {
-      background: var(--gray-50, #fafafa);
+      background: var(--utility-gray-blue-50, #f8f9fc);
+      border-right: 1px solid var(--border-light);
       padding: 24px 16px 16px;
       gap: 0;
     }
@@ -14523,14 +14530,6 @@
     /* CSS hide is safe — the JS populates it but the element stays in DOM.  */
     #role-sticky-header {
       display: none;
-    }
-
-    /* ── Left nav panel: remove right-edge divider ──────────────────────── */
-    /* All panels now share the same background tone (var(--bg)).            */
-    /* Structural separation comes from layout, surface contrast, and        */
-    /* spacing — not hard border lines.                                      */
-    .col-left {
-      border-right: none;
     }
 
     /* ── Filter column: remove right-edge divider ───────────────────────── */
