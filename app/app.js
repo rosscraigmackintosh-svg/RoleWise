@@ -1826,13 +1826,12 @@
     // Show or hide the decision rail section within the overview panel.
     // Rail is visible only when a role is selected in Applications view.
     // Hiding the rail also clears the sticky header (no role context needed).
-    // Set the Applications inbox filter and sync the active state on nav sub-items.
-    // Use this everywhere inboxTab is set so the nav always stays in sync.
+    // Sets the (now-hidden) inbox filter state. The legacy .nav-sub-item
+    // sidebar elements no longer render — renderInbox still reads inboxTab
+    // and writes to the off-screen list, kept for compatibility with
+    // role-decision code paths that re-read filtered state.
     function _setAppFilter(filter) {
       inboxTab = filter;
-      document.querySelectorAll('.nav-sub-item').forEach(b =>
-        b.classList.toggle('active', b.dataset.filter === filter)
-      );
     }
 
     function _setRailVisible(visible) {
@@ -31039,8 +31038,6 @@ If a field cannot be determined from the message, return null for that field.`,
       });
       const _profileCircle = document.getElementById('btn-nav-profile');
       if (_profileCircle) _profileCircle.classList.toggle('active', currentNav === 'profile');
-      const _appFiltersEl = document.getElementById('nav-app-filters');
-      if (_appFiltersEl) _appFiltersEl.style.display = currentNav === 'applications' ? '' : 'none';
     }
 
     function switchNav(view) {
@@ -31077,9 +31074,9 @@ If a field cannot be determined from the message, return null for that field.`,
       }
 
       // ── Applications nav ──────────────────────────────────────────────────────
-      // TODO: Rename Applications nav to Roles when the sidebar migration
-      // happens. The in-page Roles v2 filter row is now the source of truth
-      // for this view.
+      // TODO: Rename internal applications route to roles once legacy
+      // inbox cleanup is complete. The in-page Roles v2 filter row is now
+      // the source of truth for this view.
       // Roles v2 is full-width; no inbox is mounted. Clicking a card opens
       // the role analysis as a focused reading surface, and clicking Roles
       // again returns to the briefing archive.
@@ -31148,14 +31145,6 @@ If a field cannot be determined from the message, return null for that field.`,
     // All 23 affected roles were backfilled via direct SQL INSERT.
 
     // ─── Event bindings ───────────────────────────────────────────────────────
-
-    // ─── Applications nav sub-filters: Active / Archive / All / Needs attention / In progress ──
-    document.querySelectorAll('.nav-sub-item').forEach(btn => {
-      btn.addEventListener('click', () => {
-        _setAppFilter(btn.dataset.filter);
-        renderInbox(allRoles);
-      });
-    });
 
     // ─── Search: live filter, clear button, / shortcut, Escape ───────────────
     const _filterSearch = document.getElementById('filter-search');

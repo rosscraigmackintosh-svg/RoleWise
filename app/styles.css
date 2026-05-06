@@ -399,32 +399,6 @@
     .nav-item:hover  { background: var(--border-light); color: var(--text); }
     .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
-    /* ─── Applications sub-nav filters ────────────────────────── */
-    /* Stacked context filters that appear below Applications.     */
-    /* 18px left-indent signals hierarchy; padding stays in CSS.  */
-    .nav-sub-filters { padding: 2px 0 6px; }
-
-    .nav-sub-item {
-      font-family: var(--font);
-      font-size: 14px;
-      padding: 5px var(--spacing-md) 5px 18px;
-      color: var(--gray-700);
-      line-height: var(--leading-snug);
-    }
-    .nav-sub-item:hover  { background: var(--border-light); color: var(--text); }
-    .nav-sub-item.active { color: var(--accent); font-weight: 600; }
-
-    .nav-sub-icon {
-      width: 15px;
-      height: 15px;
-      flex-shrink: 0;
-      margin-right: 8px;
-      position: relative;
-      top: -1px;
-      opacity: 0.65;
-    }
-    .nav-sub-item.active .nav-sub-icon { opacity: 1; }
-
     /* ─── Sidebar tagline ──────────────────────────────────────── */
     .col-left-tagline {
       padding: 3px 10px 10px 16px;
