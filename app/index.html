@@ -568,6 +568,12 @@
             You can paste from LinkedIn, job boards, or recruiter emails. Rolewise will read it and pull out what matters.
           </p>
 
+          <!-- "try with" examples row — populated from RW_INGEST_EXAMPLES on
+               overlay open. Click a chip to drop a realistic Rolewise-native
+               payload into the textarea; the existing auto-trigger handles
+               the rest. -->
+          <div id="rw-ing-examples" class="ar-demo-row" hidden></div>
+
           <!-- Hidden submit row — kept for JS contract; the v2 flow auto-triggers reading on paste. -->
           <div id="rw-ing-submit-row" class="rw-ing-submit-row" hidden>
             <button type="button" id="rw-ing-submit" class="rw-ing-submit-btn" disabled aria-disabled="true">Analyse</button>

@@ -2365,6 +2365,132 @@
       tag:     'weekly-review-v2',
     };
 
+    // ─── Add Role v2 — "try with" examples ────────────────────────────────────
+    // Low-friction onboarding payloads for first-time users who don't have a
+    // JD ready. Each chip drops a realistic Rolewise-native example into the
+    // paste field; the existing auto-trigger handles the rest. The badge maps
+    // 1:1 to the pasted shape (link / jd / msg / role / paste). No fake
+    // loading shortcuts — every example flows through the real ingestion path.
+    const RW_INGEST_EXAMPLES = [
+      {
+        label:  'Senior Product Designer · AI SaaS',
+        badge:  'link',
+        text:
+`https://example-jobs.io/senior-product-designer-ai
+
+Senior Product Designer — Atlas AI
+Remote (EU hours, ±3 CET) · Full-time
+£95,000 – £120,000 + equity
+
+We're hiring a senior product designer to lead work on our AI-native workspace surface. You'll own flows end-to-end, partner closely with a PM and three engineers, and shape how teams interact with LLM-powered tooling.
+
+Requirements
+- 5+ years designing product, ideally for technical users
+- Fluency in Figma and strong systems thinking
+- Experience shipping AI features or developer tools is a plus
+
+What we offer
+- Remote-first, async by default
+- 25 days PTO + public holidays
+- Annual offsite (last year was Lisbon)`
+      },
+      {
+        label:  'Staff Product Designer · Fintech',
+        badge:  'jd',
+        text:
+`Staff Product Designer, Payments — Argent
+London or New York · Hybrid 2 days
+$170,000 – $210,000 + meaningful equity
+
+We're hiring a Staff Product Designer to lead our payments surface — bills, approvals, and the engine that powers money movement across our customers' finance stacks.
+
+Responsibilities
+- Lead design across three payment product surfaces
+- Set the bar for visual and interaction quality across a team of 6 designers
+- Partner with PM leadership and engineering managers
+- Own systems work for payments-specific patterns
+
+Requirements
+- 8+ years product design experience, ideally in fintech or financial services
+- 2+ years leading design work without managing
+- Strong written communication — we operate remote-async`
+      },
+      {
+        label:  'Recruiter outreach email',
+        badge:  'msg',
+        text:
+`Hi Sofia,
+
+Came across your portfolio — your work on the BankNote consumer dashboards stood out. I'm working with a stealth Series B in fintech (treasury tooling for tech companies) who are hiring a Senior Product Designer right now.
+
+Small team (3 designers), reporting into the Head of Design. They're flexible on location — mostly remote, with occasional London visits (once a quarter or so). Comp range is around £110–140k base + meaningful equity.
+
+Open to a quick chat next week to see if it could be interesting?
+
+Best,
+Marcus Reid
+TalentForge Ventures
+marcus@talentforge.vc`
+      },
+      {
+        label:  'Contract Product Designer · Remote UK',
+        badge:  'role',
+        text:
+`Contract Product Designer — Confidential
+Remote (UK) · 6-month initial, possible extension
+£550 – £700 day rate · Inside IR35
+
+Looking for an experienced product designer to lead a 6-month redesign of our customer onboarding surface. You'll work closely with the existing in-house team (PM + 2 engineers) and report into our Head of Product.
+
+Engagement
+- Start: late May 2026
+- Day rate: £550–700 depending on experience
+- Inside IR35, paid weekly via umbrella
+- Fully remote, UK hours, occasional London on-sites optional
+
+What you'll work on
+- Audit current onboarding funnel (data + qual)
+- Run weekly design reviews with PM and engineering
+- Ship a redesigned flow within 12 weeks`
+      },
+      {
+        label:  'Not sure if this is worth applying to',
+        badge:  'paste',
+        text:
+`Not sure if this is worth applying to — recruiter sent it over but the scope feels vague.
+
+Senior Product Designer
+Series B, "fast-growing"
+Hybrid 3 days, central London office
+"Competitive salary"
+
+You'll work on the core product. Scope includes "everything from research to high-fidelity design and shipping". Looking for someone who can "wear many hats" and "ship fast across the stack". Design-system experience a plus.
+
+About 5+ years of experience required. Generous equity. Pre-Series B fintech, profitable, 35 people.`
+      },
+    ];
+
+    function _renderIngestExamples(slot, onPick) {
+      if (!slot) return;
+      const _esc = (typeof esc === 'function') ? esc : (s) => String(s ?? '');
+      slot.innerHTML =
+        '<span class="ar-demo-lead">try with →</span>' +
+        RW_INGEST_EXAMPLES.map((ex, i) =>
+          '<button type="button" class="ar-demo-chip" data-rw-example="' + i + '">'
+            + _esc(ex.label)
+            + '<span class="ar-demo-chip-tk">' + _esc(ex.badge) + '</span>'
+          + '</button>'
+        ).join('');
+      slot.removeAttribute('hidden');
+      slot.querySelectorAll('[data-rw-example]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.dataset.rwExample);
+          const ex  = RW_INGEST_EXAMPLES[idx];
+          if (ex && typeof onPick === 'function') onPick(ex);
+        });
+      });
+    }
+
     const ARCHIVE_OUTCOME_STATES = new Set(['rejected', 'skipped', 'withdrew', 'offer_accepted', 'closed', 'no_response', 'ghosted']);
     // Helper: is this role archived / terminal?
     const isArchivedRole = r => !!(r.archived || ARCHIVE_OUTCOME_STATES.has(r.outcome_state));
@@ -13459,6 +13585,23 @@
       if (_oneThingEl)  { _oneThingEl.setAttribute('hidden', ''); _oneThingEl.innerHTML = ''; }
       if (_sourceEl)    { _sourceEl.setAttribute('hidden', ''); _sourceEl.textContent = ''; }
       if (_streamWrap)  _streamWrap.classList.remove('is-done');
+
+      // "try with" examples \u2014 populate on open so first-time users have a
+      // low-friction way to see what the ingestion flow does. Click a chip
+      // to drop a Rolewise-native payload into the textarea; we then
+      // dispatch a synthetic input event so the existing auto-trigger
+      // handles the rest (no separate ingestion path).
+      const _examplesSlot = document.getElementById('rw-ing-examples');
+      if (_examplesSlot && context === 'add' && !prefillText) {
+        _renderIngestExamples(_examplesSlot, (ex) => {
+          _textarea.value = ex.text;
+          _textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          _textarea.focus();
+        });
+      } else if (_examplesSlot) {
+        _examplesSlot.setAttribute('hidden', '');
+        _examplesSlot.innerHTML = '';
+      }
 
       // ── Show overlay ────────────────────────────────────────────────────────
       _overlay.removeAttribute('hidden');
