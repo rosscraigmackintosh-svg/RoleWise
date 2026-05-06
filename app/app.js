@@ -31289,7 +31289,6 @@ If a field cannot be determined from the message, return null for that field.`,
       const headerHtml = `
         <header class="rwa-header rww-head">
           <div class="rww-head-l">
-            <div class="rww-eyebrow"><span class="rww-eyebrow-tick"></span>weekly ritual</div>
             <h1 class="rwa-title">Weekly review</h1>
             <p class="rwa-sub rww-sub">A quiet check-in with your job search — what happened, what you’re noticing, and one small thing to reflect on.</p>
           </div>

@@ -17534,30 +17534,15 @@ a.rw-rail-contact-name:hover {
    note, close). Tone: calm, document-first, observational only.
    ══════════════════════════════════════════════════════════════════════════ */
 
-.rww-page {
-  background: var(--bg);
-}
-.rww-page-inner { max-width: 880px; padding: 48px 48px 96px; }
+/* Weekly Review reuses the v2 shell unchanged: .rwa-page + .rwa-page-inner
+   give the same outer width, padding, and centring as Overview / Roles /
+   Applications / Recruiters. Only the inner reading column is constrained
+   below — never the page frame or header. */
+.rww-page { background: var(--bg); }
 
 /* Header tweaks (sit on top of .rwa-header) */
 .rww-head { align-items: flex-end; }
 .rww-head-l { min-width: 0; }
-.rww-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-light);
-  letter-spacing: 0.04em;
-  text-transform: lowercase;
-  margin-bottom: 12px;
-}
-.rww-eyebrow-tick {
-  width: 8px; height: 1px;
-  background: var(--border);
-  display: inline-block;
-}
 .rww-sub { max-width: 52ch; line-height: 1.5; margin-top: 6px; }
 
 /* Week selector */
@@ -17898,10 +17883,10 @@ a.rw-rail-contact-name:hover {
   text-transform: lowercase;
 }
 
-/* Responsive */
+/* Responsive — page-inner shell + header stay aligned with the rest of the
+   v2 pages at every viewport. Only the section grid collapses on very narrow
+   widths so the 150px label column doesn't crush the body. */
 @media (max-width: 920px) {
-  .rww-page-inner { padding: 32px 24px 64px; }
-  .rww-head { flex-direction: column; align-items: flex-start; gap: 16px; }
   .rww-section { grid-template-columns: 1fr; gap: 10px; }
   .rww-sec-label { position: static; }
   .rww-activity { gap: 24px 32px; }
