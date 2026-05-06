@@ -1922,6 +1922,244 @@
       }
     }
 
+    /* ─── Recruiters page (Recruiters v2 — relationship memory) ──────────────
+       Calm record of recruiter interactions. Cards summarise relationship
+       context and history; never become a CRM, scorecard, or performance
+       system. Reuses .rwa-page / .rwa-page-inner / .rwa-header / .rwa-lens-bar
+       / .rwa-group / .rwa-empty from Applications v2 for visual consistency. */
+
+    /* Inline summary row (calm, not a dashboard) */
+    .rwc-summary {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      padding: 0 2px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .rwc-sum-item { white-space: nowrap; }
+    .rwc-sum-item .rwa-num { color: var(--text); font-weight: 500; }
+    .rwc-sum-dot {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--border);
+    }
+
+    /* Card */
+    .rwc-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .rwc-card {
+      display: grid;
+      grid-template-columns: 48px 1fr 180px;
+      gap: 20px;
+      align-items: flex-start;
+      padding: 20px 22px;
+      background: var(--surface);
+      border: 1px solid var(--border-light, var(--border));
+      border-radius: 12px;
+      cursor: pointer;
+      position: relative;
+      transition: background 180ms ease, border-color 180ms ease;
+      outline: none;
+    }
+    .rwc-card:hover {
+      background: var(--gray-25, #fdfdfd);
+      border-color: var(--border);
+    }
+    .rwc-card:focus-visible {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .rwc-card--active {
+      border-left: 2px solid oklch(70% 0.08 150 / 0.55);
+    }
+    .rwc-card--noise {
+      background: var(--gray-50, #fafafa);
+    }
+    .rwc-card--closed { opacity: 0.7; }
+    .rwc-card--closed:hover { opacity: 1; }
+
+    /* Avatar */
+    .rwc-col-avatar { padding-top: 2px; }
+    .rwc-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12.5px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+    /* Reuse the warm palette */
+    .rwc-logo-0 { background: #e7e0d6; color: #4a4337; }
+    .rwc-logo-1 { background: #dde7d6; color: #36433a; }
+    .rwc-logo-2 { background: #d6dee7; color: #364150; }
+    .rwc-logo-3 { background: #ded6e7; color: #44364f; }
+    .rwc-logo-4 { background: #e7d6d6; color: #503737; }
+    .rwc-logo-5 { background: #d6e7e3; color: #364c47; }
+
+    /* Main column */
+    .rwc-col-main { min-width: 0; }
+    .rwc-title-row {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .rwc-name {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: -0.005em;
+      margin: 0;
+      line-height: 1.3;
+    }
+    .rwc-company {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    .rwc-company-tag { color: var(--text-light); }
+
+    .rwc-meta {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .rwc-meta .rwc-sep { color: var(--border); }
+    .rwc-num { font-family: var(--font-mono); color: var(--text); }
+
+    /* Summary lines (small dash bullets) */
+    .rwc-summary-lines {
+      list-style: none;
+      padding: 0;
+      margin: 12px 0 0;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .rwc-summary-lines li {
+      position: relative;
+      padding-left: 14px;
+    }
+    .rwc-summary-lines li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 9px;
+      width: 6px;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* Role chips */
+    .rwc-roles {
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .rwc-roles-label {
+      font-size: 11px;
+      color: var(--text-light);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .rwc-roles-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .rwc-role-chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: var(--gray-50, #fafafa);
+      border: 1px solid var(--border-light, var(--border));
+      color: var(--text-muted);
+    }
+    .rwc-role-title { color: var(--text); font-weight: 500; }
+    .rwc-role-sep { color: var(--border); }
+    .rwc-role-company { color: var(--text-muted); }
+    .rwc-role-more { color: var(--text-light); }
+
+    /* Outcome chips */
+    .rwc-outcomes {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .rwc-outcome {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 9px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      font-family: var(--font-mono);
+      border: 1px solid var(--border-light, var(--border));
+      background: var(--gray-50, #fafafa);
+      color: var(--text-muted);
+    }
+    .rwc-outcome--pos {
+      background: oklch(96% 0.03 150);
+      border-color: oklch(85% 0.06 150);
+      color: oklch(38% 0.08 150);
+    }
+    .rwc-outcome--neg {
+      background: oklch(97% 0.015 40);
+      border-color: oklch(85% 0.04 40);
+      color: oklch(40% 0.07 40);
+    }
+
+    .rwc-note {
+      margin-top: 12px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      font-style: italic;
+      line-height: 1.55;
+    }
+
+    /* Status pill (right) */
+    .rwc-col-status { padding-top: 2px; }
+    .rwc-status {
+      display: inline-flex;
+      align-items: center;
+      font-size: 12.5px;
+      color: var(--text);
+      font-weight: 500;
+      letter-spacing: -0.005em;
+    }
+    .rwc-status--quiet  { color: var(--text-muted); font-weight: 400; }
+    .rwc-status--noise  { color: var(--text-light); font-weight: 400; }
+    .rwc-status--closed { color: var(--text-light); font-weight: 400; }
+
+    .rwc-group-mark {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .rwc-group-mark--noise { background: var(--text-light); opacity: 0.6; }
+
+    /* Responsive: collapse status column on narrower */
+    @media (max-width: 980px) {
+      .rwc-card { grid-template-columns: 48px 1fr; }
+      .rwc-col-status { grid-column: 2 / span 1; padding-top: 0; }
+    }
+
     .review-section {
       margin-bottom: 40px;
     }

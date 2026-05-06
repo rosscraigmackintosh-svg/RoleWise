@@ -26849,50 +26849,341 @@
       });
     }
 
-    async function renderRecruitersView() {
+    // ─── Recruiters page (Recruiters v2) ──────────────────────────────────────
+    // Recruiters v2 is a relationship-memory view. It should surface
+    // recruiter context without becoming a CRM, scorecard, or performance
+    // system.
+    let _recruitersLens = 'all';
+    function renderRecruitersView() {
       const centerEl = document.getElementById('col-overview-cards');
-
-      // Show the list panel (col-list visible), swap sub-panels
-      setListPanelVisible(true);
-      const appPanel = document.getElementById('app-list-panel');
-      if (appPanel) appPanel.style.display = 'none';
-      const listEl = document.getElementById('rc-list-panel-wrapper');
-      listEl.style.display = 'flex';
-      listEl.style.flexDirection = 'column';
-
-      // Build contacts list panel HTML
-      listEl.innerHTML = `<div class="rc-list-panel" ${typeof aiMeta === 'function' ? aiMeta({ nodeId: 'recruiter-list', component: 'RecruiterList', slot: 'list', label: 'Recruiter List' }) : ''}>
-        <div class="rc-list-header">
-          <div class="rc-list-title">Role Contacts</div>
-          <button class="rc-add-btn" id="rc-add-recruiter-btn">+ Add contact</button>
-        </div>
-        <div class="rc-list-scroll" id="rc-list-scroll"></div>
-      </div>`;
-
-      document.getElementById('rc-add-recruiter-btn').addEventListener('click', () => {
-        selectedRecruiterId = null;
-        document.querySelectorAll('.rc-item').forEach(r => r.classList.remove('active'));
-        renderRecruiterAddForm();
-      });
-
-      // Empty state in center
-      centerEl.innerHTML = `<div class="rc-center-empty">Select a contact to view details.</div>`;
-
+      if (!centerEl) return;
+      centerEl.classList.remove('col-ov--legacy-doc');
+      _updateNavCounts();
       // Clear rail
       document.getElementById('col-rail-section').innerHTML = ''; _setRailVisible(false);
+      // No split-pane: list panel stays hidden. The legacy rc-list-panel-wrapper
+      // (originally the recruiter list inside col-list) is suppressed.
+      const _rcLegacyList = document.getElementById('rc-list-panel-wrapper');
+      if (_rcLegacyList) _rcLegacyList.style.display = 'none';
 
-      // allRecruiters is already derived from allRoles in refresh() — no separate fetch needed
-      renderRecruiterList(allRecruiters);
+      // Helpers ──────────────────────────────────────────────────────────────
+      const _fmtRel = (iso) => {
+        if (!iso) return '—';
+        const ms = Date.now() - new Date(iso).getTime();
+        const mins = Math.floor(ms / 60000);
+        if (mins < 1)   return 'just now';
+        if (mins < 60)  return mins + 'm ago';
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24)   return hrs + 'h ago';
+        const days = Math.floor(hrs / 24);
+        if (days === 1) return 'Yesterday';
+        if (days < 7)   return days + 'd ago';
+        if (days < 30)  return Math.floor(days / 7) + 'w ago';
+        return Math.floor(days / 30) + 'mo ago';
+      };
+      const _initials = (name) => {
+        if (!name) return '?';
+        const parts = String(name).trim().split(/\s+/);
+        if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        return parts[0].slice(0, 2).toUpperCase();
+      };
+      const _colorIdx = (s) => {
+        if (!s) return 0;
+        let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+        return Math.abs(h) % 6;
+      };
+      const _typeLabel = (rec) => {
+        const t = (rec.recruiter_type || '').toLowerCase();
+        if (t === 'internal' || t === 'inhouse' || t === 'in-house') return 'Internal';
+        if (t === 'agency' || t === 'external' || t === 'recruiter') return 'Agency';
+        return rec.recruiter_type || 'Recruiter';
+      };
+      const _sourceLabel = (rec) => {
+        const src = (rec.links?.[0]?.link_source || '').toLowerCase();
+        if (!src) return null;
+        if (src === 'linkedin') return 'LinkedIn';
+        if (src === 'email')    return 'Email';
+        if (src === 'paste')    return 'Paste';
+        if (src === 'manual')   return 'Manual';
+        return src.charAt(0).toUpperCase() + src.slice(1);
+      };
 
-      // Re-select previously selected recruiter
-      if (selectedRecruiterId) {
-        const rec = allRecruiters.find(r => r.id === selectedRecruiterId);
-        if (rec) {
-          renderRecruiterDetail(rec);
-          const item = document.querySelector(`.rc-item[data-rc-id="${selectedRecruiterId}"]`);
-          if (item) item.classList.add('active');
+      // ── Per-recruiter activity stats ─────────────────────────────────────
+      const _RESPONSE_STAGES = new Set(['Recruiter Screen', 'Hiring Manager', 'Panel', 'Final', 'Offer']);
+      const _enrich = (rec) => {
+        const roles = rec.roles || [];
+        let lastUpdMs = 0;
+        let reachedInterview = 0;
+        let allClosed = roles.length > 0;
+        let anyNoResponse = false;
+        for (const role of roles) {
+          // Latest activity on this role
+          const u = (role.role_updates || []).find(x => !x.event_type || x.event_type === 'stage');
+          const t = u ? new Date(u.created_at).getTime()
+                     : new Date(role.created_at).getTime();
+          if (t > lastUpdMs) lastUpdMs = t;
+          // Interview reached?
+          if (_RESPONSE_STAGES.has(currentStageLabel(role))) reachedInterview++;
+          // All closed?
+          if (!isArchivedRole(role) && role.user_decision !== 'skip') allClosed = false;
+          // No response signal
+          if (role._appliedDate && !role._firstResponseDate && currentStageLabel(role) === 'Applied') anyNoResponse = true;
+        }
+        // Fallback: include the rec.created_at as a baseline
+        if (!lastUpdMs && rec.created_at) lastUpdMs = new Date(rec.created_at).getTime();
+        return {
+          rec,
+          roles,
+          introduced: roles.length,
+          reachedInterview,
+          allClosed,
+          anyNoResponse,
+          lastUpdMs,
+          daysSince: lastUpdMs ? Math.floor((Date.now() - lastUpdMs) / 86400000) : null,
+        };
+      };
+
+      const _all = (allRecruiters || []).map(_enrich);
+
+      // Group classification (mutually exclusive, priority order)
+      const _classify = (e) => {
+        if (e.allClosed && e.roles.length > 0) return 'closed';
+        // No real activity (no roles linked, or only created_at) → noise (low signal)
+        if (e.daysSince == null) return 'noise';
+        if (e.daysSince > 30) return 'noise';
+        // Roles linked but none progressed past Applied → noise
+        if (e.roles.length > 0 && e.reachedInterview === 0 && e.anyNoResponse && e.daysSince > 14) return 'noise';
+        if (e.daysSince <= 14) return 'active';
+        return 'quiet';
+      };
+      for (const e of _all) e.group = _classify(e);
+
+      const _grouped = { active: [], quiet: [], noise: [], closed: [] };
+      for (const e of _all) _grouped[e.group].push(e);
+      // Sort each group by recency (latest activity first)
+      for (const k of Object.keys(_grouped)) _grouped[k].sort((a, b) => b.lastUpdMs - a.lastUpdMs);
+
+      const _GROUPS = [
+        { key: 'active', label: 'Active conversations',  hint: 'Recent replies, ongoing processes' },
+        { key: 'quiet',  label: 'Recent but inactive',   hint: 'Contacted recently, no movement yet' },
+        { key: 'noise',  label: 'No response or low signal', hint: 'Ghosted, or roles that were not a fit' },
+        { key: 'closed', label: 'Closed interactions',   hint: 'Finished, filled, or no longer relevant' },
+      ];
+
+      const _LENSES = [
+        { key: 'all',    label: 'Everyone' },
+        { key: 'active', label: 'Active' },
+        { key: 'quiet',  label: 'Quiet' },
+        { key: 'noise',  label: 'Low signal' },
+        { key: 'closed', label: 'Closed' },
+      ];
+
+      // Summary stats
+      const _summary = {
+        total:      _all.length,
+        active:     _grouped.active.length,
+        introduced: _all.reduce((n, e) => n + e.introduced, 0),
+        interviews: _all.reduce((n, e) => n + e.reachedInterview, 0),
+      };
+
+      const _counts = {
+        all:    _all.length,
+        active: _grouped.active.length,
+        quiet:  _grouped.quiet.length,
+        noise:  _grouped.noise.length,
+        closed: _grouped.closed.length,
+      };
+
+      // ── Card render ──────────────────────────────────────────────────────
+      const _renderCard = (e) => {
+        const r = e.rec;
+        const _name      = r.name || 'Unknown';
+        const _company   = r.company || '';
+        const _companyNote = _typeLabel(r);
+        const _src       = _sourceLabel(r);
+        const _short     = _initials(_name);
+        const _logoIdx   = _colorIdx(_name);
+        const _lastDate  = e.lastUpdMs ? new Date(e.lastUpdMs).toISOString() : null;
+        const _lastRel   = _fmtRel(_lastDate);
+
+        // Status pill text
+        let _statusText, _statusKind;
+        if (e.group === 'active')      { _statusText = 'In conversation'; _statusKind = 'active'; }
+        else if (e.group === 'quiet')  { _statusText = 'Quiet';            _statusKind = 'quiet'; }
+        else if (e.group === 'noise')  { _statusText = 'Low signal';       _statusKind = 'noise'; }
+        else                           { _statusText = 'Closed';           _statusKind = 'closed'; }
+
+        // Summary lines (real signals only)
+        const _summaryLines = [];
+        if (e.introduced > 0) _summaryLines.push(esc('Introduced ' + e.introduced + (e.introduced === 1 ? ' role' : ' roles')));
+        if (e.reachedInterview > 0) _summaryLines.push(esc(e.reachedInterview + ' reached interview stage'));
+        if (_lastDate) _summaryLines.push('Last contact ' + esc(_lastRel));
+
+        // Role chips (max 2 + "+N more")
+        const _topRoles = e.roles.slice(0, 2);
+        const _rolesMore = Math.max(0, e.roles.length - 2);
+
+        // Outcomes — only from real role state
+        const _outcomes = [];
+        if (e.reachedInterview > 0) _outcomes.push({ label: 'Led to interview', cls: 'rwc-outcome--pos' });
+        const _rejected = e.roles.filter(role => role.outcome_state === 'rejected' || role.outcome_state === 'no_response').length;
+        const _withdrawn = e.roles.filter(role => role.outcome_state === 'withdrew').length;
+        if (_withdrawn > 0) _outcomes.push({ label: 'Withdrew ' + _withdrawn, cls: 'rwc-outcome--neg' });
+        if (e.anyNoResponse && e.reachedInterview === 0) _outcomes.push({ label: 'No response', cls: 'rwc-outcome--neg' });
+
+        const _meta = [];
+        if (_src) _meta.push('via ' + esc(_src));
+        _meta.push(esc(r.recruiter_type || _companyNote));
+        if (_lastDate) _meta.push('Last contact <span class="rwc-num">' + esc(_lastRel) + '</span>');
+
+        return `
+          <article class="rwc-card rwc-card--${e.group}" data-recruiter-id="${esc(r.id)}" tabindex="0">
+            <div class="rwc-col-avatar">
+              <div class="rwc-avatar rwc-logo-${_logoIdx}">${esc(_short)}</div>
+            </div>
+            <div class="rwc-col-main">
+              <div class="rwc-title-row">
+                <h3 class="rwc-name">${esc(_name)}</h3>
+                <span class="rwc-company">${esc(_company)}${_companyNote ? '<span class="rwc-company-tag"> · ' + esc(_companyNote) + '</span>' : ''}</span>
+              </div>
+              <div class="rwc-meta">${_meta.join('<span class="rwc-sep">·</span>')}</div>
+              ${_summaryLines.length ? `<ul class="rwc-summary-lines">${_summaryLines.map(s => '<li>' + s + '</li>').join('')}</ul>` : ''}
+              ${_topRoles.length ? `
+                <div class="rwc-roles">
+                  <span class="rwc-roles-label">Roles</span>
+                  <div class="rwc-roles-chips">
+                    ${_topRoles.map(role => `<span class="rwc-role-chip"><span class="rwc-role-title">${esc(role.role_title || 'Untitled role')}</span><span class="rwc-role-sep">·</span><span class="rwc-role-company">${esc(sanitiseCompanyName(role.company_name) || '')}</span></span>`).join('')}
+                    ${_rolesMore > 0 ? '<span class="rwc-role-chip rwc-role-more">+' + _rolesMore + ' more</span>' : ''}
+                  </div>
+                </div>` : ''}
+              ${_outcomes.length ? `<div class="rwc-outcomes">${_outcomes.map(o => '<span class="rwc-outcome ' + o.cls + '">' + esc(o.label) + '</span>').join('')}</div>` : ''}
+              ${r.notes ? `<div class="rwc-note">&ldquo;${esc(r.notes)}&rdquo;</div>` : ''}
+            </div>
+            <div class="rwc-col-status">
+              <div class="rwc-status rwc-status--${_statusKind}">${e.group === 'active' ? '<span class="rwa-dot rwa-dot--live"></span>' : ''}${esc(_statusText)}</div>
+            </div>
+          </article>`;
+      };
+
+      const _renderGroup = (g) => {
+        const recs = _grouped[g.key];
+        if (recs.length === 0) return '';
+        const markHtml =
+          g.key === 'active' ? '<span class="rwa-dot rwa-dot--live" style="margin-right:0;"></span>' :
+          g.key === 'noise'  ? '<span class="rwc-group-mark rwc-group-mark--noise"></span>' : '';
+        return `
+          <section class="rwa-group">
+            <div class="rwa-group-head">
+              <div class="rwa-group-left">
+                ${markHtml}
+                <h2 class="rwa-group-title">${esc(g.label)}</h2>
+                <span class="rwa-group-count">${recs.length}</span>
+              </div>
+              <span class="rwa-group-hint">${esc(g.hint)}</span>
+            </div>
+            <div class="rwc-list">${recs.map(_renderCard).join('')}</div>
+          </section>`;
+      };
+
+      // Body
+      let _bodyHtml;
+      if (_all.length === 0) {
+        _bodyHtml = `
+          <div class="rwa-empty">
+            <div class="rwa-empty-dot"></div>
+            <div class="rwa-empty-title">No recruiters yet</div>
+            <div class="rwa-empty-sub">Recruiter interactions will appear here as they happen.</div>
+          </div>`;
+      } else if (_recruitersLens === 'all') {
+        _bodyHtml = _GROUPS.map(_renderGroup).filter(Boolean).join('');
+      } else {
+        const recs = _grouped[_recruitersLens] || [];
+        if (recs.length === 0) {
+          const lensLabel = (_LENSES.find(l => l.key === _recruitersLens) || {}).label || '';
+          _bodyHtml = `
+            <div class="rwa-empty">
+              <div class="rwa-empty-dot"></div>
+              <div class="rwa-empty-title">Nothing in ${esc(lensLabel.toLowerCase())}</div>
+              <div class="rwa-empty-sub">Try a different view.</div>
+            </div>`;
+        } else {
+          _bodyHtml = `<section class="rwa-group"><div class="rwc-list">${recs.map(_renderCard).join('')}</div></section>`;
         }
       }
+
+      // ── Render ────────────────────────────────────────────────────────────
+      centerEl.innerHTML = `
+        <div class="rwa-page">
+          <div class="rwa-page-inner">
+            <header class="rwa-header">
+              <div>
+                <h1 class="rwa-title">Recruiters</h1>
+                <p class="rwa-sub">People you've interacted with</p>
+              </div>
+              <div class="rwa-header-actions">
+                <button class="rwo-btn" data-rwc-add type="button"><span class="rwo-plus" aria-hidden="true"></span>Add recruiter</button>
+              </div>
+            </header>
+            <div class="rwo-divider"></div>
+
+            <div class="rwc-summary">
+              <span class="rwc-sum-item"><span class="rwa-num">${_summary.total}</span> ${_summary.total === 1 ? 'recruiter' : 'recruiters'} tracked</span>
+              <span class="rwc-sum-dot"></span>
+              <span class="rwc-sum-item"><span class="rwa-num">${_summary.active}</span> active conversations</span>
+              <span class="rwc-sum-dot"></span>
+              <span class="rwc-sum-item"><span class="rwa-num">${_summary.introduced}</span> roles introduced</span>
+              <span class="rwc-sum-dot"></span>
+              <span class="rwc-sum-item"><span class="rwa-num">${_summary.interviews}</span> reached interview</span>
+            </div>
+
+            <div class="rwa-lens-bar" role="tablist">
+              ${_LENSES.map(l => `
+                <button class="rwa-lens ${_recruitersLens === l.key ? 'rwa-lens--active' : ''}" data-rwc-lens="${esc(l.key)}" role="tab" aria-selected="${_recruitersLens === l.key}" type="button">
+                  <span>${esc(l.label)}</span>
+                  <span class="rwa-lens-count">${_counts[l.key] ?? 0}</span>
+                </button>
+              `).join('')}
+              <span class="rwa-lens-sep"></span>
+              <span class="rwa-sort">Sorted by <span class="rwa-sort-key">most recently active</span></span>
+            </div>
+
+            <div class="rwa-sections">${_bodyHtml}</div>
+          </div>
+        </div>`;
+
+      // ── Wiring ────────────────────────────────────────────────────────────
+      centerEl.querySelectorAll('[data-rwc-lens]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _recruitersLens = btn.dataset.rwcLens;
+          renderRecruitersView();
+        });
+      });
+      centerEl.querySelectorAll('[data-rwc-add]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          selectedRecruiterId = null;
+          if (typeof renderRecruiterAddForm === 'function') renderRecruiterAddForm();
+        });
+      });
+      // Card click → open existing recruiter detail view (writes to same panel)
+      centerEl.querySelectorAll('.rwc-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const id = card.dataset.recruiterId;
+          if (!id) return;
+          const rec = (allRecruiters || []).find(r => r.id === id);
+          if (!rec) return;
+          selectedRecruiterId = id;
+          renderRecruiterDetail(rec);
+        });
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            const id = card.dataset.recruiterId;
+            if (!id) return;
+            const rec = (allRecruiters || []).find(r => r.id === id);
+            if (rec) { selectedRecruiterId = id; renderRecruiterDetail(rec); }
+          }
+        });
+      });
     }
 
     // ─── Next Action ─────────────────────────────────────────────────────────
