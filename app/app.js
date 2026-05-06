@@ -10619,61 +10619,92 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       ).join('');
 
       // ── Section 01: What this role really is ─────────────────────────────────
-      const _s01src = (narr && _str(narr.role_is)) || _str(fo.fit_reality_summary) || null;
-      const _s01    = _s01src
-        ? `<p class="ra-lede">${esc(_sanitizeUiText(_s01src))}</p>`
-        : null;
+      let _s01 = null;
+      {
+        const _paras = narr?.what_this_role_actually_is?.paragraphs || narr?.fit_reality?.paragraphs;
+        if (Array.isArray(_paras) && _paras.length) {
+          _s01 = `<p class="ra-lede">${esc(_sanitizeUiText(_paras[0]))}</p>` +
+            _paras.slice(1).map(p => `<p class="ra-p">${esc(_sanitizeUiText(p))}</p>`).join('');
+        } else {
+          const _fb = Array.isArray(fo.fit_reality_summary)
+            ? fo.fit_reality_summary.filter(Boolean).join(' ')
+            : _str(fo.fit_reality_summary);
+          if (_fb) _s01 = `<p class="ra-lede">${esc(_sanitizeUiText(_fb))}</p>`;
+        }
+      }
 
       // ── Section 02: Why this role exists ─────────────────────────────────────
-      const _s02src = (narr && _str(narr.role_exists)) || _str(fo.why_this_role_exists) || null;
+      const _s02src = _str(fo.why_this_role_exists) || null;
       let _s02 = null;
       if (_s02src) {
-        const _infNote = (fo.why_this_role_exists_confidence === 'inferred' || !fo.why_this_role_exists)
+        const _infNote = fo.why_this_role_exists_confidence === 'inferred'
           ? '<p class="ra-note">Inferred from context — not explicitly stated in the JD.</p>'
           : '';
         _s02 = `<p class="ra-p">${esc(_sanitizeUiText(_s02src))}</p>${_infNote}`;
       }
 
       // ── Section 03: What you'd actually do ───────────────────────────────────
-      const _s03arr = (narr && Array.isArray(narr.what_you_do) && narr.what_you_do.length)
-        ? narr.what_you_do
-        : (Array.isArray(fo.what_you_would_actually_do) && fo.what_you_would_actually_do.length)
-          ? fo.what_you_would_actually_do
-          : null;
-      const _s03 = _s03arr ? _arList(_s03arr) : null;
+      let _s03 = null;
+      if (narr?.what_you_would_actually_do) {
+        const _w3 = narr.what_you_would_actually_do;
+        const _fHtml = _w3.framing ? `<p class="ra-p">${esc(_sanitizeUiText(_w3.framing))}</p>` : '';
+        const _bHtml = Array.isArray(_w3.bullets) && _w3.bullets.length ? _arList(_w3.bullets) : '';
+        if (_fHtml || _bHtml) _s03 = _fHtml + _bHtml;
+      }
+      if (!_s03 && Array.isArray(fo.what_you_would_actually_do) && fo.what_you_would_actually_do.length) {
+        _s03 = _arList(fo.what_you_would_actually_do);
+      }
 
       // ── Section 04: What they're really looking for ───────────────────────────
-      const _s04arr = (narr && Array.isArray(narr.what_they_need) && narr.what_they_need.length)
-        ? narr.what_they_need
-        : (Array.isArray(fo.what_they_really_need_from_you) && fo.what_they_really_need_from_you.length)
+      let _s04 = null;
+      if (narr?.what_they_really_need_from_you) {
+        const _w4 = narr.what_they_really_need_from_you;
+        const _pHtml = Array.isArray(_w4.paragraphs) && _w4.paragraphs.length
+          ? _w4.paragraphs.map(p => `<p class="ra-p">${esc(_sanitizeUiText(p))}</p>`).join('')
+          : '';
+        const _bHtml = Array.isArray(_w4.bullets) && _w4.bullets.length ? _arList(_w4.bullets) : '';
+        if (_pHtml || _bHtml) _s04 = _pHtml + _bHtml;
+      }
+      if (!_s04) {
+        const _s04arr = (Array.isArray(fo.what_they_really_need_from_you) && fo.what_they_really_need_from_you.length)
           ? fo.what_they_really_need_from_you
           : (Array.isArray(fo.signal_markers) && fo.signal_markers.length)
             ? fo.signal_markers.map(s => (s && typeof s === 'object') ? (s.text || s.marker || '') : String(s || ''))
             : null;
-      const _s04 = _s04arr ? _arList(_s04arr) : null;
+        if (_s04arr) _s04 = _arList(_s04arr);
+      }
 
       // ── Section 05: Risks & unknowns ─────────────────────────────────────────
-      const _s05arr = (narr && Array.isArray(narr.risks) && narr.risks.length)
-        ? narr.risks
-        : (Array.isArray(fo.risks_and_unknowns) && fo.risks_and_unknowns.length)
-          ? fo.risks_and_unknowns
-          : null;
-      const _s05 = _s05arr ? _arList(_s05arr) : null;
+      let _s05 = null;
+      if (narr?.risks_and_unknowns) {
+        const _r = narr.risks_and_unknowns;
+        const _combined = [
+          ...(Array.isArray(_r.stated)   ? _r.stated   : []),
+          ...(Array.isArray(_r.inferred) ? _r.inferred : []),
+        ];
+        if (_combined.length) {
+          const _introHtml = _r.stated_intro
+            ? `<p class="ra-p">${esc(_sanitizeUiText(_r.stated_intro))}</p>`
+            : '';
+          _s05 = _introHtml + _arList(_combined);
+        }
+      }
+      if (!_s05 && Array.isArray(fo.risks_and_unknowns) && fo.risks_and_unknowns.length) {
+        _s05 = _arList(fo.risks_and_unknowns);
+      }
 
       // ── Section 06: Questions worth asking ───────────────────────────────────
-      const _s06arr = (narr && Array.isArray(narr.questions) && narr.questions.length)
-        ? narr.questions
+      const _s06arr = (narr && Array.isArray(narr.questions_worth_asking) && narr.questions_worth_asking.length)
+        ? narr.questions_worth_asking
         : (Array.isArray(fo.questions_worth_asking) && fo.questions_worth_asking.length)
           ? fo.questions_worth_asking
           : null;
       const _s06 = _s06arr ? _arList(_s06arr, 'ra-list--questions') : null;
 
       // ── Section 07: Suggested actions ────────────────────────────────────────
-      const _s07arr = (narr && Array.isArray(narr.actions) && narr.actions.length)
-        ? narr.actions
-        : (Array.isArray(fo.suggested_actions) && fo.suggested_actions.length)
-          ? fo.suggested_actions
-          : null;
+      const _s07arr = (Array.isArray(fo.suggested_actions) && fo.suggested_actions.length)
+        ? fo.suggested_actions
+        : null;
       let _s07 = null;
       if (_s07arr && _s07arr.length) {
         const _abc = 'abcdefghij';
