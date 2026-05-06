@@ -483,169 +483,392 @@
       line-height: 1.5;
     }
 
-    /* ─── Overview page ────────────────────────────────────────────────────── */
-    .ov-page { max-width: 600px; }
-
-    .ov-heading {
-      font-size: var(--text-lg, 18px);
-      font-weight: 600;
+    /* ─── Overview page (briefing layout) ──────────────────────────────────── */
+    .rwo-page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 48px 80px;
+      font-family: var(--font);
       color: var(--text);
-      margin: 0 0 24px;
     }
 
-    /* Pipeline chips row */
-    .ov-pipeline {
+    /* Header */
+    .rwo-header {
       display: flex;
-      gap: 10px;
-      margin-bottom: 36px;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin: 0 0 20px;
     }
-    .ov-chip {
-      flex: 1;
+    .rwo-title {
+      font-family: var(--font-head, var(--font));
+      font-size: 28px;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--text);
+      margin: 0 0 4px;
+    }
+    .rwo-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin: 0;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      gap: 3px;
-      padding: 12px 8px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      cursor: pointer;
-      text-align: center;
-      transition: border-color 0.12s;
     }
-    .ov-chip:hover { border-color: var(--text-muted); }
-    .ov-chip-n {
-      font-size: 22px;
-      font-weight: 600;
-      color: var(--text);
-      line-height: 1;
-    }
-    .ov-chip-label {
-      font-size: 11px;
-      color: var(--text-muted);
-      font-weight: 500;
-      white-space: nowrap;
+    .rwo-divider {
+      height: 1px;
+      background: var(--border-light, var(--border));
+      margin: 0 0 36px;
     }
 
-    /* Content sections */
-    .ov-section { margin-bottom: var(--space-section, 32px); }
-    .ov-section-label {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 8px;
+    /* Live / risk dots */
+    .rwo-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      margin-right: 8px;
+      vertical-align: middle;
+      position: relative;
+      top: -1px;
+      flex-shrink: 0;
     }
+    .rwo-dot--live  { background: var(--success-500, #17b26a); opacity: 0.85; }
+    .rwo-dot--risk  { background: var(--warning-700, #b54708); opacity: 0.7; }
+    .rwo-dot--blank { background: transparent; }
 
-    /* Role rows */
-    .ov-role-row {
+    /* Section heads */
+    .rwo-section { margin-bottom: 44px; }
+    .rwo-section--last { margin-bottom: 0; }
+    .rwo-sec-head {
       display: flex;
       align-items: baseline;
       justify-content: space-between;
-      gap: 12px;
-      width: 100%;
-      padding: 8px 0;
-      border: none;
+      margin-bottom: 14px;
+    }
+    .rwo-sec-head--card {
+      margin-bottom: 16px;
+    }
+    .rwo-sec-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: 0.01em;
+      margin: 0;
+      text-transform: none;
+    }
+    .rwo-sec-sub {
+      font-size: 12px;
+      color: var(--text-light);
+    }
+
+    /* Cards */
+    .rwo-card {
+      background: var(--surface);
+      border: 1px solid var(--border-light, var(--border));
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .rwo-card--list { padding: 0; }
+
+    /* Quiet placeholder */
+    .rwo-quiet {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+    .rwo-quiet--padded { padding: 24px; }
+
+    /* ── Activity (KPI row, bare/borderless) ─────────────────────────────── */
+    .rwo-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      border-top: 1px solid var(--border-light, var(--border));
       border-bottom: 1px solid var(--border-light, var(--border));
+    }
+    .rwo-kpi {
+      all: unset;
+      padding: 22px 20px 20px;
+      cursor: pointer;
+      transition: background 160ms ease;
+      position: relative;
+      display: block;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .rwo-kpi[disabled] { cursor: default; opacity: 0.85; }
+    .rwo-kpi + .rwo-kpi { border-left: 1px dashed var(--border-light, var(--border)); }
+    .rwo-kpi:not([disabled]):hover { background: var(--gray-50, #fafafa); }
+    .rwo-kpi--active::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: -1px;
+      height: 2px;
+      background: var(--accent);
+    }
+    .rwo-kpi--active .rwo-kpi-num { color: var(--accent); }
+    .rwo-kpi-num {
+      font-family: var(--font-mono);
+      font-size: 30px;
+      font-weight: 400;
+      color: var(--text);
+      letter-spacing: -0.03em;
+      line-height: 1;
+      margin-bottom: 10px;
+    }
+    .rwo-kpi-label {
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+    .rwo-kpi-delta {
+      font-size: 11px;
+      color: var(--text-light);
+      margin-top: 3px;
+      font-family: var(--font-mono);
+      min-height: 14px;
+    }
+
+    /* ── What's in motion (stage list) ───────────────────────────────────── */
+    .rwo-stages { padding: 4px 0; }
+    .rwo-stage-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 20px;
+      padding: 14px 24px;
+      border-top: 1px solid var(--border-light, var(--border));
+    }
+    .rwo-stage-row:first-child { border-top: none; }
+    .rwo-stage-name {
+      font-size: 14px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+    }
+    .rwo-stage-last {
+      font-size: 12px;
+      color: var(--text-light);
+      font-family: var(--font-mono);
+    }
+    .rwo-stage-count {
+      font-family: var(--font-mono);
+      font-size: 16px;
+      color: var(--text);
+      min-width: 28px;
+      text-align: right;
+    }
+    .rwo-stage-count--zero { color: var(--text-light); opacity: 0.6; }
+
+    /* ── Two-column: What's not moving + Patterns in the market ──────────── */
+    .rwo-two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 900px) {
+      .rwo-two-col { grid-template-columns: 1fr; }
+    }
+
+    /* Responsiveness */
+    .rwo-resp-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 10px 0;
+      border-bottom: 1px dashed var(--border-light, var(--border));
+    }
+    .rwo-resp-row:last-child { border-bottom: none; }
+    .rwo-resp-k { font-size: 13px; color: var(--text); }
+    .rwo-resp-num {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      color: var(--text);
+      font-weight: 400;
+      letter-spacing: -0.01em;
+    }
+    .rwo-resp-unit {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-left: 4px;
+    }
+    .rwo-resp-mono {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+
+    /* Market patterns */
+    .rwo-mkt-group { margin-bottom: 20px; }
+    .rwo-mkt-group:last-child { margin-bottom: 0; }
+    .rwo-mkt-label {
+      font-size: 11px;
+      color: var(--text-light);
+      margin-bottom: 10px;
+      letter-spacing: 0.04em;
+    }
+    .rwo-mkt-rows > div {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 7px 0;
+      border-bottom: 1px dashed var(--border-light, var(--border));
+      font-size: 13px;
+    }
+    .rwo-mkt-rows > div:last-child { border-bottom: none; }
+    .rwo-mkt-k { color: var(--text); }
+    .rwo-mkt-v {
+      font-family: var(--font-mono);
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    /* ── Friction patterns ───────────────────────────────────────────────── */
+    .rwo-friction-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      padding: 13px 24px;
+      border-top: 1px solid var(--border-light, var(--border));
+      align-items: center;
+    }
+    .rwo-friction-row:first-child { border-top: none; }
+    .rwo-friction-k {
+      font-size: 13.5px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+    }
+    .rwo-friction-v {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* ── Recent activity ─────────────────────────────────────────────────── */
+    .rwo-filter-note {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 8px 12px;
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-soft-2, var(--border));
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    .rwo-filter-note button {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 0;
+      margin-left: auto;
+      font-family: inherit;
+    }
+    .rwo-filter-note button:hover { text-decoration: underline; }
+
+    .rwo-role-row {
+      display: grid;
+      grid-template-columns: 70px 28px 1fr auto auto;
+      gap: 16px;
+      align-items: center;
+      padding: 14px 24px;
+      border: none;
+      border-top: 1px solid var(--border-light, var(--border));
       background: transparent;
       cursor: pointer;
       text-align: left;
+      width: 100%;
+      font-family: inherit;
+      transition: background 160ms ease;
     }
-    .ov-role-row:last-child { border-bottom: none; }
-    .ov-role-row:hover .ov-role-company { color: var(--accent); }
-    .ov-role-row-name {
+    .rwo-role-row:first-child { border-top: none; }
+    .rwo-role-row:hover { background: var(--gray-50, #fafafa); }
+    .rwo-role-time {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-light);
+    }
+    .rwo-role-logo {
+      width: 26px;
+      height: 26px;
+      border-radius: 5px;
       display: flex;
-      align-items: baseline;
-      gap: 6px;
-      overflow: hidden;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
     }
-    .ov-role-company {
-      font-size: 13px;
-      font-weight: 600;
+    .rwo-logo-0 { background: #e7e0d6; color: #4a4337; }
+    .rwo-logo-1 { background: #dde7d6; color: #36433a; }
+    .rwo-logo-2 { background: #d6dee7; color: #364150; }
+    .rwo-logo-3 { background: #ded6e7; color: #44364f; }
+    .rwo-logo-4 { background: #e7d6d6; color: #503737; }
+    .rwo-logo-5 { background: #d6e7e3; color: #364c47; }
+    .rwo-role-info { min-width: 0; }
+    .rwo-role-title {
+      font-size: 14px;
       color: var(--text);
-      white-space: nowrap;
-      flex-shrink: 0;
-      transition: color 0.1s;
-    }
-    .ov-role-title {
-      font-size: 12.5px;
-      color: var(--text-muted);
+      font-weight: 500;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .ov-role-stage {
-      font-size: 11.5px;
-      color: var(--text-muted);
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-    .ov-role-stage--attn {
-      color: var(--utility-warning-600, #b54708);
-      font-weight: 500;
-    }
-
-    /* Attention rows: two-line layout (name + nudge hint) */
-    .ov-role-row--attn {
-      align-items: flex-start;
-    }
-    .ov-role-row--attn .ov-role-row-name {
-      flex: 1;
-      min-width: 0;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 2px;
-    }
-    .ov-role-row-name-line {
+    .rwo-role-company { color: var(--text-muted); font-weight: 400; }
+    .rwo-role-meta {
+      font-size: 12px;
+      color: var(--text-light);
+      margin-top: 3px;
       display: flex;
-      align-items: baseline;
-      gap: 6px;
-      overflow: hidden;
-      width: 100%;
+      gap: 8px;
+      flex-wrap: wrap;
     }
-    .ov-role-nudge {
+    .rwo-role-meta span { display: inline-flex; align-items: center; }
+    .rwo-role-event { color: var(--text); }
+    .rwo-sep { color: var(--border); }
+    .rwo-role-stage {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+    .rwo-decision {
+      font-size: 11.5px;
+      padding: 3px 9px;
+      border-radius: 10px;
+      font-family: var(--font-mono);
+      border: 1px solid var(--border-light, var(--border));
+      color: var(--text-muted);
+      background: var(--gray-50, #fafafa);
+    }
+    .rwo-decision--applied {
+      color: var(--accent);
+      border-color: var(--accent-soft-2, var(--border));
+      background: var(--accent-soft);
+    }
+    .rwo-decision--skipped { opacity: 0.7; }
+
+    /* ── One thing to notice (bare, narrow) ──────────────────────────────── */
+    .rwo-notice {
+      padding-top: 24px;
+      border-top: 1px solid var(--border-light, var(--border));
+    }
+    .rwo-notice-label {
       font-size: 11px;
       color: var(--text-light);
-      font-style: italic;
-    }
-
-    /* Quiet / next-action lines */
-    .ov-quiet {
-      font-size: 13px;
-      color: var(--text-muted);
-      margin-bottom: 24px;
-    }
-    .ov-next-action {
-      margin-top: 8px;
-      padding: 10px 14px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      font-size: 12.5px;
-      color: var(--text-muted);
-      line-height: 1.5;
-    }
-
-    /* Patterns so far — bottom of overview, only shown when data exists */
-    .ov-insights {
-      margin-top: 20px;
-      padding-top: 16px;
-      border-top: 1px solid var(--border-color, #e8e8e8);
-    }
-    .ov-insights-label {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
       margin-bottom: 8px;
     }
-    .ov-insight-item {
-      font-size: 13px;
-      color: var(--text-muted);
-      padding: 3px 0;
-      line-height: 1.5;
+    .rwo-notice-text {
+      font-size: 17px;
+      color: var(--text);
+      line-height: 1.45;
+      letter-spacing: -0.01em;
+      font-weight: 400;
+      max-width: 560px;
     }
 
     .review-section {

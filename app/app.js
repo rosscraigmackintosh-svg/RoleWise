@@ -29640,172 +29640,406 @@ If a field cannot be determined from the message, return null for that field.`,
     function renderOverviewView() {
       const el = document.getElementById('col-overview-cards');
       if (!el) return;
-      el.classList.remove('col-ov--legacy-doc'); // reset scroll mode from Review or legacy doc
+      el.classList.remove('col-ov--legacy-doc');
 
-      // ── Active pool ──────────────────────────────────────────────────────────
-      const _active = allRoles.filter(r => !isArchivedRole(r) && r.user_decision !== 'skip');
+      // ── Helpers ────────────────────────────────────────────────────────────
+      const _fmtRel = (iso) => {
+        if (!iso) return '';
+        const ms = Date.now() - new Date(iso).getTime();
+        const mins = Math.floor(ms / 60000);
+        if (mins < 1)   return 'just now';
+        if (mins < 60)  return mins + 'm ago';
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24)   return hrs + 'h ago';
+        const days = Math.floor(hrs / 24);
+        if (days === 1) return 'Yesterday';
+        if (days < 7)   return days + 'd ago';
+        if (days < 30)  return Math.floor(days / 7) + 'w ago';
+        return Math.floor(days / 30) + 'mo ago';
+      };
+      const _fmtMoved = (iso) => {
+        if (!iso) return '';
+        const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+        if (days <= 0)  return 'last moved today';
+        if (days === 1) return 'last moved yesterday';
+        return 'last moved ' + days + 'd ago';
+      };
+      const _withinWeek = (iso) => iso && (Date.now() - new Date(iso).getTime()) / 86400000 <= 7;
+      const _PLACEHOLDER = 'Not enough information to form a reliable view yet.';
 
-      // ── Needs attention: roles with a live nudge, most stale first ──────────
-      // Uses _roleNudge() — same signal as inbox cards — so both are in sync.
-      // Full list drives the chip count, next-action text, and deduplication.
-      // Display is capped at 5 to keep the section compact.
-      const _nudgeCandidates = [..._active].sort((a, b) =>
-        (daysSinceLastUpdate(b) ?? 0) - (daysSinceLastUpdate(a) ?? 0)
-      );
-      const _nudgeAll = [];
-      for (const r of _nudgeCandidates) {
-        const n = _roleNudge(r);
-        if (n) _nudgeAll.push({ role: r, nudge: n });
-      }
-      const _withNudge  = _nudgeAll.slice(0, 5);   // display only
-      const _nudgeCount = _nudgeAll.length;          // chip + next-action
-      const _nudgeIds   = new Set(_nudgeAll.map(({ role }) => role.id)); // full exclusion set
+      // ── Data slices ────────────────────────────────────────────────────────
+      const _all       = allRoles || [];
+      const _archived  = _all.filter(isArchivedRole);
+      const _active    = _all.filter(r => !isArchivedRole(r) && r.user_decision !== 'skip');
+      const _applied   = _all.filter(r => r._appliedDate);
+      const _inProcess = _active.filter(r => _IN_PROGRESS_STAGES.has(currentStageLabel(r)));
 
-      // ── In progress: Recruiter Screen and beyond, not already in attention ──
-      // Excludes Applied — those are covered by the nudge rules above.
-      const _OV_PROG_DEPTH = ['Offer', 'Final', 'Panel', 'Hiring Manager', 'Recruiter Screen'];
-      const _inProg = _active
-        .filter(r => _IN_PROGRESS_STAGES.has(currentStageLabel(r)) && !_nudgeIds.has(r.id))
-        .sort((a, b) => {
-          const ai = _OV_PROG_DEPTH.indexOf(currentStageLabel(a));
-          const bi = _OV_PROG_DEPTH.indexOf(currentStageLabel(b));
-          return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
-        });
+      // ── Activity row (5 KPIs) ──────────────────────────────────────────────
+      // Saved is not yet a tracked first-class state in the live data model.
+      const _seenWk    = _all.filter(r => _withinWeek(r.created_at)).length;
+      const _appliedWk = _applied.filter(r => _withinWeek(r._appliedDate)).length;
+      const _closedWk  = _archived.filter(r => _withinWeek(r.outcome_at)).length;
+      const _movingWk  = _inProcess.filter(r => {
+        const u = (r.role_updates || []).find(x => !x.event_type || x.event_type === 'stage');
+        return u && _withinWeek(u.created_at);
+      }).length;
 
-      // ── Recent: most recently touched active roles not shown above, max 3 ───
-      const _shownIds = new Set([..._nudgeIds, ..._inProg.map(r => r.id)]);
-      const _recent = [..._active]
-        .filter(r => !_shownIds.has(r.id))
-        .sort((a, b) => {
-          const _da = new Date(a.role_updates?.[0]?.created_at || a.created_at).getTime();
-          const _db = new Date(b.role_updates?.[0]?.created_at || b.created_at).getTime();
-          return _db - _da;
-        })
-        .slice(0, 3);
+      const _kpis = [
+        { key: 'seen',    label: 'Seen',       value: _all.length,       delta: _seenWk    ? '+' + _seenWk    + ' this wk' : '' },
+        { key: 'saved',   label: 'Saved',      value: 0,                 delta: 'not tracked yet' },
+        { key: 'applied', label: 'Applied',    value: _applied.length,   delta: _appliedWk ? '+' + _appliedWk + ' this wk' : '' },
+        { key: 'process', label: 'In process', value: _inProcess.length, delta: _movingWk  ? _movingWk + ' moving' : '' },
+        { key: 'closed',  label: 'Closed',     value: _archived.length,  delta: _closedWk  ? _closedWk  + ' this wk' : '' },
+      ];
 
-      // ── Role row builder ─────────────────────────────────────────────────────
-      // Attention rows show the nudge hint below the name line.
-      // All other rows are flat: company · title — stage.
-      const _roleRow = (role, nudge = null) => {
-        const _company = sanitiseCompanyName(role.company_name) || 'Unknown company';
-        const _title   = role.role_title || 'Untitled role';
-        const _stage   = currentStageLabel(role);
-        if (nudge) {
-          return `<button class="ov-role-row ov-role-row--attn" data-role-id="${esc(role.id)}">
-            <span class="ov-role-row-name">
-              <span class="ov-role-row-name-line">
-                <span class="ov-role-company">${esc(_company)}</span>
-                <span class="ov-role-title">${esc(_title)}</span>
-              </span>
-              <span class="ov-role-nudge">${esc(nudge.text)}</span>
-            </span>
-            <span class="ov-role-stage ov-role-stage--attn">${esc(_stage)}</span>
-          </button>`;
+      const _kpiFilter = el.dataset.kpiFilter || '';
+
+      const _activityHtml = `
+        <section class="rwo-section">
+          <div class="rwo-sec-head">
+            <h2 class="rwo-sec-title">Activity</h2>
+            <span class="rwo-sec-sub">What you've been doing</span>
+          </div>
+          <div class="rwo-kpi-row">
+            ${_kpis.map(k => `
+              <button class="rwo-kpi ${_kpiFilter === k.key ? 'rwo-kpi--active' : ''}" data-kpi="${esc(k.key)}" ${k.key === 'saved' ? 'disabled' : ''}>
+                <div class="rwo-kpi-num">${k.value}</div>
+                <div class="rwo-kpi-label">${esc(k.label)}</div>
+                <div class="rwo-kpi-delta">${esc(k.delta)}</div>
+              </button>
+            `).join('')}
+          </div>
+        </section>`;
+
+      // ── What's in motion ───────────────────────────────────────────────────
+      const _MOTION_STAGES = ['Applied', 'Recruiter Screen', 'Hiring Manager', 'Panel', 'Final', 'Offer'];
+      const _stageRows = _MOTION_STAGES.map(stage => {
+        const _atStage = _active.filter(r => currentStageLabel(r) === stage);
+        let _last = 0;
+        for (const r of _atStage) {
+          const u = (r.role_updates || []).find(x => !x.event_type || x.event_type === 'stage');
+          if (!u) continue;
+          const t = new Date(u.created_at).getTime();
+          if (t > _last) _last = t;
         }
-        return `<button class="ov-role-row" data-role-id="${esc(role.id)}">
-          <span class="ov-role-row-name">
-            <span class="ov-role-company">${esc(_company)}</span>
-            <span class="ov-role-title">${esc(_title)}</span>
-          </span>
-          <span class="ov-role-stage">${esc(_stage)}</span>
-        </button>`;
+        return { name: stage, count: _atStage.length, last: _last ? new Date(_last).toISOString() : null };
+      });
+      const _movingTotal = _stageRows.reduce((s, x) => s + x.count, 0);
+
+      const _motionHtml = `
+        <section class="rwo-section">
+          <div class="rwo-sec-head">
+            <h2 class="rwo-sec-title">What's in motion</h2>
+            <span class="rwo-sec-sub">${_movingTotal} ${_movingTotal === 1 ? 'role' : 'roles'} active right now</span>
+          </div>
+          <div class="rwo-card rwo-card--list">
+            <div class="rwo-stages">
+              ${_stageRows.map(s => `
+                <div class="rwo-stage-row">
+                  <div class="rwo-stage-name">
+                    ${s.count > 0 ? '<span class="rwo-dot rwo-dot--live"></span>' : '<span class="rwo-dot rwo-dot--blank"></span>'}
+                    <span>${esc(s.name)}</span>
+                  </div>
+                  <div class="rwo-stage-last">${esc(s.last ? _fmtMoved(s.last) : '')}</div>
+                  <div class="rwo-stage-count ${s.count === 0 ? 'rwo-stage-count--zero' : ''}">${s.count}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </section>`;
+
+      // ── What's not moving (Responsiveness) ─────────────────────────────────
+      const _MIN_RESP = 3;
+      const _respondedRoles = _applied.filter(r => r._firstResponseDate);
+      const _unrespondedAfter14 = _applied.filter(r => !r._firstResponseDate && !r.outcome_state &&
+        Math.floor((Date.now() - new Date(r._appliedDate).getTime()) / 86400000) >= 14).length;
+      let _respCard;
+      if (_applied.length < _MIN_RESP) {
+        _respCard = `
+          <div class="rwo-card">
+            <div class="rwo-sec-head rwo-sec-head--card">
+              <h2 class="rwo-sec-title">What's not moving</h2>
+              <span class="rwo-sec-sub">Responsiveness</span>
+            </div>
+            <div class="rwo-quiet">${_PLACEHOLDER}</div>
+          </div>`;
+      } else {
+        const _diffs = _respondedRoles.map(r =>
+          Math.max(0, Math.floor((new Date(r._firstResponseDate).getTime() - new Date(r._appliedDate).getTime()) / 86400000))
+        );
+        const _fastest = _diffs.length ? Math.min.apply(null, _diffs) : null;
+        const _avg     = _diffs.length ? Math.round(_diffs.reduce((s, d) => s + d, 0) / _diffs.length) : null;
+        let _longest = null, _longestDays = -1;
+        for (const r of _applied) {
+          if (r._firstResponseDate || r.outcome_state) continue;
+          const d = Math.floor((Date.now() - new Date(r._appliedDate).getTime()) / 86400000);
+          if (d > _longestDays) { _longest = r; _longestDays = d; }
+        }
+        const _row = (k, vHtml) => `<div class="rwo-resp-row"><span class="rwo-resp-k">${esc(k)}</span><span class="rwo-resp-v">${vHtml}</span></div>`;
+        const _numUnit = (n, u) => '<span class="rwo-resp-num">' + n + '</span><span class="rwo-resp-unit">' + esc(u) + '</span>';
+        _respCard = `
+          <div class="rwo-card">
+            <div class="rwo-sec-head rwo-sec-head--card">
+              <h2 class="rwo-sec-title">What's not moving</h2>
+              <span class="rwo-sec-sub">Responsiveness</span>
+            </div>
+            <div class="rwo-resp">
+              ${_row('Fastest response', _fastest === null ? '<span class="rwo-resp-mono">—</span>' : _numUnit(_fastest, _fastest === 1 ? 'day' : 'days'))}
+              ${_row('Average response', _avg     === null ? '<span class="rwo-resp-mono">—</span>' : _numUnit(_avg,     _avg     === 1 ? 'day' : 'days'))}
+              ${_row('No response after 14 days', _numUnit(_unrespondedAfter14, _unrespondedAfter14 === 1 ? 'role' : 'roles'))}
+              ${_longest ? _row('Longest wait', '<span class="rwo-resp-mono">' + esc(sanitiseCompanyName(_longest.company_name) || 'Role') + ' · ' + _longestDays + ' days</span>') : ''}
+            </div>
+          </div>`;
+      }
+
+      // ── Patterns in the market ─────────────────────────────────────────────
+      // Live model only carries work_model and engagement_type. Industry and
+      // company stage are not tracked, and not invented.
+      const _MIN_PAT = 5;
+      const _wmCounts = {}, _etCounts = {};
+      let _wmTotal = 0, _etTotal = 0;
+      for (const r of _all) {
+        const wm = (r.work_model || '').toLowerCase();
+        if (wm && wm !== 'unknown') {
+          const k = (wm === 'on-site' || wm === 'onsite') ? 'On-site' : (wm.charAt(0).toUpperCase() + wm.slice(1));
+          _wmCounts[k] = (_wmCounts[k] || 0) + 1;
+          _wmTotal++;
+        }
+        const et = r.engagement_type;
+        if (et && et !== 'Unknown') {
+          _etCounts[et] = (_etCounts[et] || 0) + 1;
+          _etTotal++;
+        }
+      }
+      const _wmRows = Object.entries(_wmCounts).sort((a, b) => b[1] - a[1]);
+      const _etRows = Object.entries(_etCounts).sort((a, b) => b[1] - a[1]);
+      const _renderPatGroup = (label, rows, total) => total >= _MIN_PAT ? `
+        <div class="rwo-mkt-group">
+          <div class="rwo-mkt-label">${esc(label)}</div>
+          <div class="rwo-mkt-rows">
+            ${rows.map(([k, v]) => `<div><span class="rwo-mkt-k">${esc(k)}</span><span class="rwo-mkt-v">${v}</span></div>`).join('')}
+          </div>
+        </div>` : '';
+      let _marketCard;
+      if (_wmTotal < _MIN_PAT && _etTotal < _MIN_PAT) {
+        _marketCard = `
+          <div class="rwo-card">
+            <div class="rwo-sec-head rwo-sec-head--card">
+              <h2 class="rwo-sec-title">Patterns in the market</h2>
+              <span class="rwo-sec-sub">Roles appearing</span>
+            </div>
+            <div class="rwo-quiet">${_PLACEHOLDER}</div>
+          </div>`;
+      } else {
+        _marketCard = `
+          <div class="rwo-card">
+            <div class="rwo-sec-head rwo-sec-head--card">
+              <h2 class="rwo-sec-title">Patterns in the market</h2>
+              <span class="rwo-sec-sub">Roles appearing</span>
+            </div>
+            ${_renderPatGroup('Work model', _wmRows, _wmTotal)}
+            ${_renderPatGroup('Engagement type', _etRows, _etTotal)}
+          </div>`;
+      }
+
+      const _twoColHtml = `
+        <section class="rwo-section">
+          <div class="rwo-two-col">
+            ${_respCard}
+            ${_marketCard}
+          </div>
+        </section>`;
+
+      // ── Friction patterns (repeated reasons for skipping) ──────────────────
+      const _frictionMap = {};
+      for (const r of _all) {
+        const isSkip = r.user_decision === 'skip' || r.outcome_state === 'skipped';
+        if (!isSkip) continue;
+        const reason = (r.outcome_reason || '').trim();
+        if (!reason) continue;
+        _frictionMap[reason] = (_frictionMap[reason] || 0) + 1;
+      }
+      const _frictionRows = Object.entries(_frictionMap)
+        .filter(([, v]) => v >= 2)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+      const _frictionHtml = `
+        <section class="rwo-section">
+          <div class="rwo-sec-head">
+            <h2 class="rwo-sec-title">Friction patterns</h2>
+            <span class="rwo-sec-sub">Repeated reasons for skipping</span>
+          </div>
+          <div class="rwo-card rwo-card--list">
+            ${_frictionRows.length ? `
+              <div class="rwo-friction">
+                ${_frictionRows.map(([k, v]) => `
+                  <div class="rwo-friction-row">
+                    <span class="rwo-friction-k"><span class="rwo-dot rwo-dot--risk"></span>${esc(k)}</span>
+                    <span class="rwo-friction-v">${v} ${v === 1 ? 'role' : 'roles'}</span>
+                  </div>
+                `).join('')}
+              </div>` : `<div class="rwo-quiet rwo-quiet--padded">${_PLACEHOLDER}</div>`}
+          </div>
+        </section>`;
+
+      // ── Recent activity (last 6 events) ────────────────────────────────────
+      const _events = [];
+      for (const r of _all) {
+        for (const u of (r.role_updates || [])) _events.push({ role: r, update: u });
+      }
+      _events.sort((a, b) => new Date(b.update.created_at).getTime() - new Date(a.update.created_at).getTime());
+
+      const _kpiMatch = (e) => {
+        if (!_kpiFilter) return true;
+        const r = e.role;
+        if (_kpiFilter === 'seen')    return true;
+        if (_kpiFilter === 'applied') return !!r._appliedDate;
+        if (_kpiFilter === 'process') return !isArchivedRole(r) && r.user_decision !== 'skip' && _IN_PROGRESS_STAGES.has(currentStageLabel(r));
+        if (_kpiFilter === 'closed')  return isArchivedRole(r);
+        return true;
+      };
+      const _seenIds = new Set();
+      const _shown = [];
+      for (const e of _events) {
+        if (!_kpiMatch(e)) continue;
+        if (_seenIds.has(e.role.id)) continue;
+        _seenIds.add(e.role.id);
+        _shown.push(e);
+        if (_shown.length >= 6) break;
+      }
+
+      const _eventLabel = (u) => {
+        if (u.event_type === 'outcome' && u.outcome_state) {
+          if (u.outcome_state === 'skipped')        return 'Skipped';
+          if (u.outcome_state === 'rejected')       return 'Rejected';
+          if (u.outcome_state === 'no_response')    return 'No response';
+          if (u.outcome_state === 'ghosted')        return 'Ghosted';
+          if (u.outcome_state === 'offer_accepted') return 'Offer accepted';
+          if (u.outcome_state === 'withdrew')       return 'Withdrew';
+          if (u.outcome_state === 'closed')         return 'Closed';
+          return u.outcome_state.replace(/_/g, ' ');
+        }
+        if (u.stage_reached === 'Applied')   return 'Applied';
+        if (u.stage_reached === 'JD Review') return 'Saved';
+        if (u.stage_reached)                 return 'Moved to ' + u.stage_reached;
+        return 'Updated';
+      };
+      const _decisionBadge = (r) => {
+        if (r.user_decision === 'skip' || r.outcome_state === 'skipped' || currentStageLabel(r) === 'Skipped') return { cls: 'rwo-decision--skipped', label: 'Skipped' };
+        if (r.user_decision === 'apply' || r._appliedDate) return { cls: 'rwo-decision--applied', label: 'Applied' };
+        return { cls: '', label: 'Saved' };
       };
 
-      // ── Section HTML ─────────────────────────────────────────────────────────
-      const _attentionHtml = _withNudge.length ? `
-        <div class="ov-section">
-          <div class="ov-section-label">Needs attention</div>
-          ${_withNudge.map(({ role, nudge }) => _roleRow(role, nudge)).join('')}
-        </div>` : '';
+      const _filterLabel = ((_kpis.find(k => k.key === _kpiFilter) || {}).label) || '';
+      const _recentHtml = `
+        <section class="rwo-section">
+          <div class="rwo-sec-head">
+            <h2 class="rwo-sec-title">Recent activity</h2>
+            <span class="rwo-sec-sub">${_shown.length === 0 ? '' : 'Last ' + _shown.length + ' event' + (_shown.length === 1 ? '' : 's')}</span>
+          </div>
+          ${_kpiFilter ? `
+            <div class="rwo-filter-note">
+              <span>Showing ${esc(_filterLabel)}</span>
+              <button data-kpi-clear>Clear filter</button>
+            </div>` : ''}
+          <div class="rwo-card rwo-card--list">
+            ${_shown.length === 0 ? `<div class="rwo-quiet rwo-quiet--padded">${_PLACEHOLDER}</div>` :
+              _shown.map(({ role, update }) => {
+                const _company  = sanitiseCompanyName(role.company_name) || 'Unknown';
+                const _title    = role.role_title || 'Untitled role';
+                const _stage    = currentStageLabel(role);
+                const _initials = _companyInitials(role.company_name);
+                const _logoIdx  = _companyColorIndex(_company);
+                const _badge    = _decisionBadge(role);
+                const _metaParts = [];
+                if (role.location_text) _metaParts.push(esc(role.location_text));
+                else if (role.work_model && role.work_model !== 'unknown') {
+                  const wm = role.work_model.toLowerCase();
+                  _metaParts.push(esc((wm === 'on-site' || wm === 'onsite') ? 'On-site' : wm.charAt(0).toUpperCase() + wm.slice(1)));
+                }
+                return `
+                  <button class="rwo-role-row" data-role-id="${esc(role.id)}">
+                    <div class="rwo-role-time">${esc(_fmtRel(update.created_at))}</div>
+                    <div class="rwo-role-logo rwo-logo-${_logoIdx}">${esc(_initials)}</div>
+                    <div class="rwo-role-info">
+                      <div class="rwo-role-title">${esc(_title)} <span class="rwo-role-company">· ${esc(_company)}</span></div>
+                      <div class="rwo-role-meta">
+                        <span class="rwo-role-event">${esc(_eventLabel(update))}</span>
+                        ${_metaParts.length ? '<span class="rwo-sep">·</span><span>' + _metaParts.join('</span><span class="rwo-sep">·</span><span>') + '</span>' : ''}
+                      </div>
+                    </div>
+                    <div class="rwo-role-stage">${esc(_stage)}</div>
+                    <div class="rwo-decision ${_badge.cls}">${esc(_badge.label)}</div>
+                  </button>
+                `;
+              }).join('')
+            }
+          </div>
+        </section>`;
 
-      const _progressHtml = _inProg.length ? `
-        <div class="ov-section">
-          <div class="ov-section-label">In progress</div>
-          ${_inProg.map(r => _roleRow(r)).join('')}
-        </div>` : '';
+      // ── One thing to notice ───────────────────────────────────────────────
+      const _insights   = _computeOutcomeInsights(_all);
+      const _noticeText = _insights.length ? _insights[0] : _PLACEHOLDER;
+      const _noticeHtml = `
+        <section class="rwo-section rwo-section--last">
+          <div class="rwo-notice">
+            <div class="rwo-notice-label">One thing to notice</div>
+            <div class="rwo-notice-text">${esc(_noticeText)}</div>
+          </div>
+        </section>`;
 
-      const _recentHtml = _recent.length ? `
-        <div class="ov-section">
-          <div class="ov-section-label">Recent</div>
-          ${_recent.map(r => _roleRow(r)).join('')}
-        </div>` : '';
-
-      // ── Pipeline chips (navigation shortcuts) ───────────────────────────────
-      const _chips = [
-        { n: _active.length,   label: 'Active',         filter: 'active'          },
-        { n: _nudgeCount,      label: 'Needs attention', filter: 'needs_attention' },
-        { n: _inProg.length,   label: 'In progress',    filter: 'in_progress'     },
-      ];
-      const _pipelineHtml = `
-        <div class="ov-pipeline">
-          ${_chips.map(c => `
-            <button class="ov-chip" data-ov-filter="${esc(c.filter)}">
-              <span class="ov-chip-n">${c.n}</span>
-              <span class="ov-chip-label">${esc(c.label)}</span>
-            </button>
-          `).join('')}
-        </div>`;
-
-      // ── Next action ──────────────────────────────────────────────────────────
-      // Driven by the nudge count — same source as the section above.
-      let _nextText = null;
-      if (_active.length === 0) {
-        _nextText = 'No active roles yet. Add one to get started.';
-      } else if (_nudgeCount === 1) {
-        _nextText = '1 role needs your attention.';
-      } else if (_nudgeCount > 1) {
-        _nextText = `${_nudgeCount} roles need your attention.`;
+      // ── Header ─────────────────────────────────────────────────────────────
+      let _maxUpd = 0;
+      for (const r of _all) {
+        const t = new Date(r.role_updates?.[0]?.created_at || r.created_at).getTime();
+        if (t > _maxUpd) _maxUpd = t;
       }
-      const _nextHtml = _nextText
-        ? `<div class="ov-next-action">${esc(_nextText)}</div>`
-        : '';
+      const _lastUpd = _maxUpd ? _fmtRel(new Date(_maxUpd).toISOString()) : 'just now';
+      const _headerHtml = `
+        <header class="rwo-header">
+          <div>
+            <h1 class="rwo-title">Overview</h1>
+            <p class="rwo-sub"><span class="rwo-dot rwo-dot--live"></span>Live, last updated ${esc(_lastUpd)}</p>
+          </div>
+        </header>`;
 
-      // ── Pattern insights ─────────────────────────────────────────────────────
-      const _insights     = _computeOutcomeInsights(allRoles);
-      let _ovInterpHtml = '';
-      for (let _oi = 0; _oi < _insights.length; _oi++) {
-        const _interp = _interpretObservation(_insights[_oi]);
-        if (_interp) { _ovInterpHtml = `<div class="rw-obs-interp">${esc(_interp)}</div>`; break; }
-      }
-      const _insightsHtml = _insights.length ? `
-        <div class="ov-insights">
-          <div class="ov-insights-label">Patterns so far</div>
-          ${_insights.map(t => `<div class="ov-insight-item">${esc(t)}</div>`).join('')}
-          ${_ovInterpHtml}
-        </div>` : '';
-
-      // ── Empty state ──────────────────────────────────────────────────────────
-      const _hasContent = _attentionHtml || _progressHtml || _recentHtml;
-      const _mainContent = _hasContent
-        ? _attentionHtml + _progressHtml + _recentHtml
-        : `<div class="ov-quiet">Everything looks quiet.</div>`;
-
-      // ── Render ───────────────────────────────────────────────────────────────
+      // ── Render ─────────────────────────────────────────────────────────────
       el.innerHTML = `
-        <div class="col-center-inner ov-page">
-          <h1 class="ov-heading">Overview</h1>
-          ${_pipelineHtml}
-          ${_mainContent}
-          ${_nextHtml}
-          ${_insightsHtml}
+        <div class="rwo-page">
+          ${_headerHtml}
+          <div class="rwo-divider"></div>
+          ${_activityHtml}
+          ${_motionHtml}
+          ${_twoColHtml}
+          ${_frictionHtml}
+          ${_recentHtml}
+          ${_noticeHtml}
         </div>`;
 
-      // ── "While you were away" banner (shown once per session) ──────────
-      const _ovPage = el.querySelector('.ov-page');
+      // While-you-were-away banner (preserved from previous overview)
+      const _ovPage = el.querySelector('.rwo-page');
       if (_ovPage) _renderAwaySummaryBanner(_ovPage);
 
-      // Pipeline chip clicks → Applications with matching filter
-      el.querySelectorAll('.ov-chip').forEach(chip => {
-        chip.addEventListener('click', () => {
-          _setAppFilter(chip.dataset.ovFilter);
-          switchNav('applications');
+      // KPI click → toggle Recent activity filter (lightweight, in-page)
+      el.querySelectorAll('.rwo-kpi').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.kpi;
+          if (!key || key === 'saved') return;
+          el.dataset.kpiFilter = (el.dataset.kpiFilter === key) ? '' : key;
+          renderOverviewView();
+        });
+      });
+      el.querySelectorAll('[data-kpi-clear]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          el.dataset.kpiFilter = '';
+          renderOverviewView();
         });
       });
 
-      // Role row clicks → switch to Applications and open the role
-      el.querySelectorAll('.ov-role-row').forEach(row => {
+      // Role row click → switch to Applications and open the role
+      el.querySelectorAll('.rwo-role-row').forEach(row => {
         row.addEventListener('click', () => {
-          const role = allRoles.find(r => r.id === row.dataset.roleId);
+          const role = _all.find(r => r.id === row.dataset.roleId);
           if (!role) return;
           _setAppFilter('active');
           switchNav('applications');
