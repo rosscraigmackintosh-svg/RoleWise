@@ -42,6 +42,207 @@
       background: var(--bg);
     }
 
+    /* ─── Sidebar v2 (editorial) ──────────────────────────────────────────────
+       Document-toned, calm, low-pressure. Width is set by .app grid (254px).
+       Internal route names are unchanged: see the TODO above the markup in
+       index.html — Roles still maps to data-nav="applications". */
+    .rwl-sidebar {
+      background: var(--gray-50, #fafafa);
+      padding: 24px 16px 16px;
+      gap: 0;
+    }
+    .rwl-brand {
+      all: unset;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      padding: 0 8px;
+      color: var(--text);
+      font-family: var(--font-head, var(--font));
+      font-weight: 500;
+      font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+    .rwl-brand:hover { opacity: 0.85; }
+    .rwl-brand-mark {
+      width: 14px;
+      height: 14px;
+      background: var(--text);
+      border-radius: 3px;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .rwl-brand-mark::after {
+      content: '';
+      position: absolute;
+      inset: 3px 3px auto auto;
+      width: 4px;
+      height: 4px;
+      background: var(--gray-50, #fafafa);
+      border-radius: 50%;
+    }
+    .rwl-tagline {
+      padding: 6px 8px 24px 30px;
+      font-size: 12px;
+      color: var(--text-light);
+      letter-spacing: 0.005em;
+    }
+    .rwl-nav {
+      flex: 0 0 auto;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .rwl-nav-group {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .rwl-nav-section-label {
+      font-size: 11px;
+      color: var(--text-light);
+      padding: 12px 8px 4px;
+      letter-spacing: 0.04em;
+    }
+    .rwl-nav-item {
+      all: unset;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 10px;
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      width: 100%;
+      box-sizing: border-box;
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.3;
+      position: relative;
+      transition: background 180ms ease, color 180ms ease;
+    }
+    .rwl-nav-item:hover { background: var(--gray-100, #f5f5f5); color: var(--text); }
+    .rwl-nav-item.active {
+      background: var(--gray-100, #f5f5f5);
+      color: var(--text);
+      font-weight: 500;
+    }
+    .rwl-nav-item.active::before {
+      content: '';
+      position: absolute;
+      left: -16px;
+      top: 6px;
+      bottom: 6px;
+      width: 2px;
+      background: var(--accent);
+      border-radius: 0 2px 2px 0;
+    }
+    .rwl-nav-text {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .rwl-nav-count {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-light);
+      font-weight: 400;
+    }
+    .rwl-nav-count:empty { display: none; }
+    .rwl-nav-dot {
+      display: inline-block;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      margin-left: 2px;
+    }
+    .rwl-nav-dot[hidden] { display: none; }
+
+    /* Footer */
+    .rwl-footer {
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-light, var(--border));
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .rwl-plus {
+      all: unset;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 10px 12px;
+      border: 1px solid var(--border-light, var(--border));
+      border-radius: 8px;
+      background: var(--surface);
+      cursor: pointer;
+      transition: border-color 160ms ease;
+    }
+    .rwl-plus:hover { border-color: var(--border); }
+    .rwl-plus-title {
+      color: var(--text);
+      font-weight: 500;
+      font-size: 12.5px;
+    }
+    .rwl-plus-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .rwl-profile {
+      all: unset;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      box-sizing: border-box;
+      transition: background 160ms ease;
+    }
+    .rwl-profile:hover { background: var(--gray-100, #f5f5f5); }
+    .rwl-profile.active { background: var(--gray-100, #f5f5f5); }
+    .rwl-profile-avatar {
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      border-radius: 5px;
+      background: #d6cfc4;
+      color: #4a4337;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+    .rwl-profile-text {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      line-height: 1.15;
+    }
+    .rwl-profile-name {
+      font-size: 13px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .rwl-profile-email {
+      font-size: 11px;
+      color: var(--text-light);
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .rwl-profile-email:empty { display: none; }
+
     /* ─── Panel 2: Filter side panel ───────────────────────── */
     .col-filter {
       grid-column: 2;

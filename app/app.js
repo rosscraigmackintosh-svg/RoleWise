@@ -25300,7 +25300,17 @@
     };
 
     // ─── Placeholder page renderer ────────────────────────────────────────────
-    const PLACEHOLDER_PAGES = {}; // recruiters is now a full view
+    // Sidebar v2 introduces nav items for views that do not have dedicated
+    // live pages yet. They render a calm placeholder rather than inventing
+    // page content. Each entry has a title and a one-line description.
+    const PLACEHOLDER_PAGES = {
+      applications_timeline: { title: 'Applications', description: 'Application history will appear here.' },
+      decisions:             { title: 'Decision history', description: 'A record of decisions you have made on roles.' },
+      insights:              { title: 'Insights', description: 'Patterns and observations from your job search.' },
+      patterns:              { title: 'Pattern history', description: 'Recurring patterns surfaced from your decisions over time.' },
+      documents:             { title: 'Documents', description: 'CVs, cover letters, and other documents related to your applications.' },
+      settings:              { title: 'Settings', description: 'Application preferences and account settings.' },
+    };
 
     // ─── Recruiter data ───────────────────────────────────────────────────────
 
@@ -30073,6 +30083,7 @@ If a field cannot be determined from the message, return null for that field.`,
       const el = document.getElementById('col-overview-cards');
       if (!el) return;
       el.classList.remove('col-ov--legacy-doc');
+      _updateNavCounts();
 
       const _all = allRoles || [];
 
@@ -30987,6 +30998,23 @@ If a field cannot be determined from the message, return null for that field.`,
           <p class="page-coming-soon">This page will be developed in a future update.</p>
         </div>`;
       document.getElementById('col-rail-section').innerHTML = ''; _setRailVisible(false);
+    }
+
+    // ─── Sidebar v2: count update from live data ─────────────────────────────
+    // Roles      = total roles in the user's pipeline (allRoles.length)
+    // Applications = roles with an _appliedDate set
+    // Recruiters = allRecruiters.length
+    // Counts are omitted (empty span) when the underlying source is unavailable.
+    function _updateNavCounts() {
+      const _set = (key, val) => {
+        document.querySelectorAll('[data-nav-count="' + key + '"]').forEach(el => {
+          el.textContent = (val == null) ? '' : String(val);
+        });
+      };
+      const _all = Array.isArray(allRoles) ? allRoles : null;
+      _set('roles',        _all ? _all.length                                 : null);
+      _set('applications', _all ? _all.filter(r => !!r._appliedDate).length    : null);
+      _set('recruiters',   Array.isArray(allRecruiters) ? allRecruiters.length : null);
     }
 
     // ─── List panel visibility ────────────────────────────────────────────────
@@ -32110,6 +32138,9 @@ If a field cannot be determined from the message, return null for that field.`,
 
         // Derive allRecruiters from the roles collection — roles are the source of truth
         allRecruiters = _deriveRecruitersFromRoles(allRoles, recruiterBase);
+
+        // Sidebar v2: refresh counts now that live data is loaded.
+        _updateNavCounts();
 
         // Hide list panel before rendering inbox to prevent flash on non-list views
         setListPanelVisible(currentNav === 'applications');
