@@ -55,35 +55,32 @@
       all: unset;
       display: inline-flex;
       align-items: center;
-      gap: 8px;
       cursor: pointer;
       padding: 0 8px;
       color: var(--text);
-      font-family: var(--font-head, var(--font));
-      font-weight: 500;
-      font-size: 15px;
-      letter-spacing: -0.01em;
+      line-height: 1;
+      transition: opacity 120ms ease;
     }
     .rwl-brand:hover { opacity: 0.85; }
-    .rwl-brand-mark {
-      width: 14px;
-      height: 14px;
-      background: var(--text);
-      border-radius: 3px;
-      position: relative;
-      flex-shrink: 0;
+    .rwl-brand-logo {
+      height: 18px;
+      width: auto;
+      display: block;
+      color: inherit;
     }
-    .rwl-brand-mark::after {
-      content: '';
-      position: absolute;
-      inset: 3px 3px auto auto;
-      width: 4px;
-      height: 4px;
-      background: var(--gray-50, #fafafa);
-      border-radius: 50%;
+    /* Fallback wordmark — only shown if the SVG fails to render */
+    .rwl-brand-fallback {
+      display: none;
+      font-family: var(--font-head, var(--font));
+      font-weight: 600;
+      font-size: 16px;
+      letter-spacing: -0.01em;
+      color: var(--text);
     }
+    .rwl-brand:not(:has(.rwl-brand-logo)) .rwl-brand-fallback { display: inline; }
+
     .rwl-tagline {
-      padding: 6px 8px 24px 30px;
+      padding: 8px 8px 24px;
       font-size: 12px;
       color: var(--text-light);
       letter-spacing: 0.005em;
