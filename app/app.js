@@ -1791,7 +1791,7 @@
 
     // ─── Filter panel state ───────────────────────────────────────────────────
     let filterPanelOpen   = false;
-    let listPanelVisible  = true;  // mirrors current setListPanelVisible state
+    let listPanelVisible  = false; // collapsed by default (legacy v1 inbox is gone). Recruiters re-enables.
     let rightPanelVisible = true;  // false on Radar, Recruiters, Review
     const filterState = {
       decision:   new Set(),  // 'awaiting' | 'apply' | 'save' | 'skip'

@@ -23,10 +23,13 @@
       -moz-osx-font-smoothing: grayscale;
     }
 
-    /* ─── Five-panel app shell: nav | filter | list | overview | chat ── */
+    /* ─── Five-panel app shell: nav | filter | list | overview | chat ──
+       List column defaults to 0px so non-Recruiters views never reserve
+       space for the legacy v1 role inbox before JS runs. Recruiters'
+       setListPanelVisible(true) expands it to 310px when needed. */
     .app {
       display: grid;
-      grid-template-columns: 254px 0px 310px 1fr; /* RW-LAYOUT-WIDTH-01: chat col removed — content fills full remaining width */
+      grid-template-columns: 254px 0px 0px 1fr;
       height: 100vh;
       overflow: hidden;
       transition: grid-template-columns 0.18s ease;
