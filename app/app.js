@@ -14435,59 +14435,107 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     }
 
     function _arDetectAsk(state) {
-      // Returns { key, label, question, choices: [...], skip } or null.
-      // Only surfaces a prompt when supported by real signals — falls back
-      // to null if no useful ambiguity exists.
-      const role = state.role || {};
-      const analysis = state.analysis || {};
+      // One Thing is a deferred-confidence pattern: isolate one consequential
+      // uncertainty rather than silently guessing or turning ingestion into a form.
+      //
+      // Supported buckets (evaluated by consequence, highest-ranked wins):
+      //   Disambiguate      — a classification that affects all future analysis
+      //   Flag fit conflict  — a definite Hard No that needs acknowledgement
+      //   Decide a default   — missing data that will affect tracking quality
+      //   Set initial state  — discovery context that should be recorded once
+      //
+      // Only the top-ranked candidate fires. Returns null when nothing qualifies.
+      // Do NOT use for: advice, AI opinions, weak patterns, or fields editable later.
 
-      // Recruiter-mediated → calm acknowledgement (no choices needed; just
-      // surfaces the context). Skipped when other ambiguities are stronger.
-      // Salary missing
-      if (!(role.salary_text_raw || '').trim()) {
-        return {
-          key: 'salary',
-          label: 'Salary not stated',
-          question: 'No salary listed — track anyway?',
-          choices: [
-            { k: 'track', label: 'Track anyway', primary: true },
-            { k: 'note',  label: 'Add a note',   primary: false },
-          ],
-          skip: 'Skip',
-        };
-      }
-      // Production coding hard_no
-      const hardNo = analysis?.hard_no?.signals
-        || analysis?.hard_no_signals
-        || (analysis?.hard_no?.summary ? [analysis.hard_no.summary] : []);
-      if (Array.isArray(hardNo) && hardNo.some(s => /production.{0,3}coding|live.{0,3}coding/i.test(typeof s === 'string' ? s : (s?.label || '')))) {
-        return {
-          key: 'production-coding',
-          label: 'Production coding mentioned',
-          question: 'Production coding required — keep reviewing?',
-          choices: [
-            { k: 'continue', label: 'Keep reviewing', primary: true },
-            { k: 'flag',     label: 'Flag as blocker', primary: false },
-          ],
-          skip: 'Skip',
-        };
-      }
-      // Unclear work model: missing, or contains "remote" + "office"/"on-site"
-      const wm = (role.work_model || '').toLowerCase();
-      const wmText = (role.location_text || '') + ' ' + (analysis?.practical_details?.work_model || '');
+      const role     = state.role     || {};
+      const analysis = state.analysis || {};
+      const pd       = analysis.practical_details || {};
+
+      const candidates = [];
+
+      // ── Disambiguate ────────────────────────────────────────────────────────
+      // Work model ambiguous: JD mentions both remote and office, but no clear
+      // classification was resolved. Misclassification affects every future filter.
+      const wm     = (role.work_model || '').toLowerCase();
+      const wmText = (role.location_text || '') + ' ' +
+                     (pd.work_model || '') + ' ' +
+                     (analysis.role_overview?.summary || '');
       if (!wm && /remote/i.test(wmText) && /(on.?site|office|hybrid)/i.test(wmText)) {
-        return {
-          key: 'work-model',
-          label: 'Work model unclear',
+        candidates.push({
+          priority: 7,
+          key:      'work-model',
+          label:    'Work model unclear',
           question: 'Mostly remote with occasional office — how should we track this?',
-          choices: [
+          choices:  [
             { k: 'remote', label: 'Remote', primary: true },
             { k: 'hybrid', label: 'Hybrid', primary: false },
           ],
           skip: 'Let Rolewise decide',
-        };
+        });
       }
-      return null;
+
+      // ── Flag fit conflict ────────────────────────────────────────────────────
+      // Production coding / live coding: a strong Hard No for most design roles.
+      // Surface it so the user acknowledges, rather than letting it sit silently.
+      const hardNoSignals = analysis?.hard_no?.signals
+        || analysis?.hard_no_signals
+        || (analysis?.hard_no?.summary ? [analysis.hard_no.summary] : []);
+      if (Array.isArray(hardNoSignals) &&
+          hardNoSignals.some(s => /production.{0,3}coding|live.{0,3}coding/i.test(
+            typeof s === 'string' ? s : (s?.label || '')
+          ))) {
+        candidates.push({
+          priority: 9,
+          key:      'production-coding',
+          label:    'Production coding mentioned',
+          question: 'This role requires production coding — keep reviewing?',
+          choices:  [
+            { k: 'continue', label: 'Keep reviewing',  primary: true },
+            { k: 'flag',     label: 'Flag as blocker', primary: false },
+          ],
+          skip: 'Dismiss',
+        });
+      }
+
+      // ── Decide a default ────────────────────────────────────────────────────
+      // Salary not stated: tracking will be permanently incomplete unless the
+      // user explicitly decides to proceed without it.
+      const salaryAnnual  = pd.salary_annual || '';
+      const salaryMissing = !(role.salary_text_raw || '').trim() &&
+        (!salaryAnnual || /not stated|not disclosed/i.test(salaryAnnual));
+      if (salaryMissing) {
+        candidates.push({
+          priority: 5,
+          key:      'salary',
+          label:    'Salary not stated',
+          question: 'No salary listed — track anyway?',
+          choices:  [
+            { k: 'track', label: 'Track anyway', primary: true },
+            { k: 'note',  label: 'Add a note',   primary: false },
+          ],
+          skip: 'Skip',
+        });
+      }
+
+      // ── Set initial state ────────────────────────────────────────────────────
+      // Recruiter outreach: role arrived via a recruiter message, not a direct
+      // application. Worth recording as active pipeline vs. passive tracking.
+      if (state.sourceKind === 'recruiter') {
+        candidates.push({
+          priority: 3,
+          key:      'recruiter-source',
+          label:    'Via recruiter',
+          question: 'This arrived via recruiter outreach — treat as active pipeline?',
+          choices:  [
+            { k: 'active',   label: 'Active pipeline', primary: true },
+            { k: 'tracking', label: 'Tracking only',   primary: false },
+          ],
+          skip: 'Skip',
+        });
+      }
+
+      candidates.sort((a, b) => b.priority - a.priority);
+      return candidates.length ? candidates[0] : null;
     }
 
     function _startArAnimator(overlay, opts) {
@@ -14563,7 +14611,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         const slot = document.getElementById('rw-ing-onething');
         if (!slot) return;
         slot.innerHTML =
-          '<span class="ar-ask-k">One thing</span>'
+          '<span class="ar-ask-k">ONE THING</span>'
           + '<span class="ar-ask-q">' + _esc(ask.question) + '</span>'
           + '<span class="ar-ask-choices">'
           +   ask.choices.map(c =>
