@@ -2356,6 +2356,15 @@
     }
 
     // Roles with these outcome_state values belong in Archive
+    // ─── Build label ──────────────────────────────────────────────────────────
+    // Single source of truth for the version block in the sidebar footer.
+    // Bump these when shipping a meaningful UI milestone.
+    const RW_BUILD = {
+      version: '0.8.5',
+      date:    '2026-05-06',
+      tag:     'weekly-review-v2',
+    };
+
     const ARCHIVE_OUTCOME_STATES = new Set(['rejected', 'skipped', 'withdrew', 'offer_accepted', 'closed', 'no_response', 'ghosted']);
     // Helper: is this role archived / terminal?
     const isArchivedRole = r => !!(r.archived || ARCHIVE_OUTCOME_STATES.has(r.outcome_state));
@@ -30999,8 +31008,361 @@ If a field cannot be determined from the message, return null for that field.`,
       });
     }
 
-    // ─── Review page ──────────────────────────────────────────────────────────
+    // ─── Weekly Review v2 ─────────────────────────────────────────────────────
+    // Weekly Review v2 is a reflective longitudinal view of recent hiring
+    // activity. It should surface movement and patterns without introducing
+    // judgement, scoring, coaching, or optimisation.
+    let _wrv2WeekIndex = 0; // 0 = current week, 1 = previous, …
+    const _WRV2_MAX_WEEKS_BACK = 11;
+
+    function _wrv2WeekRange(idx) {
+      const now = new Date();
+      const d   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      d.setDate(d.getDate() - idx * 7);
+      const dow = d.getDay(); // 0 = Sunday
+      const offsetToMon = (dow === 0) ? -6 : (1 - dow);
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() + offsetToMon);
+      const end   = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+      return { start, end };
+    }
+    function _wrv2FmtRange(start, end) {
+      // end is exclusive midnight; last = the Sunday before. Use calendar math
+      // (not ms subtraction) so DST transitions don't shift by an hour.
+      const last = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
+      const monthFull = (d) => d.toLocaleDateString('en-GB', { month: 'long' });
+      return `Mon ${start.getDate()} ${monthFull(start)} → Sun ${last.getDate()} ${monthFull(last)}`;
+    }
+    function _wrv2FmtLabel(start, end) {
+      const last = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
+      const monthShort = (d) => d.toLocaleDateString('en-GB', { month: 'short' });
+      if (start.getMonth() === last.getMonth()) {
+        return `Week of ${start.getDate()}–${last.getDate()} ${monthShort(start)}`;
+      }
+      return `Week of ${start.getDate()} ${monthShort(start)}–${last.getDate()} ${monthShort(last)}`;
+    }
+
     async function renderReviewView() {
+      const el = document.getElementById('col-overview-cards');
+      if (!el) return;
+      el.classList.remove('col-ov--legacy-doc'); // v2 pages scroll internally
+      _updateNavCounts();
+      const railSec = document.getElementById('col-rail-section');
+      if (railSec) railSec.innerHTML = '';
+      _setRailVisible(false);
+
+      // ── Active week ─────────────────────────────────────────────────────
+      const weekIndex = _wrv2WeekIndex;
+      const { start: wkStart, end: wkEnd } = _wrv2WeekRange(weekIndex);
+      const wkStartMs = wkStart.getTime();
+      const wkEndMs   = wkEnd.getTime();
+      const weekLabel = _wrv2FmtLabel(wkStart, wkEnd);
+      const weekRange = _wrv2FmtRange(wkStart, wkEnd);
+      const inWeek    = (d) => {
+        if (!d) return false;
+        const t = new Date(d).getTime();
+        return t >= wkStartMs && t < wkEndMs;
+      };
+
+      // ── Activity for this week ─────────────────────────────────────────
+      const _updatesInWeek = (r) => (r.role_updates || []).some(u => inWeek(u.created_at));
+      const rolesSeen = (allRoles || []).filter(r =>
+        inWeek(r.latest_match_at) || inWeek(r.created_at) || _updatesInWeek(r)
+      );
+      const rolesApplied = (allRoles || []).filter(r => inWeek(r._appliedDate));
+      const rolesSaved   = (allRoles || []).filter(r =>
+        r.user_decision === 'save' && (inWeek(r.created_at) || inWeek(r.latest_match_at))
+      );
+      const rolesSkipped = (allRoles || []).filter(r => {
+        const isSkip = r.user_decision === 'skip' || r.outcome_state === 'skipped';
+        if (!isSkip) return false;
+        return inWeek(r.outcome_at) || inWeek(r.created_at) || inWeek(r.latest_match_at);
+      });
+
+      const seenCount = rolesSeen.length;
+      const isEmpty   = seenCount === 0 && rolesApplied.length === 0
+        && rolesSaved.length === 0 && rolesSkipped.length === 0;
+
+      const activity = [
+        { k: 'Roles seen',    v: seenCount },
+        { k: 'Roles saved',   v: rolesSaved.length },
+        { k: 'Roles applied', v: rolesApplied.length },
+        { k: 'Roles skipped', v: rolesSkipped.length },
+      ];
+
+      // ── Market signals (observational, this week's listings) ───────────
+      const market = [];
+      if (seenCount >= 3) {
+        const wmBuckets = { remote: 0, hybrid: 0, onsite: 0 };
+        let wmKnown = 0;
+        rolesSeen.forEach(r => {
+          const wm = (r.work_model || r.latest_match_output?.practical_details?.remote_model || '').toLowerCase();
+          if (wm.includes('remote'))                                                    { wmBuckets.remote++; wmKnown++; }
+          else if (wm.includes('hybrid'))                                                { wmBuckets.hybrid++; wmKnown++; }
+          else if (wm.includes('on-site') || wm.includes('onsite') || wm.includes('on site')) { wmBuckets.onsite++; wmKnown++; }
+        });
+        if (wmKnown >= 3) {
+          const top = Object.entries(wmBuckets).sort((a, b) => b[1] - a[1])[0];
+          const ratio = top[1] / wmKnown;
+          const labels = { remote: 'remote-first', hybrid: 'hybrid', onsite: 'on-site' };
+          if (ratio >= 0.6)      market.push(`Most roles this week were ${labels[top[0]]}.`);
+          else if (ratio >= 0.4) market.push(`Several roles this week were ${labels[top[0]]}.`);
+        }
+
+        const sourceCounts = {};
+        rolesSeen.forEach(r => { if (r.source) sourceCounts[r.source] = (sourceCounts[r.source] || 0) + 1; });
+        const sourceTotal = Object.values(sourceCounts).reduce((a, b) => a + b, 0);
+        if (sourceTotal >= 3) {
+          const topSrc = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])[0];
+          if (topSrc[1] / sourceTotal >= 0.5) market.push(`Most listings came from ${topSrc[0]}.`);
+        }
+
+        if (seenCount >= 4) {
+          const salaryListed = rolesSeen.filter(r => (r.salary_text_raw || '').trim().length > 0).length;
+          const sRatio = salaryListed / seenCount;
+          if (sRatio <= 0.4)      market.push(`Only ${salaryListed} of ${seenCount} roles listed a salary range.`);
+          else if (sRatio >= 0.7) market.push('Most roles this week listed a salary range.');
+        }
+      }
+
+      // ── Friction (observational, restraint over volume) ────────────────
+      const friction = [];
+      if (seenCount >= 3) {
+        const _hardNoMatch = (r, re) => {
+          const fo = r.latest_match_output || {};
+          const sigs = (fo.hard_no?.signals) || (fo.hard_no_signals) || [];
+          if (Array.isArray(sigs) && sigs.some(s => re.test(typeof s === 'string' ? s : s?.label || ''))) return true;
+          if (re.test(fo.hard_no?.summary || '')) return true;
+          return false;
+        };
+
+        const prodCoding = rolesSeen.filter(r => _hardNoMatch(r, /production.{0,3}coding|live.{0,3}coding/i)).length;
+        if (prodCoding >= 1) {
+          friction.push(prodCoding === 1
+            ? 'A role required production coding in the take-home.'
+            : `${prodCoding} roles required production coding in the take-home.`);
+        }
+
+        const onSite = rolesSeen.filter(r => /on.?site|onsite|in.{0,3}office|3.{0,2}day|4.{0,2}day|5.{0,2}day/i.test(r.work_model || '')).length;
+        if (onSite >= 2 && onSite / seenCount >= 0.3) {
+          friction.push(`${onSite} role${onSite === 1 ? '' : 's'} required regular on-site presence.`);
+        }
+
+        const noSalary = rolesSeen.filter(r => !((r.salary_text_raw || '').trim().length > 0)).length;
+        if (noSalary >= 2 && noSalary / seenCount >= 0.5 && !market.some(m => /salary/i.test(m))) {
+          friction.push('Salary was often not stated.');
+        }
+      }
+
+      // ── Pipeline (current snapshot, not week-specific) ─────────────────
+      const _activeAll   = (allRoles || []).filter(r => !isArchivedRole(r));
+      const _appliedLive = _activeAll.filter(r => currentStageLabel(r) === 'Applied');
+      const _waitingResp = _appliedLive.filter(r => {
+        const rs = _appResponseStatus(r);
+        return rs && (rs.status === 'waiting' || rs.status === 'active');
+      }).length;
+      const _inProcess  = _activeAll.filter(r => _IN_PROGRESS_STAGES.has(currentStageLabel(r))).length;
+      const _interviews = _activeAll.filter(r => {
+        const s = currentStageLabel(r);
+        return s === 'Hiring Manager' || s === 'Panel' || s === 'Final';
+      }).length;
+      const _offers = _activeAll.filter(r => currentStageLabel(r) === 'Offer').length;
+      const _stale  = _appliedLive.filter(r => {
+        const rs = _appResponseStatus(r);
+        return rs && (rs.status === 'stale' || rs.status === 'ghosted');
+      }).length;
+
+      const pipeline = [
+        { k: 'Applied, awaiting response', v: _waitingResp },
+        { k: 'In process',                  v: _inProcess },
+        { k: 'Interviews scheduled',        v: _interviews },
+        { k: 'Offers',                      v: _offers },
+        { k: 'No response after 14 days',   v: _stale, tone: 'quiet' },
+      ];
+
+      // ── Noticing (observational comparisons, not advice) ───────────────
+      const lessons = [];
+      const _wmBucket = (r) => {
+        const wm = (r.work_model || '').toLowerCase();
+        if (wm.includes('remote')) return 'remote';
+        if (wm.includes('hybrid')) return 'hybrid';
+        if (wm.includes('onsite') || wm.includes('on-site') || wm.includes('on site')) return 'onsite';
+        return null;
+      };
+      if (rolesApplied.length >= 2) {
+        const _wmA = {};
+        rolesApplied.forEach(r => { const b = _wmBucket(r); if (b) _wmA[b] = (_wmA[b] || 0) + 1; });
+        const _topApp = Object.entries(_wmA).sort((a, b) => b[1] - a[1])[0];
+        if (_topApp && _topApp[1] >= 2 && _topApp[1] / rolesApplied.length >= 0.6) {
+          const labels = { remote: 'remote', hybrid: 'hybrid', onsite: 'on-site' };
+          lessons.push(`Most applied roles this week were ${labels[_topApp[0]]}.`);
+        }
+      }
+      if (rolesSkipped.length >= 2) {
+        const skippedNoSalary = rolesSkipped.filter(r => !((r.salary_text_raw || '').trim().length > 0)).length;
+        if (skippedNoSalary >= 2 && skippedNoSalary / rolesSkipped.length >= 0.6) {
+          lessons.push('Roles without a listed salary were skipped more consistently than those with one.');
+        }
+      }
+      if (rolesSaved.length > 0 && rolesApplied.length > 0 && rolesSaved.length > rolesApplied.length * 1.5) {
+        lessons.push('More roles were saved than applied to this week.');
+      } else if (rolesApplied.length >= 2 && rolesSaved.length === 0) {
+        lessons.push('This week was more about applying than saving.');
+      }
+      if (rolesApplied.length === 0 && rolesSaved.length === 0 && seenCount >= 3) {
+        lessons.push('Roles were reviewed but none were saved or applied to this week.');
+      }
+
+      // ── One reflective note for next week (calm, never prescriptive) ───
+      let nextAction = null;
+      if (seenCount >= 4) {
+        const noSalary = rolesSeen.filter(r => !((r.salary_text_raw || '').trim().length > 0)).length;
+        if (noSalary / seenCount >= 0.5) {
+          nextAction = {
+            verb: 'Prioritise',
+            text: 'roles with salary listed next week.',
+            note: 'Based on the strongest pattern from this week.',
+          };
+        }
+      }
+      if (!nextAction && _stale >= 1) {
+        nextAction = {
+          verb: 'Revisit',
+          text: `${_stale} application${_stale === 1 ? '' : 's'} with no response after 14 days.`,
+          note: 'A short check-in or close-out keeps the pipeline current.',
+        };
+      }
+      if (!nextAction && rolesSaved.length >= 2 && rolesApplied.length === 0) {
+        nextAction = {
+          verb: 'Revisit',
+          text: `${rolesSaved.length} saved role${rolesSaved.length === 1 ? '' : 's'} before they close.`,
+          note: 'Saved ≠ applied. A brief second look will help.',
+        };
+      }
+      if (!nextAction && !isEmpty) {
+        nextAction = {
+          verb: 'Continue',
+          text: 'reviewing roles in line with your stated preferences.',
+          note: 'No single pattern stood out strongly this week.',
+        };
+      }
+
+      // ── Render helpers ─────────────────────────────────────────────────
+      const _basedOn = seenCount > 0
+        ? `based on ${seenCount} role${seenCount === 1 ? '' : 's'} reviewed`
+        : '';
+
+      const _section = (num, label, dataKey, body) => `
+        <section class="rww-section" data-sec="${esc(dataKey)}">
+          <div class="rww-sec-label">
+            <span class="rww-sec-num">${esc(num)}</span>${esc(label)}
+          </div>
+          <div class="rww-sec-body">${body}</div>
+        </section>`;
+      const _activityHtml = (items) => `
+        <div class="rww-activity">
+          ${items.map(it => `
+            <div class="rww-act-item">
+              <span class="rww-act-v">${it.v}</span>
+              <span class="rww-act-k">${esc(it.k)}</span>
+            </div>`).join('')}
+        </div>`;
+      const _bulletsHtml = (items, variant) => `
+        <ul class="rww-bullets${variant === 'friction' ? ' rww-bullets--friction' : ''}">
+          ${items.map(t => `<li>${esc(t)}</li>`).join('')}
+        </ul>`;
+      const _pipelineHtml = (rows) => `
+        <div class="rww-pipe">
+          ${rows.map(r => `
+            <div class="rww-pipe-row${r.tone === 'quiet' ? ' rww-pipe-row--quiet' : ''}">
+              <span class="rww-pipe-k">${esc(r.k)}</span>
+              <span class="rww-pipe-v${r.v === 0 ? ' rww-pipe-v--zero' : ''}">${r.v === 0 ? '—' : r.v}</span>
+            </div>`).join('')}
+        </div>`;
+      const _lessonsHtml = (items) => `
+        <ul class="rww-lessons">
+          ${items.map(t => `<li>${esc(t)}</li>`).join('')}
+        </ul>`;
+
+      // ── Header ─────────────────────────────────────────────────────────
+      const canPrev = weekIndex < _WRV2_MAX_WEEKS_BACK;
+      const canNext = weekIndex > 0;
+      const headerHtml = `
+        <header class="rwa-header rww-head">
+          <div class="rww-head-l">
+            <div class="rww-eyebrow"><span class="rww-eyebrow-tick"></span>weekly ritual</div>
+            <h1 class="rwa-title">Weekly review</h1>
+            <p class="rwa-sub rww-sub">A quiet check-in with your job search — what happened, what you’re noticing, and one small thing to reflect on.</p>
+          </div>
+          <div class="rww-weekpick" role="group" aria-label="Choose week">
+            <button class="rww-weekpick-arrow" id="rww-prev" ${canPrev ? '' : 'disabled'} aria-label="Previous week">←</button>
+            <span class="rww-weekpick-label">${esc(weekLabel)}</span>
+            <button class="rww-weekpick-arrow" id="rww-next" ${canNext ? '' : 'disabled'} aria-label="Next week">→</button>
+          </div>
+        </header>`;
+
+      const contextHtml = `
+        <div class="rww-context">
+          <span class="rww-context-range">${esc(weekRange)}</span>
+          ${_basedOn ? `<span class="rww-context-dot"></span><span class="rww-context-meta">${esc(_basedOn)}</span>` : ''}
+        </div>`;
+
+      // ── Body ───────────────────────────────────────────────────────────
+      let bodyHtml;
+      if (isEmpty) {
+        bodyHtml = `
+          <div class="rww-empty">
+            <div class="rww-empty-mark"></div>
+            <div class="rww-empty-t">Not enough activity this week to form a useful review yet.</div>
+            <p class="rww-empty-s">Your review will appear here as you engage with roles.</p>
+            <div class="rww-empty-meta">${esc(weekRange.toLowerCase())}</div>
+          </div>`;
+      } else {
+        const sections = [];
+        sections.push(_section('01', 'this week', 'activity', _activityHtml(activity)));
+        if (market.length)   sections.push(_section('02', 'market signals', 'market', _bulletsHtml(market)));
+        if (friction.length) sections.push(_section('03', 'friction', 'friction', _bulletsHtml(friction, 'friction')));
+        sections.push(_section('04', 'pipeline', 'pipeline', _pipelineHtml(pipeline)));
+        if (lessons.length)  sections.push(_section('05', 'noticing', 'lessons', _lessonsHtml(lessons)));
+
+        const nextHtml = nextAction ? `
+          <aside class="rww-next" aria-label="Reflective note">
+            <div class="rww-next-eyebrow">
+              <span class="rww-next-pill">Next week</span>one small thing
+            </div>
+            <p class="rww-next-text"><span class="rww-next-verb">${esc(nextAction.verb)}</span> ${esc(nextAction.text)}</p>
+            <p class="rww-next-note">${esc(nextAction.note)}</p>
+          </aside>` : '';
+
+        const closeHtml = `
+          <div class="rww-close">
+            <div class="rww-close-l">A small weekly habit. Read it, then set aside.</div>
+            <div class="rww-close-r">end of review</div>
+          </div>`;
+
+        bodyHtml = `<div class="rww-sections">${sections.join('')}${nextHtml}${closeHtml}</div>`;
+      }
+
+      el.innerHTML = `
+        <div class="rwa-page rww-page">
+          <div class="rwa-page-inner rww-page-inner">
+            ${headerHtml}
+            <div class="rwo-divider"></div>
+            ${contextHtml}
+            ${bodyHtml}
+          </div>
+        </div>`;
+
+      // ── Wire week navigation ───────────────────────────────────────────
+      document.getElementById('rww-prev')?.addEventListener('click', () => {
+        if (canPrev) { _wrv2WeekIndex = weekIndex + 1; renderReviewView(); }
+      });
+      document.getElementById('rww-next')?.addEventListener('click', () => {
+        if (canNext) { _wrv2WeekIndex = weekIndex - 1; renderReviewView(); }
+      });
+    }
+
+    // ─── Legacy review (kept for compatibility — no longer routed) ────────────
+    async function _renderReviewViewLegacy() {
       const el = document.getElementById('col-overview-cards');
       el.classList.add('col-ov--legacy-doc'); // enable page-level scroll for review content
       const wr = allRoles; // use all roles
@@ -31756,6 +32118,17 @@ If a field cannot be determined from the message, return null for that field.`,
       navEl.innerHTML = html;
     }
 
+    // ─── Sidebar v2: build label ─────────────────────────────────────────────
+    // Quiet two-line block in the footer, sourced from RW_BUILD. Update RW_BUILD
+    // (top of file) — this renderer fans the change into the DOM.
+    function _renderBuildLabel() {
+      const el = document.getElementById('rwl-version');
+      if (!el) return;
+      el.innerHTML =
+        '<span class="rwl-version-line rwl-version-name">Rolewise v' + esc(RW_BUILD.version) + '</span>' +
+        '<span class="rwl-version-line rwl-version-meta">' + esc(RW_BUILD.date) + ' · ' + esc(RW_BUILD.tag) + '</span>';
+    }
+
     // ─── Sidebar v2: count update from live data ─────────────────────────────
     // Roles      = total roles in the user's pipeline (allRoles.length)
     // Applications = roles with an _appliedDate set
@@ -32028,6 +32401,7 @@ If a field cannot be determined from the message, return null for that field.`,
     // Render the structured nav from NAV_GROUPS, then bind click handlers
     // and sync the active state with currentNav.
     _renderSidebarNav();
+    _renderBuildLabel();
     _syncNavActive();
     document.getElementById('btn-logo').addEventListener('click', () => switchNav('overview'));
     document.querySelectorAll('.nav-item').forEach(btn => {

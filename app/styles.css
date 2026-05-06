@@ -188,6 +188,24 @@
       flex-direction: column;
       gap: 10px;
     }
+    /* Build label — quiet, mono, no badge styling. Two short lines. */
+    .rwl-version {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding: 0 12px 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.45;
+      color: var(--text-light);
+      letter-spacing: 0.01em;
+      user-select: none;
+    }
+    .rwl-version:empty { display: none; }
+    .rwl-version-line { display: block; }
+    .rwl-version-name { color: var(--text-muted); }
+    .rwl-version-meta { color: var(--text-light); }
+
     .rwl-plus {
       all: unset;
       display: flex;
@@ -17505,3 +17523,389 @@ a.rw-rail-contact-name:hover {
 /* ═══════════════════════════════════════════════════════════════════════════
    End RW-CMP-PANEL
    ═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Weekly Review v2 — editorial layout
+   Reuses .rwa-page / .rwa-page-inner / .rwa-header / .rwa-title / .rwa-sub
+   / .rwo-divider from the v2 system. The .rww-* class family scopes the
+   layout details unique to Weekly Review (eyebrow, week selector, context
+   strip, document-style sections, activity row, pipeline rows, reflective
+   note, close). Tone: calm, document-first, observational only.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.rww-page {
+  background: var(--bg);
+}
+.rww-page-inner { max-width: 880px; padding: 48px 48px 96px; }
+
+/* Header tweaks (sit on top of .rwa-header) */
+.rww-head { align-items: flex-end; }
+.rww-head-l { min-width: 0; }
+.rww-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-light);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  margin-bottom: 12px;
+}
+.rww-eyebrow-tick {
+  width: 8px; height: 1px;
+  background: var(--border);
+  display: inline-block;
+}
+.rww-sub { max-width: 52ch; line-height: 1.5; margin-top: 6px; }
+
+/* Week selector */
+.rww-weekpick {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.rww-weekpick-arrow {
+  border: none;
+  background: transparent;
+  width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  font-family: var(--font-mono);
+  transition: background 160ms ease, color 160ms ease;
+}
+.rww-weekpick-arrow:hover:not(:disabled) {
+  background: var(--gray-50, #fafafa);
+  color: var(--text);
+}
+.rww-weekpick-arrow:disabled {
+  color: var(--text-light);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.rww-weekpick-label {
+  padding: 0 14px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--text);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  border-left: 1px solid var(--border-light, var(--border));
+  border-right: 1px solid var(--border-light, var(--border));
+  white-space: nowrap;
+}
+
+/* Context strip */
+.rww-context {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  padding: 14px 0 0;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.rww-context-range {
+  font-size: 14px;
+  color: var(--text);
+  letter-spacing: -0.003em;
+}
+.rww-context-dot {
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: var(--border);
+  display: inline-block;
+}
+.rww-context-meta {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-light);
+  letter-spacing: 0.01em;
+}
+
+/* Sections — document-first, no cards */
+.rww-sections { margin-top: 28px; }
+.rww-section {
+  padding: 36px 0 0;
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 32px;
+  align-items: start;
+}
+.rww-section + .rww-section {
+  border-top: 1px solid var(--border-light, var(--border));
+  padding-top: 36px;
+  margin-top: 8px;
+}
+.rww-section:first-child { padding-top: 12px; }
+.rww-sec-label {
+  position: sticky;
+  top: 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-light);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  padding-top: 4px;
+  line-height: 1.5;
+}
+.rww-sec-num {
+  display: block;
+  color: var(--text-light);
+  opacity: 0.7;
+  margin-bottom: 2px;
+}
+.rww-sec-body { min-width: 0; }
+
+/* Activity row — calm numbers */
+.rww-activity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px 44px;
+}
+.rww-act-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rww-act-v {
+  font-family: var(--font-head, var(--font));
+  font-size: 30px;
+  color: var(--text);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.rww-act-k {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  letter-spacing: -0.003em;
+}
+
+/* Bullet lists (market / friction) */
+.rww-bullets {
+  margin: 0; padding: 0;
+  list-style: none;
+}
+.rww-bullets li {
+  padding: 9px 0;
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.55;
+  letter-spacing: -0.003em;
+  border-bottom: 1px dashed var(--border-light, var(--border));
+}
+.rww-bullets li:last-child { border-bottom: none; }
+.rww-bullets li::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--text-light);
+  opacity: 0.55;
+  display: inline-block;
+  align-self: center;
+  margin-top: 2px;
+}
+.rww-bullets--friction li::before {
+  background: var(--utility-orange-600, #e04f16);
+  opacity: 0.65;
+}
+
+/* Pipeline rows */
+.rww-pipe { display: flex; flex-direction: column; }
+.rww-pipe-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border-light, var(--border));
+  font-size: 13.5px;
+}
+.rww-pipe-row:last-child { border-bottom: none; }
+.rww-pipe-row--quiet { color: var(--text-muted); }
+.rww-pipe-k { color: var(--text); letter-spacing: -0.003em; }
+.rww-pipe-row--quiet .rww-pipe-k { color: var(--text-muted); }
+.rww-pipe-v {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.rww-pipe-row--quiet .rww-pipe-v { color: var(--text-muted); font-weight: 400; }
+.rww-pipe-v--zero { color: var(--text-light); font-weight: 400; }
+
+/* Lessons / noticing */
+.rww-lessons {
+  margin: 0; padding: 0;
+  list-style: none;
+  display: flex; flex-direction: column;
+  gap: 14px;
+}
+.rww-lessons li {
+  position: relative;
+  padding: 4px 0 4px 18px;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.55;
+  letter-spacing: -0.003em;
+}
+.rww-lessons li::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 12px;
+  width: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* One reflective note for next week */
+.rww-next {
+  margin-top: 56px;
+  padding: 32px 36px 34px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  position: relative;
+  overflow: hidden;
+}
+.rww-next::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+.rww-next-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-light);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  margin-bottom: 14px;
+}
+.rww-next-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.rww-next-text {
+  font-family: var(--font-head, var(--font));
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--text);
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+  margin: 0 0 14px;
+  max-width: 36ch;
+}
+.rww-next-verb {
+  color: var(--text);
+  font-weight: 500;
+}
+.rww-next-note {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  max-width: 52ch;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Close — soft signature */
+.rww-close {
+  margin-top: 44px;
+  padding-top: 24px;
+  border-top: 1px dashed var(--border-light, var(--border));
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+}
+.rww-close-l {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+  letter-spacing: -0.003em;
+  max-width: 48ch;
+}
+.rww-close-r {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-light);
+  letter-spacing: 0.02em;
+}
+
+/* Empty state */
+.rww-empty {
+  margin-top: 32px;
+  padding: 72px 40px 64px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: center;
+}
+.rww-empty-mark {
+  width: 24px; height: 1px;
+  background: var(--border);
+  margin: 0 auto 24px;
+}
+.rww-empty-t {
+  font-family: var(--font-head, var(--font));
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+.rww-empty-s {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  max-width: 46ch;
+  margin: 0 auto;
+  line-height: 1.55;
+}
+.rww-empty-meta {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px dashed var(--border-light, var(--border));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-light);
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+
+/* Responsive */
+@media (max-width: 920px) {
+  .rww-page-inner { padding: 32px 24px 64px; }
+  .rww-head { flex-direction: column; align-items: flex-start; gap: 16px; }
+  .rww-section { grid-template-columns: 1fr; gap: 10px; }
+  .rww-sec-label { position: static; }
+  .rww-activity { gap: 24px 32px; }
+  .rww-next { padding: 24px 24px 26px; }
+  .rww-next-text { font-size: 19px; }
+}
+
