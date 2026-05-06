@@ -30064,6 +30064,254 @@ If a field cannot be determined from the message, return null for that field.`,
       });
     }
 
+    // ─── Roles page (Roles v2) ────────────────────────────────────────────────
+    // Roles v2 uses a briefing archive model. Role cards are for orientation
+    // and follow-up, not performance tracking. Missing data should be omitted
+    // or rendered quietly, never invented.
+    let _rolesFilter = 'all';
+    function renderRolesView() {
+      const el = document.getElementById('col-overview-cards');
+      if (!el) return;
+      el.classList.remove('col-ov--legacy-doc');
+
+      const _all = allRoles || [];
+
+      // ── Helpers ──────────────────────────────────────────────────────────
+      const _fmtRel = (iso) => {
+        if (!iso) return '';
+        const ms = Date.now() - new Date(iso).getTime();
+        const mins = Math.floor(ms / 60000);
+        if (mins < 1)   return 'just now';
+        if (mins < 60)  return mins + 'm ago';
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24)   return hrs + 'h ago';
+        const days = Math.floor(hrs / 24);
+        if (days === 1) return 'Yesterday';
+        if (days < 7)   return days + 'd ago';
+        if (days < 30)  return Math.floor(days / 7) + 'w ago';
+        return Math.floor(days / 30) + 'mo ago';
+      };
+
+      // ── Filter / group predicates ────────────────────────────────────────
+      // "Saved" is the explicit user_decision === 'save' state (live model).
+      // Roles at JD Review with no decision yet appear only under "All" — the
+      // user must explicitly click Save to surface them in the Saved group.
+      const _isClosed       = r => isArchivedRole(r) || r.user_decision === 'skip';
+      const _isInProcess    = r => !_isClosed(r) && _IN_PROGRESS_STAGES.has(currentStageLabel(r));
+      const _isApplied      = r => !_isClosed(r) && !_isInProcess(r) && (r.user_decision === 'apply' || (!!r._appliedDate && currentStageLabel(r) === 'Applied'));
+      const _isSaved        = r => !_isClosed(r) && r.user_decision === 'save';
+      const _needsAttention = r => !_isClosed(r) && !!_roleNudge(r);
+
+      const _groups = [
+        { key: 'needs_attention', label: 'Needs attention', sub: 'No response, stalled, or closing soon', tone: 'risk',  match: _needsAttention },
+        { key: 'in_process',      label: 'In progress',     sub: 'Active interview stages',                tone: 'live',  match: _isInProcess    },
+        { key: 'applied',         label: 'Applied',         sub: 'Awaiting response',                       tone: 'live',  match: _isApplied      },
+        { key: 'saved',           label: 'Saved',           sub: 'Not applied yet',                         tone: 'blank', match: _isSaved        },
+        { key: 'closed',          label: 'Closed',          sub: 'Skipped or ended',                        tone: 'blank', match: _isClosed       },
+      ];
+      // Roles inside each group (deduplicated — Needs attention may overlap)
+      const _seenInGroup = new Set();
+      for (const g of _groups) {
+        g.roles = _all.filter(r => {
+          if (_seenInGroup.has(r.id)) return false;
+          if (g.match(r)) { _seenInGroup.add(r.id); return true; }
+          return false;
+        }).sort(roleSort);
+      }
+
+      // ── Filter pills ─────────────────────────────────────────────────────
+      const _byKey = k => _groups.find(g => g.key === k);
+      const _filters = [
+        { key: 'all',             label: 'All',             count: _all.length },
+        { key: 'needs_attention', label: 'Needs attention', count: _byKey('needs_attention').roles.length },
+        { key: 'in_process',      label: 'In process',      count: _byKey('in_process').roles.length },
+        { key: 'applied',         label: 'Applied',         count: _byKey('applied').roles.length },
+        { key: 'saved',           label: 'Saved',           count: _byKey('saved').roles.length },
+        { key: 'closed',          label: 'Closed',          count: _byKey('closed').roles.length },
+      ];
+
+      // ── Card rendering ───────────────────────────────────────────────────
+      const _renderCard = (role) => {
+        const _company  = sanitiseCompanyName(role.company_name) || 'Unknown';
+        const _title    = role.role_title || 'Untitled role';
+        const _stage    = currentStageLabel(role);
+        const _initials = _companyInitials(role.company_name);
+        const _logoIdx  = _companyColorIndex(_company);
+
+        const _metaParts = [];
+        if (role.location_text) _metaParts.push(esc(role.location_text));
+        if (role.work_model && role.work_model !== 'unknown') {
+          const wm = role.work_model.toLowerCase();
+          _metaParts.push(esc((wm === 'on-site' || wm === 'onsite') ? 'On-site' : wm.charAt(0).toUpperCase() + wm.slice(1)));
+        }
+        if (role.salary_text_raw) _metaParts.push(esc(role.salary_text_raw));
+        else if (currentStageLabel(role) === 'JD Review') _metaParts.push('<span class="rwr-meta-muted">Not stated</span>');
+        const _metaHtml = _metaParts.join('<span class="rwr-sep">·</span>');
+
+        // Chips — only from real signals, never invented
+        const _chips = [];
+        const _ars = _appResponseStatus(role);
+        if (_ars && (_ars.status === 'stale' || _ars.status === 'ghosted' || (_ars.status === 'waiting' && _ars.days >= 7))) {
+          _chips.push({ tone: 'risk', label: 'No response in ' + _ars.days + ' days' });
+        }
+        if (!role.salary_text_raw && !_isClosed(role)) {
+          _chips.push({ tone: 'risk', label: 'Salary not stated' });
+        }
+
+        // Right-side stage column
+        const _stageDot = _isClosed(role) ? 'blank'
+                        : (_isInProcess(role) || _isApplied(role) || _isSaved(role)) ? 'live'
+                        : 'blank';
+        let _stageMeta = '';
+        if (_isClosed(role)) {
+          if (role.outcome_state === 'rejected')      _stageMeta = 'Process ended';
+          else if (role.outcome_state === 'no_response') _stageMeta = 'No response';
+          else if (role.outcome_state === 'ghosted')  _stageMeta = 'Ghosted';
+          else if (role.outcome_state === 'withdrew') _stageMeta = 'Withdrawn';
+          else if (role.outcome_state === 'offer_accepted') _stageMeta = 'Offer accepted';
+          else if (role.outcome_state === 'closed')   _stageMeta = 'Role closed';
+          else if (role.user_decision === 'skip')     _stageMeta = role.outcome_reason ? 'Reason: ' + role.outcome_reason : 'Skipped';
+        } else if (_ars) {
+          if (_ars.status === 'active') _stageMeta = 'Response received';
+          else if (_ars.days != null) _stageMeta = 'No response · ' + _ars.days + ' days';
+        }
+        const _lastUpdIso = role.role_updates?.[0]?.created_at || role.created_at;
+        const _timeAgo = _fmtRel(_lastUpdIso);
+
+        const _decision = role.user_decision;
+        const _btn = (act, label) => `<button data-rwr-action="${act}" type="button">${label}</button>`;
+
+        return `
+          <div class="rwr-card" data-role-id="${esc(role.id)}">
+            <div class="rwr-card-logo rwr-logo-${_logoIdx}">${esc(_initials)}</div>
+            <div class="rwr-card-body">
+              <div class="rwr-card-title-row">
+                <span class="rwr-card-title">${esc(_title)}</span>
+                <span class="rwr-card-company">${esc(_company)}</span>
+              </div>
+              ${_metaHtml ? `<div class="rwr-card-meta">${_metaHtml}</div>` : ''}
+              ${_chips.length ? `
+                <div class="rwr-card-chips">
+                  ${_chips.map(c => `<span class="rwr-chip ${c.tone === 'risk' ? 'rwr-chip--risk' : ''}">${c.tone === 'risk' ? '<span class="rwo-dot rwo-dot--risk"></span>' : ''}${esc(c.label)}</span>`).join('')}
+                </div>` : ''}
+            </div>
+            <div class="rwr-card-stage">
+              <div class="rwr-card-stage-name"><span class="rwo-dot rwo-dot--${_stageDot}"></span>${esc(_stage)}</div>
+              ${_stageMeta ? `<div class="rwr-card-stage-meta">${esc(_stageMeta)}</div>` : ''}
+              ${_timeAgo ? `<div class="rwr-card-stage-time">${esc(_timeAgo)}</div>` : ''}
+            </div>
+            <div class="rwr-card-actions" role="group" aria-label="Role actions">
+              ${_decision !== 'apply' ? _btn('apply', 'Apply') : ''}
+              ${_decision !== 'save'  ? _btn('save',  'Save')  : ''}
+              ${_decision !== 'skip'  ? _btn('skip',  'Skip')  : ''}
+              ${_btn('more', '⋯')}
+            </div>
+          </div>`;
+      };
+
+      const _renderGroup = (g, opts = {}) => {
+        const showWhenEmpty = opts.showWhenEmpty || false;
+        if (!g.roles.length && !showWhenEmpty) return '';
+        const _emptyText = g.key === 'saved' ? 'No saved roles yet.' : 'Nothing here yet.';
+        return `
+          <section class="rwr-group">
+            <div class="rwr-group-head">
+              <div class="rwr-group-title">
+                <span class="rwo-dot rwo-dot--${g.tone}"></span>${esc(g.label)}<span class="rwr-group-count">${g.roles.length}</span>
+              </div>
+              <span class="rwr-group-sub">${esc(g.sub)}</span>
+            </div>
+            ${g.roles.length
+              ? `<div class="rwr-group-list">${g.roles.map(_renderCard).join('')}</div>`
+              : `<div class="rwr-group-empty">${_emptyText}</div>`}
+          </section>`;
+      };
+
+      // Body — all groups when filter='all'; single matching group otherwise.
+      let _bodyHtml = '';
+      if (!_all.length) {
+        _bodyHtml = '<div class="rwr-empty">No roles yet. Click <span class="rwr-empty-action">+ Add role</span> to begin.</div>';
+      } else if (_rolesFilter === 'all') {
+        _bodyHtml = _groups.map(g => _renderGroup(g, { showWhenEmpty: g.key === 'saved' && g.roles.length === 0 })).join('');
+      } else {
+        const g = _byKey(_rolesFilter);
+        _bodyHtml = g ? _renderGroup(g, { showWhenEmpty: true }) : '';
+      }
+
+      // ── Render ───────────────────────────────────────────────────────────
+      el.innerHTML = `
+        <div class="rwr-page">
+          <div class="rwr-page-inner">
+            <header class="rwr-header">
+              <div>
+                <h1 class="rwr-title">Roles</h1>
+                <p class="rwr-sub">${_all.length} ${_all.length === 1 ? 'role' : 'roles'} in your pipeline</p>
+              </div>
+              <div class="rwr-header-actions">
+                <button class="rwo-btn rwo-btn--primary" data-rwr-add type="button"><span class="rwo-plus" aria-hidden="true"></span>Add role</button>
+              </div>
+            </header>
+            <div class="rwo-divider"></div>
+            <div class="rwr-toolbar">
+              <div class="rwr-filters" role="tablist">
+                ${_filters.map(f => `
+                  <button class="rwr-filter ${_rolesFilter === f.key ? 'rwr-filter--active' : ''}" data-rwr-filter="${esc(f.key)}" role="tab" aria-selected="${_rolesFilter === f.key}" type="button">
+                    <span>${esc(f.label)}</span>
+                    <span class="rwr-filter-count">${f.count}</span>
+                  </button>
+                `).join('')}
+              </div>
+              <div class="rwr-sort">Sorted by <span class="rwr-sort-key">most recently updated</span></div>
+            </div>
+            <div class="rwr-body">${_bodyHtml}</div>
+          </div>
+        </div>`;
+
+      // ── Wiring ───────────────────────────────────────────────────────────
+      el.querySelectorAll('[data-rwr-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _rolesFilter = btn.dataset.rwrFilter;
+          renderRolesView();
+        });
+      });
+      el.querySelectorAll('[data-rwr-add]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (typeof openIngestionOverlay === 'function') openIngestionOverlay({ context: 'add' });
+        });
+      });
+      // Card click → open role analysis (existing flow). Restore the inbox so
+      // selectRole can manage its active state and keyboard navigation.
+      el.querySelectorAll('.rwr-card').forEach(card => {
+        card.addEventListener('click', e => {
+          if (e.target.closest('[data-rwr-action]')) return;
+          const id = card.dataset.roleId;
+          if (!id) return;
+          setListPanelVisible(true);
+          renderInbox(allRoles);
+          selectRole(id, { scrollIntoView: true });
+        });
+      });
+      // Hover action → existing decision handler. Stop propagation so the card
+      // click does not also fire.
+      el.querySelectorAll('[data-rwr-action]').forEach(btn => {
+        btn.addEventListener('click', async e => {
+          e.stopPropagation();
+          const card = btn.closest('.rwr-card');
+          const id = card?.dataset.roleId;
+          if (!id) return;
+          const role = allRoles.find(r => r.id === id);
+          if (!role) return;
+          const action = btn.dataset.rwrAction;
+          if (action === 'apply' || action === 'save' || action === 'skip') {
+            await _setUserDecision(role, action);
+            renderRolesView();
+          }
+          // 'more' is intentionally a no-op for this commit — the visual slot
+          // is preserved without inventing new state.
+        });
+      });
+    }
+
     // ─── Review page ──────────────────────────────────────────────────────────
     async function renderReviewView() {
       const el = document.getElementById('col-overview-cards');
@@ -30797,18 +31045,19 @@ If a field cannot be determined from the message, return null for that field.`,
       }
 
       // ── Applications nav ──────────────────────────────────────────────────────
+      // Clicking Applications always returns to the Roles v2 briefing — full
+      // width, narrow inbox hidden. To open a role, the user clicks a card,
+      // which restores the inbox + workspace split via selectRole.
       if (view === 'applications') {
         // Restore app sub-panel if recruiter view was active
         const _appPanel = document.getElementById('app-list-panel');
         const _rcPanel  = document.getElementById('rc-list-panel-wrapper');
         if (_appPanel) _appPanel.style.display = 'flex';
         if (_rcPanel)  _rcPanel.style.display = 'none';
-        renderInbox(allRoles);
-        if (!selectedRoleId) {
-          document.getElementById('col-overview-cards').innerHTML =
-            `<div class="doc-empty">${NAV_EMPTY_STATES['applications']}</div>`;
-          _resetChatPanel();
-        }
+        selectedRoleId = null;
+        setListPanelVisible(false);
+        renderRolesView();
+        _resetChatPanel();
         return;
       }
 

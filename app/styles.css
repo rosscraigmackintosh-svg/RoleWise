@@ -944,6 +944,322 @@
       max-width: 560px;
     }
 
+    /* ─── Roles page (Roles v2 — briefing archive) ─────────────────────────── */
+    /* Briefing archive model. Cards orient and follow up; they don't track
+       performance. Missing data is omitted, never invented. */
+    .rwr-page {
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      font-family: var(--font);
+      color: var(--text);
+    }
+    .rwr-page-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 48px 80px;
+    }
+
+    /* Header */
+    .rwr-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin: 0 0 20px;
+    }
+    .rwr-title {
+      font-family: var(--font-head, var(--font));
+      font-size: 28px;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--text);
+      margin: 0 0 4px;
+    }
+    .rwr-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin: 0;
+    }
+    .rwr-header-actions { display: flex; gap: 8px; align-items: center; }
+
+    /* Toolbar — filter pills + sort label */
+    .rwr-toolbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin: 0 0 16px;
+      flex-wrap: wrap;
+    }
+    .rwr-filters {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border-bottom: 1px solid var(--border-light, var(--border));
+      flex-wrap: wrap;
+    }
+    .rwr-filter {
+      all: unset;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px 12px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--text-muted);
+      position: relative;
+      transition: color 160ms ease;
+    }
+    .rwr-filter:hover { color: var(--text); }
+    .rwr-filter--active { color: var(--text); font-weight: 500; }
+    .rwr-filter--active::after {
+      content: '';
+      position: absolute;
+      left: 8px; right: 8px; bottom: -1px;
+      height: 2px;
+      background: var(--accent);
+    }
+    .rwr-filter-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 4px;
+      background: var(--gray-100, #f5f5f5);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0;
+    }
+    .rwr-filter--active .rwr-filter-count {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .rwr-sort {
+      font-size: 12px;
+      color: var(--text-light);
+      padding-bottom: 12px;
+    }
+    .rwr-sort-key { color: var(--text-muted); }
+
+    /* Body wrap */
+    .rwr-body { margin-top: 24px; }
+    .rwr-empty {
+      padding: 48px 0;
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .rwr-empty-action { color: var(--text); font-weight: 500; }
+
+    /* Group section */
+    .rwr-group { margin-bottom: 36px; }
+    .rwr-group:last-child { margin-bottom: 0; }
+    .rwr-group-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin: 0 0 12px;
+    }
+    .rwr-group-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .rwr-group-count {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-light);
+      margin-left: 4px;
+    }
+    .rwr-group-sub {
+      font-size: 12px;
+      color: var(--text-light);
+    }
+    .rwr-group-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .rwr-group-empty {
+      padding: 20px 24px;
+      border: 1px dashed var(--border-light, var(--border));
+      border-radius: 12px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* Role card */
+    .rwr-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      gap: 16px;
+      padding: 18px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border-light, var(--border));
+      border-radius: 12px;
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease;
+    }
+    .rwr-card:hover { border-color: var(--border); background: var(--gray-25, #fdfdfd); }
+    .rwr-card-logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+      align-self: flex-start;
+      margin-top: 1px;
+    }
+    /* Reuse the colour palette from the Overview activity rows */
+    .rwr-logo-0 { background: #e7e0d6; color: #4a4337; }
+    .rwr-logo-1 { background: #dde7d6; color: #36433a; }
+    .rwr-logo-2 { background: #d6dee7; color: #364150; }
+    .rwr-logo-3 { background: #ded6e7; color: #44364f; }
+    .rwr-logo-4 { background: #e7d6d6; color: #503737; }
+    .rwr-logo-5 { background: #d6e7e3; color: #364c47; }
+
+    .rwr-card-body { min-width: 0; }
+    .rwr-card-title-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .rwr-card-title {
+      font-size: 14.5px;
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: -0.005em;
+    }
+    .rwr-card-company {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .rwr-card-meta {
+      font-size: 12.5px;
+      color: var(--text-light);
+      margin-top: 4px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-family: var(--font-mono);
+    }
+    .rwr-card-meta > span,
+    .rwr-card-meta > .rwr-meta-muted { display: inline-flex; align-items: center; }
+    .rwr-meta-muted { color: var(--text-light); font-style: italic; }
+    .rwr-sep { color: var(--border); }
+
+    .rwr-card-chips {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .rwr-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+      padding: 3px 9px;
+      border-radius: 4px;
+      border: 1px solid var(--border-light, var(--border));
+      background: var(--gray-50, #fafafa);
+      color: var(--text-muted);
+      font-size: 11.5px;
+      font-family: var(--font-mono);
+      letter-spacing: 0;
+    }
+    .rwr-chip--risk {
+      border-color: oklch(85% 0.04 40);
+      background: oklch(97% 0.015 40);
+      color: oklch(38% 0.07 40);
+    }
+    .rwr-chip--risk .rwo-dot--risk { margin-right: 6px; }
+
+    /* Right-side stage column */
+    .rwr-card-stage {
+      text-align: right;
+      align-self: flex-start;
+      min-width: 140px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .rwr-card-stage-name {
+      font-size: 13px;
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .rwr-card-stage-meta {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-light);
+      margin-top: 4px;
+    }
+    .rwr-card-stage-time {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-light);
+      margin-top: 6px;
+      opacity: 0.85;
+    }
+
+    /* Hover actions — small floating panel on the right */
+    .rwr-card-actions {
+      position: absolute;
+      top: 50%;
+      right: 16px;
+      transform: translateY(-50%);
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border-light, var(--border));
+      border-radius: 8px;
+      box-shadow: 0 2px 12px oklch(20% 0.01 80 / 0.06);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 140ms ease;
+    }
+    .rwr-card:hover .rwr-card-actions {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .rwr-card-actions button {
+      all: unset;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12.5px;
+      color: var(--text);
+      padding: 4px 10px;
+      border-radius: 4px;
+      transition: background 120ms ease, color 120ms ease;
+    }
+    .rwr-card-actions button:hover { background: var(--gray-50, #fafafa); }
+    .rwr-card-actions button + button {
+      border-left: 1px solid var(--border-light, var(--border));
+    }
+    .rwr-card-actions button[data-rwr-action="more"] {
+      color: var(--text-muted);
+      font-size: 14px;
+      padding: 4px 8px;
+    }
+
     .review-section {
       margin-bottom: 40px;
     }
