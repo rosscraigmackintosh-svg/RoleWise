@@ -13824,12 +13824,26 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           }
         }
 
+        // ── Track source kind for the v2 completed-reading sequence ──────────
+        // Defaults to "pasted text"; overridden below when a URL is detected
+        // or when the pasted body looks like a recruiter outreach message.
+        overlay._ingSourceKind  = 'text';
+        overlay._ingSourceLabel = 'pasted text';
+        if (!url && text) {
+          if (/^\s*hi\s+[A-Z][a-z]+\b|recruiter|reaching out|came across your|talent partner|talentforge|hopping on a call/i.test(text)) {
+            overlay._ingSourceKind  = 'recruiter';
+            overlay._ingSourceLabel = 'recruiter message';
+          }
+        }
+
         // ── If a URL was provided, attempt to fetch the JD content first ──────
         // Uses the multi-board router: LinkedIn stays wrapped as-is; Workable,
         // Greenhouse, Lever, Ashby and generic URLs all go through enrich-role.
         let _fetchedMeta = null; // { company, title, location, _sourceMeta? }
         if (url) {
           const _cls = _classifyJdUrl(url);
+          overlay._ingSourceKind  = 'url';
+          overlay._ingSourceLabel = _cls.source_label || 'link';
           _addLine(`Fetching job description from ${_cls.source_label}\u2026`);
           console.log('[url-ingest] Starting fetch for URL:', url, '| source_type:', _cls.source_type);
 
@@ -14114,9 +14128,85 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // is instant. The legacy context-typing branches are dead code in v2
       // (the Q1/Q2/Q3 inputs are hidden) but the path stays correct: if a
       // future flow re-enables them, _ingFinalize is still the single exit.
+      //
+      // Replace the sparse in-flight trace (the legacy 3-line _ANALYSIS_STAGES
+      // pipeline, often cut short when analysis returns fast) with a complete
+      // factual reading narrative built from real extracted data, so the user
+      // sees the full understanding flow instead of a stalled partial trace.
+      _renderCompletedReadingSequence(linesEl, {
+        role:        savedRole,
+        analysis:    analysis,
+        sourceKind:  overlay._ingSourceKind  || 'text',
+        sourceLabel: overlay._ingSourceLabel || 'pasted text',
+      });
       _populateExtractedFields(overlay, savedRole, analysis);
-      _showAddRoleReadyState(overlay, savedRole);
+      _showAddRoleReadyState(overlay, savedRole, analysis);
       overlay._ingFinalize = _doFadeOut;
+    }
+
+    // ─── Add Role v2: completed reading sequence ─────────────────────────────
+    // The legacy pipeline only schedules 2-3 staggered progress lines, and
+    // _lineTimers.forEach(clearTimeout) cancels any remaining ones the moment
+    // the API resolves — which leaves a stalled-looking partial trace whenever
+    // analysis returns faster than the timers can fire. v2 fixes this by
+    // replacing the entire #rw-ing-progress-lines content with a complete,
+    // factual reading narrative built from what was actually extracted, so
+    // the user sees the full understanding flow on completion.
+    function _renderCompletedReadingSequence(linesEl, opts) {
+      if (!linesEl) return;
+      const _esc = (typeof esc === 'function') ? esc : (s) => String(s ?? '');
+      const role = opts?.role || {};
+      const sourceLabel = opts?.sourceLabel || 'pasted text';
+      const sourceKind  = opts?.sourceKind  || 'text'; // 'url' | 'text' | 'recruiter'
+      const analysis    = opts?.analysis || {};
+
+      const _wmLabel = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' };
+      const _capitalise = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
+      const _title    = role.role_title || analysis._roleTitle || null;
+      const _company  = (typeof sanitiseCompanyName === 'function'
+        ? sanitiseCompanyName(role.company_name)
+        : role.company_name) || null;
+      const _location = role.location_text || null;
+      const _wmRaw    = (role.work_model || '').toLowerCase();
+      const _wm       = _wmRaw ? (_wmLabel[_wmRaw] || _capitalise(_wmRaw)) : null;
+      const _salary   = (role.salary_text_raw || '').trim() || null;
+      const _seniority = analysis?.role_archetype?.primary
+        || analysis?.what_they_are_really_looking_for?.seniority
+        || null;
+      const _industry = analysis?.role_archetype?.industry
+        || analysis?.practical_details?.industry
+        || null;
+
+      const lines = [];
+      lines.push({ t: 'Reading role…' });
+      if (sourceKind === 'url')           lines.push({ t: 'Recognised link source — ' + sourceLabel });
+      else if (sourceKind === 'recruiter') lines.push({ t: 'Recognised recruiter message' });
+      else                                 lines.push({ t: 'Recognised pasted text' });
+      if (_title)   lines.push({ t: 'Found title — ' + _title });
+      if (_company) lines.push({ t: 'Found company — ' + _company });
+      if (_location || _salary || _wm) {
+        lines.push({ t: 'Extracting location and salary…' });
+        // Compose the salary line with location only — the work model has its
+        // own row in the Extracted panel and gets repeated otherwise (e.g.
+        // "Remote (EU hours) · Remote"). If we have only a work model and no
+        // location, fall back to the work model so the line still says
+        // something useful.
+        const _locStr = _location || _wm || '';
+        if (_salary && _locStr)      lines.push({ t: 'Salary — ' + _salary + ' · ' + _locStr });
+        else if (_salary)            lines.push({ t: 'Salary — ' + _salary });
+        else if (_locStr)            lines.push({ t: 'Salary not stated · ' + _locStr });
+        else                          lines.push({ t: 'Salary not stated' });
+      }
+      lines.push({ t: 'Identifying key requirements…' });
+      if (_seniority) lines.push({ t: 'Seniority reads as ' + _seniority });
+      if (_industry)  lines.push({ t: 'Industry — ' + _industry });
+      lines.push({ t: 'Understanding requirements…' });
+      lines.push({ t: 'Ready — opening role overview' });
+
+      linesEl.innerHTML = lines.map(l =>
+        '<div class="rw-ing-progress-line rw-ing-progress-line--done">' + _esc(l.t) + '</div>'
+      ).join('');
     }
 
     // ─── Add Role v2: extracted fields + Ready state helpers ──────────────────
@@ -14199,16 +14289,21 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       if (streamLabel) streamLabel.textContent = 'read';
     }
 
-    function _showAddRoleReadyState(overlay, role) {
+    function _showAddRoleReadyState(overlay, role, analysis) {
       const readyEl    = document.getElementById('rw-ing-ready');
       const readyLabel = document.getElementById('rw-ing-ready-label');
       if (!readyEl) return;
       if (readyLabel) {
         const _esc = (typeof esc === 'function') ? esc : (s) => String(s ?? '');
-        const t = role?.role_title || 'this role';
+        // Mirror _populateExtractedFields: prefer the saved role's title/
+        // company, then fall back to analysis output. This avoids "this role"
+        // when the LLM extracted a title but the role record hasn't been
+        // patched yet.
+        const t = role?.role_title || (analysis && analysis._roleTitle) || 'this role';
+        const _rawC = role?.company_name || (analysis && analysis._company) || '';
         const c = (typeof sanitiseCompanyName === 'function'
-          ? sanitiseCompanyName(role?.company_name)
-          : role?.company_name) || '';
+          ? sanitiseCompanyName(_rawC)
+          : _rawC) || '';
         readyLabel.innerHTML = c
           ? _esc(t) + ' · ' + _esc(c) + ' — ready to open.'
           : _esc(t) + ' — ready to open.';
