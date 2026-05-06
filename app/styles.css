@@ -19002,3 +19002,412 @@ a.rw-rail-contact-name:hover {
   .ar-overlay .ar-ask-choices { grid-column: 1 / -1; justify-self: end; }
   .ar-overlay .ar-continue { flex-direction: column; align-items: flex-start; }
 }
+
+/* ── Analysis v2 — document-first role briefing ─────────────────────────────
+   Analysis v2 is a document-first role briefing. It should help the user
+   understand the role and update state without becoming a dashboard,
+   scorecard, or ATS detail view.
+   Namespace: ra-*  ───────────────────────────────────────────────────────── */
+
+.ra-page {
+  padding: 48px 56px 96px;
+  max-width: 1200px;
+  margin: 0 auto;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+/* Top bar */
+.ra-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 28px;
+}
+.ra-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: inherit;
+  letter-spacing: -0.003em;
+  padding: 4px 8px 4px 0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+.ra-back:hover { color: var(--text); }
+.ra-back-arrow {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+  color: var(--text-light);
+}
+
+/* Two-column layout */
+.ra-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 64px;
+  align-items: start;
+}
+
+/* ── Article header ── */
+.ra-header {
+  padding: 8px 0 32px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 36px;
+}
+.ra-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-light);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  margin-bottom: 16px;
+}
+.ra-eyebrow-tick {
+  width: 8px;
+  height: 1px;
+  background: var(--border-strong, var(--border));
+  display: inline-block;
+}
+.ra-title {
+  margin: 0 0 10px;
+  font-size: 32px;
+  font-weight: 400;
+  color: var(--text);
+  letter-spacing: -0.022em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+.ra-title .ra-co {
+  color: var(--text-muted);
+  font-weight: 300;
+}
+.ra-title .ra-dot {
+  color: var(--text-light);
+  margin: 0 10px;
+  font-weight: 300;
+}
+.ra-meta {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.005em;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ra-meta-sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--border-strong, var(--border));
+  display: inline-block;
+}
+
+/* ── Sections ── */
+.ra-section { padding: 32px 0; }
+.ra-section + .ra-section { border-top: 1px dashed var(--border); }
+.ra-section:first-of-type { padding-top: 0; }
+
+.ra-sec-label {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.ra-sec-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-light);
+  letter-spacing: 0.04em;
+  min-width: 28px;
+}
+.ra-sec-title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Section 1 lede — large serif-weight statement */
+.ra-lede {
+  font-size: 24px;
+  line-height: 1.35;
+  color: var(--text);
+  letter-spacing: -0.015em;
+  font-weight: 400;
+  margin: 0;
+  max-width: 36ch;
+  text-wrap: pretty;
+}
+
+/* Prose paragraphs */
+.ra-p {
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--text);
+  letter-spacing: -0.005em;
+  margin: 0 0 12px;
+  max-width: 62ch;
+  text-wrap: pretty;
+}
+.ra-p:last-child { margin-bottom: 0; }
+
+.ra-note {
+  font-size: 12px;
+  color: var(--text-light);
+  font-style: italic;
+  letter-spacing: -0.003em;
+  margin: 12px 0 0;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  max-width: 52ch;
+  text-wrap: pretty;
+}
+
+/* Arrow bullet list */
+.ra-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 62ch;
+}
+.ra-list li {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text);
+  letter-spacing: -0.004em;
+  padding-left: 24px;
+  position: relative;
+  text-wrap: pretty;
+}
+.ra-list li::before {
+  content: '→';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--text-light);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+/* Questions variant */
+.ra-list.ra-list--questions li { color: var(--text); }
+.ra-list.ra-list--questions li::before {
+  content: '?';
+  color: var(--text-light);
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* Suggested actions */
+.ra-actions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ra-actions-list li {
+  padding: 13px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 14.5px;
+  color: var(--text);
+  letter-spacing: -0.004em;
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 12px;
+  align-items: baseline;
+  text-wrap: pretty;
+}
+.ra-actions-list li:first-child { padding-top: 4px; }
+.ra-actions-list li:last-child { border-bottom: none; }
+.ra-actions-list .ra-act-idx {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-light);
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+}
+.ra-actions-list .ra-act-do { font-weight: 500; color: var(--text); }
+.ra-actions-list .ra-act-q {
+  color: var(--text-muted);
+  font-size: 13.5px;
+  margin-left: 6px;
+}
+
+/* Article close mark */
+.ra-close {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+}
+.ra-close-l {
+  font-size: 12px;
+  color: var(--text-light);
+  font-style: italic;
+  letter-spacing: -0.003em;
+  max-width: 52ch;
+  text-wrap: pretty;
+}
+.ra-close-r {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-light);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* ── Right rail ── */
+.ra-side {
+  position: sticky;
+  top: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.ra-block {
+  padding: 22px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ra-block:first-child { padding-top: 0; }
+.ra-block:last-child { border-bottom: none; }
+.ra-block-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-light);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ra-block-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Stage tracker inside rail block — strip its own padding/border */
+.ra-block .rw-stage-tracker { padding: 0; border: none; background: none; }
+.ra-block .rail-nudge { margin-top: 8px; }
+.ra-block .rail-undo-bar { margin-top: 8px; }
+.ra-block .ra-block-label + .rw-stage-tracker { margin-top: 0; }
+
+/* At a glance facts */
+.ra-facts { display: flex; flex-direction: column; }
+.ra-fact {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border);
+  align-items: baseline;
+}
+.ra-fact:last-child { border-bottom: none; }
+.ra-fact-k {
+  font-size: 11px;
+  color: var(--text-light);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ra-fact-v {
+  font-size: 13px;
+  color: var(--text);
+  letter-spacing: -0.003em;
+  line-height: 1.4;
+}
+.ra-fact-missing { color: var(--text-light); font-style: italic; }
+
+/* Notes block */
+.ra-notes-text {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+  letter-spacing: -0.003em;
+  text-wrap: pretty;
+  white-space: pre-wrap;
+}
+.ra-notes-empty {
+  font-size: 13px;
+  color: var(--text-light);
+  font-style: italic;
+}
+.ra-notes-edit {
+  display: inline-block;
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-light);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: inherit;
+  padding: 0;
+  transition: color 140ms ease;
+}
+.ra-notes-edit:hover { color: var(--text); }
+.ra-notes-textarea {
+  width: 100%;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+  margin-top: 8px;
+}
+.ra-notes-textarea:focus { outline: none; border-color: var(--text-muted); }
+
+/* Empty analysis state */
+.ra-no-analysis {
+  font-size: 13.5px;
+  color: var(--text-light);
+  font-style: italic;
+  padding: 8px 0 24px;
+  max-width: 52ch;
+}
+
+/* Responsive */
+@media (max-width: 1140px) {
+  .ra-page { padding: 40px 40px 80px; }
+  .ra-layout { grid-template-columns: 1fr; gap: 40px; }
+  .ra-side { position: static; }
+}
+@media (max-width: 720px) {
+  .ra-page { padding: 32px 24px 64px; }
+  .ra-title { font-size: 26px; }
+  .ra-lede { font-size: 20px; }
+}

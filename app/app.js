@@ -10554,6 +10554,284 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     }
 
     // ────────────────────────────────────────────────────────────────────────────
+    // Analysis v2 — document-first role briefing.
+    // Analysis v2 is a document-first role briefing. It should help the user
+    // understand the role and update state without becoming a dashboard,
+    // scorecard, or ATS detail view.
+    // ────────────────────────────────────────────────────────────────────────────
+    function renderAnalysisView(role) {
+      _exitIntakeMode();
+
+      const el = document.getElementById('col-overview-cards');
+      if (!el) return;
+
+      // Enable page scroll (same as legacy doc mode) and clear legacy classes
+      el.classList.remove('col-ov--legacy-doc');
+      el.classList.add('col-ov--legacy-doc');
+      document.getElementById('col-chat')?.classList.remove('ws-active');
+
+      // Suppress the legacy sticky header — title lives in the article header
+      const stickyEl = document.getElementById('role-sticky-header');
+      if (stickyEl) { stickyEl.style.display = 'none'; stickyEl.innerHTML = ''; }
+
+      const fo    = role.latest_match_output || (role.analysis && role.analysis.full_output) || {};
+      const pd    = fo.practical_details || {};
+      const narr  = fo._narrative || null;
+
+      // ── Helpers ──────────────────────────────────────────────────────────────
+      const _str = v => (v && typeof v === 'string' && v !== 'Not stated' && v !== 'Unknown') ? v : null;
+
+      const _arList = (arr, cls) => {
+        if (!Array.isArray(arr) || !arr.length) return '';
+        return `<ul class="ra-list${cls ? ' ' + cls : ''}">${arr.map(s => {
+          const t = (s && typeof s === 'object') ? (s.text || '') : String(s || '');
+          return t.trim() ? `<li>${esc(_sanitizeUiText(t))}</li>` : '';
+        }).filter(Boolean).join('')}</ul>`;
+      };
+
+      const _section = (num, title, body) => body ? `
+        <section class="ra-section">
+          <div class="ra-sec-label">
+            <span class="ra-sec-num">${esc(num)}</span>
+            <h2 class="ra-sec-title">${esc(title)}</h2>
+          </div>
+          ${body}
+        </section>` : '';
+
+      // ── Header data ───────────────────────────────────────────────────────────
+      const _company = sanitiseCompanyName(role.company_name) || '';
+      const _title   = role.role_title || 'Untitled role';
+      const _roleId  = role.id ? role.id.slice(0, 8) : '';
+
+      const _wmMap   = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site', 'on-site': 'On-site' };
+      const _wm      = role.work_model && role.work_model !== 'unknown'
+        ? (_wmMap[role.work_model.toLowerCase()] || role.work_model) : null;
+      const _loc     = role.location_text || null;
+      const _locWm   = _loc && _wm ? `${_loc} · ${_wm}` : (_loc || _wm || null);
+
+      const _engType = (role.engagement_type && role.engagement_type !== 'Unknown') ? role.engagement_type : null;
+      const _salary  = role.salary_text_raw || _normaliseSalaryDisplay(pd.salary_annual) || null;
+
+      const _metaParts = [_locWm, _engType, _salary].filter(Boolean);
+      const _metaHtml  = _metaParts.map((p, i) =>
+        (i > 0 ? '<span class="ra-meta-sep"></span>' : '') + esc(p)
+      ).join('');
+
+      // ── Section 01: What this role really is ─────────────────────────────────
+      const _s01src = (narr && _str(narr.role_is)) || _str(fo.fit_reality_summary) || null;
+      const _s01    = _s01src
+        ? `<p class="ra-lede">${esc(_sanitizeUiText(_s01src))}</p>`
+        : null;
+
+      // ── Section 02: Why this role exists ─────────────────────────────────────
+      const _s02src = (narr && _str(narr.role_exists)) || _str(fo.why_this_role_exists) || null;
+      let _s02 = null;
+      if (_s02src) {
+        const _infNote = (fo.why_this_role_exists_confidence === 'inferred' || !fo.why_this_role_exists)
+          ? '<p class="ra-note">Inferred from context — not explicitly stated in the JD.</p>'
+          : '';
+        _s02 = `<p class="ra-p">${esc(_sanitizeUiText(_s02src))}</p>${_infNote}`;
+      }
+
+      // ── Section 03: What you'd actually do ───────────────────────────────────
+      const _s03arr = (narr && Array.isArray(narr.what_you_do) && narr.what_you_do.length)
+        ? narr.what_you_do
+        : (Array.isArray(fo.what_you_would_actually_do) && fo.what_you_would_actually_do.length)
+          ? fo.what_you_would_actually_do
+          : null;
+      const _s03 = _s03arr ? _arList(_s03arr) : null;
+
+      // ── Section 04: What they're really looking for ───────────────────────────
+      const _s04arr = (narr && Array.isArray(narr.what_they_need) && narr.what_they_need.length)
+        ? narr.what_they_need
+        : (Array.isArray(fo.what_they_really_need_from_you) && fo.what_they_really_need_from_you.length)
+          ? fo.what_they_really_need_from_you
+          : (Array.isArray(fo.signal_markers) && fo.signal_markers.length)
+            ? fo.signal_markers.map(s => (s && typeof s === 'object') ? (s.text || s.marker || '') : String(s || ''))
+            : null;
+      const _s04 = _s04arr ? _arList(_s04arr) : null;
+
+      // ── Section 05: Risks & unknowns ─────────────────────────────────────────
+      const _s05arr = (narr && Array.isArray(narr.risks) && narr.risks.length)
+        ? narr.risks
+        : (Array.isArray(fo.risks_and_unknowns) && fo.risks_and_unknowns.length)
+          ? fo.risks_and_unknowns
+          : null;
+      const _s05 = _s05arr ? _arList(_s05arr) : null;
+
+      // ── Section 06: Questions worth asking ───────────────────────────────────
+      const _s06arr = (narr && Array.isArray(narr.questions) && narr.questions.length)
+        ? narr.questions
+        : (Array.isArray(fo.questions_worth_asking) && fo.questions_worth_asking.length)
+          ? fo.questions_worth_asking
+          : null;
+      const _s06 = _s06arr ? _arList(_s06arr, 'ra-list--questions') : null;
+
+      // ── Section 07: Suggested actions ────────────────────────────────────────
+      const _s07arr = (narr && Array.isArray(narr.actions) && narr.actions.length)
+        ? narr.actions
+        : (Array.isArray(fo.suggested_actions) && fo.suggested_actions.length)
+          ? fo.suggested_actions
+          : null;
+      let _s07 = null;
+      if (_s07arr && _s07arr.length) {
+        const _abc = 'abcdefghij';
+        _s07 = `<ul class="ra-actions-list">${_s07arr.map((a, i) => {
+          const _do  = (a && typeof a === 'object') ? (a.action || a.text || String(a)) : String(a || '');
+          const _why = (a && typeof a === 'object' && a.qualifier) ? a.qualifier : null;
+          return _do.trim()
+            ? `<li><span class="ra-act-idx">${_abc[i] || (i+1)}.</span><span><span class="ra-act-do">${esc(_sanitizeUiText(_do))}</span>${_why ? `<span class="ra-act-q">${esc(_sanitizeUiText(_why))}</span>` : ''}</span></li>`
+            : '';
+        }).filter(Boolean).join('')}</ul>`;
+      }
+
+      // If no analysis exists at all, show a calm placeholder
+      const _hasSections = _s01 || _s02 || _s03 || _s04 || _s05 || _s06 || _s07;
+      const _noAnalysisHtml = !_hasSections
+        ? '<p class="ra-no-analysis">No analysis available for this role yet. Paste the job description to generate one.</p>'
+        : '';
+
+      // ── At-a-glance facts ─────────────────────────────────────────────────────
+      const _factRows = [
+        { k: 'Location',  v: _loc  || (_wm && !_loc ? _wm : null) },
+        { k: 'Work model',v: _wm && _loc ? _wm : null },
+        { k: 'Type',      v: _engType },
+        { k: 'Salary',    v: _salary },
+        { k: 'Company',   v: _company || null },
+        { k: 'Industry',  v: _str(pd.industry) || _str(fo.role_archetype && fo.role_archetype.industry) || null },
+        { k: 'Source',    v: _str((role.source_meta && role.source_meta.source_label) || role.source) || null },
+      ].filter(f => f.v);
+      const _factsHtml = _factRows.length
+        ? _factRows.map(f => `<div class="ra-fact"><span class="ra-fact-k">${esc(f.k)}</span><span class="ra-fact-v">${esc(f.v)}</span></div>`).join('')
+        : '<span class="ra-fact-missing">No facts available.</span>';
+
+      // ── Notes ─────────────────────────────────────────────────────────────────
+      const _notesKey   = `rw_role_notes_${role.id}`;
+      const _savedNotes = localStorage.getItem(_notesKey) || '';
+
+      // ── Render date ───────────────────────────────────────────────────────────
+      const _analysedAt = fo._analysedAt || fo.analysed_at || role.updated_at || role.created_at || null;
+      const _closeLine  = _analysedAt
+        ? (() => {
+            const d = new Date(_analysedAt);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+          })()
+        : null;
+
+      // ── Assemble HTML ─────────────────────────────────────────────────────────
+      el.innerHTML = `
+        <div class="rwa-page ra-page">
+
+          <div class="ra-topbar">
+            <button class="ra-back" id="ra-btn-back" type="button">
+              <span class="ra-back-arrow">←</span>Back to roles
+            </button>
+          </div>
+
+          <div class="ra-layout">
+
+            <article>
+              <header class="ra-header">
+                <div class="ra-eyebrow">
+                  <span class="ra-eyebrow-tick"></span>
+                  role analysis${_roleId ? ' · ' + esc(_roleId) : ''}
+                </div>
+                <h1 class="ra-title">
+                  ${esc(_title)}${_company ? `<span class="ra-dot">·</span><span class="ra-co">${esc(_company)}</span>` : ''}
+                </h1>
+                ${_metaHtml ? `<p class="ra-meta">${_metaHtml}</p>` : ''}
+              </header>
+
+              ${_noAnalysisHtml}
+
+              ${_section('01', 'What this role really is', _s01)}
+              ${_section('02', 'Why this role exists', _s02)}
+              ${_section('03', "What you'd actually do", _s03)}
+              ${_section('04', "What they're really looking for", _s04)}
+              ${_section('05', 'Risks & unknowns', _s05)}
+              ${_section('06', 'Questions worth asking', _s06)}
+              ${_section('07', 'Suggested actions', _s07)}
+
+              <div class="ra-close">
+                <div class="ra-close-l">Generated by Rolewise from the original job listing.</div>
+                ${_closeLine ? `<div class="ra-close-r">${esc(_closeLine)}</div>` : ''}
+              </div>
+            </article>
+
+            <aside class="ra-side">
+
+              <section class="ra-block" id="ra-block-stage">
+                <div class="ra-block-label">Status &amp; stage</div>
+                <div id="role-chips-section"></div>
+              </section>
+
+              <section class="ra-block">
+                <div class="ra-block-label">At a glance</div>
+                <div class="ra-facts">${_factsHtml}</div>
+              </section>
+
+              <section class="ra-block" id="ra-block-notes">
+                <div class="ra-block-label">Notes</div>
+                ${_savedNotes
+                  ? `<div class="ra-notes-text" id="ra-notes-display">${esc(_savedNotes)}</div>`
+                  : `<div class="ra-notes-empty" id="ra-notes-display">No notes yet.</div>`
+                }
+                <button class="ra-notes-edit" id="ra-btn-edit-notes" type="button">Edit note ↗</button>
+                <textarea class="ra-notes-textarea" id="ra-notes-textarea" hidden placeholder="Add notes about this role…" spellcheck="true">${esc(_savedNotes)}</textarea>
+              </section>
+
+            </aside>
+
+          </div>
+        </div>`;
+
+      // ── Populate stage rail ───────────────────────────────────────────────────
+      renderRail(role);
+      // Hide the legacy col-rail-section (empty — renderRail now targets #role-chips-section in the aside)
+      const _oldRailEl = document.getElementById('col-rail-section');
+      if (_oldRailEl) { _oldRailEl.style.display = 'none'; _oldRailEl.innerHTML = ''; }
+
+      // ── Wire back button ──────────────────────────────────────────────────────
+      el.querySelector('#ra-btn-back')?.addEventListener('click', () => {
+        selectedRoleId = null;
+        _setRailVisible(false);
+        renderRolesView();
+      });
+
+      // ── Wire notes ────────────────────────────────────────────────────────────
+      const _editBtn    = el.querySelector('#ra-btn-edit-notes');
+      const _textarea   = el.querySelector('#ra-notes-textarea');
+      const _display    = el.querySelector('#ra-notes-display');
+      if (_editBtn && _textarea && _display) {
+        let _editing = false;
+        _editBtn.addEventListener('click', () => {
+          _editing = !_editing;
+          _textarea.hidden = !_editing;
+          _display.hidden  = _editing;
+          _editBtn.textContent = _editing ? 'Save note ↗' : 'Edit note ↗';
+          if (_editing) {
+            _textarea.focus();
+            _textarea.setSelectionRange(_textarea.value.length, _textarea.value.length);
+          } else {
+            const v = _textarea.value;
+            localStorage.setItem(_notesKey, v);
+            if (v.trim()) {
+              _display.className = 'ra-notes-text';
+              _display.textContent = v;
+            } else {
+              _display.className = 'ra-notes-empty';
+              _display.textContent = 'No notes yet.';
+            }
+          }
+        });
+        _textarea.addEventListener('keydown', e => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') _editBtn.click();
+        });
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
 
     async function renderRoleDoc(role) {
       // Exit intake mode if active (user selected a role while Add JD was open)
@@ -10582,1098 +10860,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         renderWorkspaceView(role);
         return;
       }
-      // ── Legacy doc view (no workspace data) ─────────────────────────────────
-      _renderStickyHeader(role);
-      const el = document.getElementById('col-overview-cards');
-      // Legacy doc mode: enable page-level scroll and full-width two-col layout
-      el.classList.add('col-ov--legacy-doc');
-      // Ensure workspace mode class is cleared for legacy doc view
-      document.getElementById('col-chat')?.classList.remove('ws-active');
-      // Show workspace in blank state in the chat panel for legacy roles
-      // skipOverview: true so overview body is set by renderRoleDoc, not overwritten
-      renderWorkspaceView(role, { skipOverview: true });
-
-      const fo = role.analysis?.full_output;
-      const decision = role.analysis?.decision;
-
-      // Is the role past JD Review? If so, workflow > decision visually.
-      const _currentStage  = currentStageLabel(role);
-      const _isProgressed  = PROGRESSED_STAGES.has(_currentStage) && !isArchivedRole(role);
-
-      // Header section
-      const decisionClass = decision
-        ? { Apply: 'apply', Maybe: 'maybe', Skip: 'skip' }[decision] || 'none'
-        : 'none';
-      const decisionLabel = decision || '';
-
-      // Build meta line 3: City, Country · Work model · Engagement type
-      // engagement_type is stored on the role (synchronous); employment_type from analysis is async fallback.
-      // Salary (line 4) is filled async below the meta row.
-      // Source channel is shown with a label in the doc-meta-application block below, not here.
-      const _metaParts = [];
-      if (role.location_text) _metaParts.push(esc(role.location_text));
-      if (role.work_model && role.work_model !== 'unknown') {
-        _metaParts.push(esc(role.work_model.charAt(0).toUpperCase() + role.work_model.slice(1)));
-      }
-      if (role.engagement_type && role.engagement_type !== 'Unknown') {
-        _metaParts.push(esc(role.engagement_type));
-      }
-      if (role.day_rate_text) {
-        _metaParts.push(esc(role.day_rate_text));
-      }
-      if (role.ir35_status === 'Outside IR35' || role.ir35_status === 'Inside IR35') {
-        _metaParts.push(esc(role.ir35_status));
-      }
-      if (role.contract_length) {
-        _metaParts.push(esc(role.contract_length));
-      }
-      const _metaLine3 = _metaParts.join(' · ');
-
-      // Secondary meta line: "Added X days ago" derived from when the role was saved.
-      const _daysSinceAdded = Math.floor((Date.now() - new Date(role.created_at).getTime()) / 86400000);
-      const _addedLabel = _daysSinceAdded === 0 ? 'Added today'
-        : _daysSinceAdded === 1 ? 'Added yesterday'
-        : `Added ${_daysSinceAdded} days ago`;
-
-      // Helper: render a prose section
-      function section(heading, content) {
-        if (!content) return '';
-        return `<div class="doc-section">
-          <div class="doc-section-heading">${heading}</div>
-          <p class="doc-prose">${esc(content)}</p>
-        </div>`;
-      }
-
-      // Helper: render a list section
-      function listSection(heading, items) {
-        if (!items || !items.length) return '';
-        const lis = items.map(item => `<li>${esc(item)}</li>`).join('');
-        return `<div class="doc-section">
-          <div class="doc-section-heading">${heading}</div>
-          <ul class="doc-list">${lis}</ul>
-        </div>`;
-      }
-
-      let docBody = '';
-      // Primary content slot — async block below replaces the placeholder with
-      // renderMatchOutput(output_json) from jd_matches, or falls back to raw JD.
-      docBody = '<div id="match-output-panel"><p class="doc-no-analysis" style="color:var(--text-light);font-style:italic;">Loading analysis…</p></div>';
-
-      // Response Time — computed from role_updates; only shown when applied event exists.
-      // Only stage rows are considered — outcome rows and legacy status values are ignored.
-      const stageUpdatesAsc = [...role.role_updates]
-        .filter(u => !u.event_type || u.event_type === 'stage')
-        .reverse(); // chronological order (oldest first)
-      const appliedEvent = stageUpdatesAsc.find(u => u.stage_reached === 'Applied');
-
-      let responseTimeSectionHtml = '';
-      if (appliedEvent) {
-        const appliedTime        = new Date(appliedEvent.created_at).getTime();
-        const daysSinceApplied   = Math.floor((Date.now() - appliedTime) / 86400000);
-
-        // Stages that represent an employer response after the application
-        const RESPONSE_STAGES = new Set([
-          'Recruiter Screen', 'Hiring Manager', 'Panel', 'Final', 'Offer',
-        ]);
-
-        const appliedIdx    = stageUpdatesAsc.indexOf(appliedEvent);
-        const responseEvent = stageUpdatesAsc.slice(appliedIdx + 1).find(u =>
-          RESPONSE_STAGES.has(u.stage_reached)
-        );
-
-        let statsHtml = '';
-        if (responseEvent) {
-          const appliedToResponse = Math.floor(
-            (new Date(responseEvent.created_at).getTime() - appliedTime) / 86400000
-          );
-          statsHtml += `<div class="response-stat">
-            <span class="response-stat-label">Applied to first response</span>
-            <span class="response-stat-value">${appliedToResponse} day${appliedToResponse !== 1 ? 's' : ''}</span>
-          </div>`;
-        }
-
-        statsHtml += `<div class="response-stat">
-          <span class="response-stat-label">Days since applied</span>
-          <span class="response-stat-value">${daysSinceApplied} day${daysSinceApplied !== 1 ? 's' : ''}</span>
-        </div>`;
-
-        if (!responseEvent) {
-          statsHtml += `<div class="response-no-response">No response yet</div>`;
-        }
-
-        responseTimeSectionHtml = `<div class="doc-section" style="margin-top:32px;">
-          <div class="doc-section-heading">Response time</div>
-          ${statsHtml}
-        </div>`;
-      }
-
-      // Activity — date-grouped, chronological (oldest first)
-      {
-        const _OUTCOME_DISP = {
-          rejected:       'Rejected',
-          skipped:        'Skipped',
-          withdrew:       'Withdrew',
-          offer_accepted: 'Offer accepted',
-          offer_received: 'Offer received',
-          accepted:       'Accepted',
-          no_response:    'No response',
-          ghosted:        'Ghosted',
-          closed:         'Closed',
-        };
-        // Map stage_reached / event_type → human-readable event label
-        const _STAGE_LABELS = {
-          'JD Review':        'Under review',
-          'jd_review':        'Under review',
-          'Applied':          'Application submitted',
-          'applied':          'Application submitted',
-          'Recruiter Screen': 'Recruiter replied',
-          'recruiter_screen': 'Recruiter replied',
-          'Recruiter screen': 'Recruiter replied',
-          'Hiring Manager':   'Hiring manager interview',
-          'hiring_manager':   'Hiring manager interview',
-          'Panel':            'Panel interview',
-          'panel':            'Panel interview',
-          'Final':            'Final round interview',
-          'final':            'Final round interview',
-          'Offer':            'Offer received',
-          'offer':            'Offer received',
-          'In progress':      'In progress',
-          'in_progress':      'In progress',
-        };
-        const _EVENT_TYPE_LABELS = {
-          'analysis_saved':   'Analysis saved',
-          'role_created':     'Role created',
-          'role_archived':    'Archived',
-          'outcome':          null, // handled separately
-          'stage':            null, // handled via stage_reached
-        };
-
-        // ── Relative date label: Today / Yesterday / "5 Mar" ───────────
-        const _relDate = ts => {
-          const now = new Date(); now.setHours(0,0,0,0);
-          const d   = new Date(ts); d.setHours(0,0,0,0);
-          const diff = Math.round((now - d) / 86400000);
-          if (diff === 0) return 'Today';
-          if (diff === 1) return 'Yesterday';
-          return ts.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-        };
-
-        // ── System events (background) — treated as lower hierarchy ─────
-        const _SYSTEM_EVENTS = new Set(['role_created', 'analysis_saved']);
-        // Significant events (stage progress + outcomes) — treated as higher hierarchy
-        const _SIG_STAGES = new Set([
-          'Applied','applied','Recruiter Screen','recruiter_screen','Recruiter screen',
-          'Hiring Manager','hiring_manager','Panel','panel','Final','final','Offer','offer',
-        ]);
-
-        // Build all history entries — start with synthetic ones, then DB rows
-        const _rawEntries = [];
-
-        // Synthetic: Role created
-        _rawEntries.push({
-          ts: new Date(role.created_at),
-          label: 'Role created',
-          note: null,
-          kind: 'system',
-        });
-
-        // Synthetic: JD analysed (if latest_match_at exists)
-        if (role.latest_match_at) {
-          _rawEntries.push({
-            ts: new Date(role.latest_match_at),
-            label: 'JD analysed',
-            note: null,
-            kind: 'system',
-          });
-        }
-
-        // DB rows from role_updates (currently sorted desc — iterate all)
-        for (const u of role.role_updates) {
-          let label;
-          let kind = 'default';
-          if (u.event_type === 'outcome') {
-            label = _OUTCOME_DISP[u.outcome_state] || u.outcome_state || 'Outcome set';
-            kind  = 'significant';
-          } else {
-            // Try stage_reached first, then event_type label, then status fallback
-            const sr = (u.stage_reached || '').trim();
-            label = (sr && (_STAGE_LABELS[sr] || sr))
-                  || (_EVENT_TYPE_LABELS[u.event_type] !== undefined ? _EVENT_TYPE_LABELS[u.event_type] : null)
-                  || STATUS_LABELS[u.status]
-                  || u.status
-                  || 'Update';
-            if (_SYSTEM_EVENTS.has(u.event_type))  kind = 'system';
-            else if (sr && _SIG_STAGES.has(sr))    kind = 'significant';
-          }
-          if (!label) continue; // skip null-label entries (handled differently)
-          _rawEntries.push({ ts: new Date(u.created_at), label, note: u.note || null, kind });
-        }
-
-        // Sort chronological, oldest first
-        _rawEntries.sort((a, b) => a.ts - b.ts);
-
-        // Deduplicate: if "Role created" & a DB row land on exact same ts, keep only one
-        const _seen = new Set();
-        const _dedupedEntries = _rawEntries.filter(e => {
-          const key = `${e.ts.getTime()}|${e.label}`;
-          if (_seen.has(key)) return false;
-          _seen.add(key);
-          return true;
-        });
-
-        // Group by date string (year-inclusive key keeps cross-year dates separate)
-        const _groups = [];
-        let _lastDateStr = null;
-        for (const e of _dedupedEntries) {
-          const dateStr    = e.ts.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-          const displayStr = _relDate(e.ts);
-          if (dateStr !== _lastDateStr) {
-            _groups.push({ dateStr, displayStr, entries: [] });
-            _lastDateStr = dateStr;
-          }
-          _groups[_groups.length - 1].entries.push(e);
-        }
-
-        const activityEntries = _groups.length
-          ? _groups.map(g => {
-              const rows = g.entries.map(e => {
-                const noteHtml   = e.note ? `<div class="timeline-note">${esc(e.note)}</div>` : '';
-                const kindClass  = e.kind && e.kind !== 'default' ? ` timeline-${e.kind}` : '';
-                return `<div class="timeline-entry${kindClass}">
-                  <div class="timeline-label">${esc(e.label)}</div>
-                  ${noteHtml}
-                </div>`;
-              }).join('');
-              const isRecent = g.displayStr === 'Today' || g.displayStr === 'Yesterday';
-              return `<div class="timeline-date-group">
-                <div class="timeline-date-group-header${isRecent ? ' tl-recent' : ''}">${esc(g.displayStr)}</div>
-                ${rows}
-              </div>`;
-            }).join('')
-          : `<div class="activity-empty">No activity logged yet.</div>`;
-
-        // Expose for use in docBody template below (block-scoped so use var to hoist)
-        var _activityHtml = activityEntries;
-      } // end activity block
-
-      // ── Role Record — collapsible container for metadata, JD, history, and deep analysis ──
-      docBody += `<details class="role-record" id="role-record">
-        <summary class="role-record-summary">
-          <span class="role-record-title">Role Record</span>
-          <span class="role-record-subtitle">History, notes, snapshots &amp; full analysis</span>
-          <span class="role-record-chevron">&#9656;</span>
-        </summary>
-        <div class="role-record-body">
-
-          <!-- Pattern Signals — cross-portfolio observations, filled async when analysis loads -->
-          <div id="doc-pattern-signals" style="display:none;"></div>
-
-          <!-- Deep analysis placeholder — filled async when analysis panel loads -->
-          <div id="role-record-deep-analysis"></div>
-
-          <!-- JD placeholder — filled async once analysis panel loads -->
-          <div id="role-record-jd-placeholder"></div>
-
-          ${responseTimeSectionHtml ? responseTimeSectionHtml : ''}
-
-          <div class="doc-section">
-            <div class="doc-section-heading">History</div>
-            <div class="doc-activity">${_activityHtml || ''}</div>
-          </div>
-
-          <!-- Role memory placeholder — filled async after render -->
-          <div class="doc-section" id="role-memory-section">
-            <div class="doc-section-heading">Notes</div>
-            <div class="role-memory-empty">Loading…</div>
-          </div>
-
-          <!-- Role snapshots placeholder — filled async after render -->
-          <div class="doc-section" id="role-snapshots-section">
-            <div class="doc-section-heading">Snapshots</div>
-            <div class="role-snapshots-empty">Loading\u2026</div>
-          </div>
-
-          <!-- Outcome learning placeholder — filled async after render -->
-          <div class="doc-section" id="role-outcome-section">
-            <div class="doc-section-heading">Outcome</div>
-            <div class="outcome-empty">Loading\u2026</div>
-          </div>
-
-        </div>
-      </details>`;
-
-      // Build the top-of-page signal element based on whether role has progressed
-      const _stageClass     = stageTagClass(_currentStage);
-      const _topSignalHtml  = _isProgressed
-        // Progressed: calm timing line. For outcomes, add contextual explanation.
-        ? (() => {
-            // Rejected / outcome roles: show what happened
-            if (role.outcome_state) {
-              const _stage = currentStageLabel(role);
-              const _stageForCopy = (_stage && _stage !== 'JD Review') ? _stage : null;
-              let _outcomeLine = '';
-              if (role.outcome_state === 'rejected') {
-                _outcomeLine = _stageForCopy ? `Rejected after ${_stage}` : 'Rejected after review';
-              } else if (role.outcome_state === 'no_response' && role._appliedDate) {
-                const _nrDays = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
-                _outcomeLine = `No response after ${_nrDays} day${_nrDays !== 1 ? 's' : ''}`;
-              } else if (role.outcome_state === 'ghosted') {
-                _outcomeLine = _stageForCopy ? `Ghosted after ${_stage}` : 'Ghosted';
-              } else if (role.outcome_state === 'withdrew') {
-                _outcomeLine = _stageForCopy ? `Withdrawn after ${_stage}` : 'Withdrawn';
-              } else if (role.outcome_state === 'offer_accepted') {
-                _outcomeLine = 'Offer accepted';
-              }
-              if (_outcomeLine) return `<div class="doc-applied-status">${esc(_outcomeLine)}</div>`;
-            }
-            // Active in-process roles: show applied timing
-            if (role._appliedDate) {
-              const _days = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
-              const _daysStr = _days === 0 ? 'today' : _days === 1 ? 'yesterday' : `${_days} days ago`;
-              return `<div class="doc-applied-status">Applied ${_daysStr}</div>`;
-            }
-            return `<div class="doc-applied-status">In progress</div>`;
-          })()
-        // JD Review or no decision yet: show decision badge as before
-        : decisionLabel
-          ? `<div class="doc-decision ${decisionClass}">${esc(decisionLabel)}</div>`
-          : '';
-
-      el.innerHTML = `
-        <div id="sticky-decision-bar" class="sticky-decision-bar"></div>
-        <div class="col-center-inner">
-          ${_topSignalHtml}
-          <div class="doc-header-bar">
-            <div class="doc-header-left">
-              <div class="doc-company">${esc(sanitiseCompanyName(role.company_name) || 'Company not specified')}</div>
-              <h1 class="doc-role-title">${esc(role.role_title)}</h1>
-              <div class="doc-meta">${_metaLine3 ? `<span id="doc-meta-line3">${_metaLine3}</span>` : ''}<span id="doc-meta-emptype"></span></div>
-              ${_isProgressed ? `<div class="doc-meta-posted">${esc(_addedLabel)}</div>` : ''}
-              ${role.job_url ? `<div class="doc-meta-job-link"><a href="${esc(role.job_url)}" target="_blank" rel="noopener">View original posting ↗</a></div>` : ''}
-              <div id="doc-meta-salary" class="doc-meta-salary" style="display:none;"></div>
-              <div id="doc-meta-recruiter" class="doc-meta-recruiter" style="display:none;"></div>
-              <div id="doc-meta-start" class="doc-meta-start" style="display:none;"></div>
-              <div id="doc-meta-application" class="doc-meta-application" style="display:none;"></div>
-            </div>
-            <div class="doc-header-right">
-              <button class="rw-btn rw-btn-sm" id="btn-edit-role-details" data-role-id="${esc(role.id)}">Edit details</button>
-              <button class="rw-btn rw-btn-sm" id="btn-share-analysis" style="display:none;" data-role-id="${esc(role.id)}">Share analysis</button>
-            </div>
-          </div>
-          <!-- Recruiter row — filled synchronously from role.role_recruiters -->
-          <div id="doc-recruiter-row" class="doc-recruiter-row" style="display:none;"></div>
-          <!-- Decision Summary — filled async when analysis loads (decision-first order) -->
-          <div id="doc-decision-summary" style="display:none;"></div>
-          <!-- Next Action — filled async after decision summary -->
-          <div id="doc-next-action"></div>
-          <!-- Progressed quick-actions — filled synchronously for in-process roles -->
-          <div id="doc-progressed-actions"></div>
-          <!-- Role Lens — filled async when analysis loads -->
-          <div id="doc-role-lens" style="display:none;"></div>
-          <!-- Jump links — filled async when analysis loads -->
-          <div id="doc-jump-links" style="display:none;"></div>
-          <!-- Pattern Notice — filled async, shown below Role Lens -->
-          <div id="doc-pattern-notice"></div>
-          ${docBody}
-          <!-- Decision action bar — injected after analysis loads -->
-          <div id="doc-decision-bar"></div>
-        </div>
-      `;
-
-      // ── Fill recruiter meta line (synchronous — data already in role.role_recruiters) ──
-      _refreshDocRecruiterMeta(role);
-
-      // ── Fill start timeline meta line (progressed roles only) ──
-      // Hidden for JD Review — role hasn't been applied to yet; start timeline is pre-decision noise.
-      // Accessible at any time via Edit Details.
-      if (_isProgressed) {
-        const _startMetaEl = document.getElementById('doc-meta-start');
-        if (_startMetaEl && role.start_timeline && role.start_timeline !== 'Unknown') {
-          _startMetaEl.textContent = `Start: ${role.start_timeline}`;
-          _startMetaEl.style.display = '';
-        }
-      }
-
-      // ── Fill role context block: Source channel · Applied date · Response status ──
-      // Source is derived (role.source > URL pattern > recruiter signal > hidden).
-      // Applied and Status only shown when role._appliedDate is set.
-      // No extra DB calls — all data already on the loaded role object.
-      {
-        const _appMetaEl = document.getElementById('doc-meta-application');
-        if (_appMetaEl) {
-          const _ctxLines = [];
-
-          // ── Source channel ────────────────────────────────────────────────
-          // Priority: stored role.source > URL pattern match > recruiter signal > omit
-          const _jobUrlLc = (role.job_url || '').toLowerCase();
-          let _srcLabel   = role.source || null;
-          if (!_srcLabel) {
-            if      (_jobUrlLc.includes('linkedin.com'))   _srcLabel = 'LinkedIn';
-            else if (_jobUrlLc.includes('greenhouse.io')
-                  || _jobUrlLc.includes('lever.co')
-                  || _jobUrlLc.includes('workable.com'))   _srcLabel = 'Direct company site';
-            else if (_jobUrlLc.includes('indeed.')
-                  || _jobUrlLc.includes('reed.co.uk')
-                  || _jobUrlLc.includes('totaljobs.')
-                  || _jobUrlLc.includes('cwjobs.'))        _srcLabel = 'Job board';
-            else if (role.role_recruiters?.length)         _srcLabel = 'Recruiter outreach';
-            // Unknown omitted — hide per display rules
-          }
-          // Source channel: only surface for progressed roles — it's trivia at JD Review
-          // where applied date and response status are also absent.
-          if (_isProgressed && _srcLabel) _ctxLines.push(`<div>Source: ${esc(_srcLabel)}</div>`);
-
-          // ── Applied date ──────────────────────────────────────────────────
-          if (role._appliedDate) {
-            const _appDateStr = new Date(role._appliedDate)
-              .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-            _ctxLines.push(`<div>Applied: ${_appDateStr}</div>`);
-          }
-
-          // ── Response status ───────────────────────────────────────────────
-          const _ars = _appResponseStatus(role);
-          if (_ars) {
-            const _arsColour = (_ars.status === 'stale' || _ars.status === 'ghosted')
-              ? '#B45309'
-              : 'inherit';
-            _ctxLines.push(`<div>Status: <span style="color:${_arsColour};">${esc(_ars.label)}</span></div>`);
-          }
-
-          if (_ctxLines.length) {
-            _appMetaEl.innerHTML = _ctxLines.join('');
-            _appMetaEl.style.display = '';
-          }
-        }
-      }
-
-      // ── Applied State — full tracking view for in-process roles ─────────────
-      // Replaces the old minimal quick-action row with StageTimeline + ActionBlock
-      // + PrepPanel (filled async) + RejectionFlow.
-      if (_isProgressed && !isArchivedRole(role) && !role.outcome_state) {
-        renderAppliedState(role);
-      }
-
-      // ── Pattern Observations — subtle cross-role pattern block ─────────────
-      // Shown for applied and outcome roles when enough data exists.
-      if (_isProgressed) {
-        const _patObs = _computePatternObservations(role);
-        const _patEl = document.getElementById('doc-pattern-notice');
-        if (_patEl && _patObs.length) {
-          // Find the first observation with a strong-enough interpretation
-          let _patInterpHtml = '';
-          for (let _pi = 0; _pi < _patObs.length; _pi++) {
-            const _interp = _interpretObservation(_patObs[_pi]);
-            if (_interp) { _patInterpHtml = `<div class="rw-obs-interp">${esc(_interp)}</div>`; break; }
-          }
-          _patEl.innerHTML = `<div class="rw-pattern-obs">
-            <div class="rw-pattern-obs-label">From your search</div>
-            <ul class="rw-pattern-obs-list">${_patObs.map(o => `<li>${esc(o)}</li>`).join('')}</ul>
-            ${_patInterpHtml}
-          </div>`;
-        }
-      }
-
-      // Populate match output panel — analysis is primary content, raw JD is collapsible fallback
-      (async () => {
-        const panel = document.getElementById('match-output-panel');
-        if (!panel) return;
-        // Track whether a jd_matches row was actually found.
-        // The catch block uses this to decide whether to show the ingestion
-        // overlay (no analysis) or a simple inline error (rendering failure).
-        let _analysisFound = false;
-        try {
-          const { data: match } = await db.from('jd_matches')
-            .select('output_json')
-            .eq('role_id', role.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (match && match.output_json) {
-            _analysisFound = true; // analysis row exists — errors below are rendering errors
-            // Analysis found — show share button
-            const _shareBtn = document.getElementById('btn-share-analysis');
-            if (_shareBtn) {
-              _shareBtn.style.display = '';
-              _shareBtn.dataset.matchId = match.id || '';
-            }
-            // Analysis found — render as primary, raw JD goes into Role Record
-            panel.innerHTML = renderMatchOutput(match.output_json);
-            _initCompSnapshot(panel);
-            renderFitDecisionPanel(role);
-            // Update the Applied State prep panel with analysis data (no-op if not progressed)
-            if (_isProgressed) _updateAsPrepPanel(match.output_json);
-            // Inject deep context sections into Role Record
-            const _deepEl = document.getElementById('role-record-deep-analysis');
-            if (_deepEl) _deepEl.innerHTML = renderDeepContextHtml(match.output_json);
-            if (role.job_description_raw) {
-              const rawJdForPanel = role.job_description_raw;
-              const jdPlaceholder = document.getElementById('role-record-jd-placeholder');
-              if (jdPlaceholder) {
-                jdPlaceholder.innerHTML = `<div class="doc-section" style="padding-top:0;">
-                  <details>
-                    <summary class="doc-section-heading" style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;">
-                      <span style="font-size:11px;opacity:0.5;">▶</span> Original job description
-                    </summary>
-                    <p class="doc-prose" style="white-space:pre-wrap;margin-top:12px;">${esc(rawJdForPanel)}</p>
-                  </details>
-                </div>`;
-              }
-              const jdHealthHtml = jdHealthPanel(rawJdForPanel, cleanJobDescription(rawJdForPanel));
-              if (jdHealthHtml) {
-                const healthTarget = jdPlaceholder || panel;
-                healthTarget.insertAdjacentHTML('beforeend', jdHealthHtml);
-              }
-            }
-            // Back-fill employment type — only when no structured engagement_type is stored on role
-            // (engagement_type is already rendered synchronously in _metaLine3; avoid duplication)
-            const _empTypeEl = document.getElementById('doc-meta-emptype');
-            if (_empTypeEl && !role.engagement_type) {
-              const _et = match.output_json?.practical_details?.employment_type
-                       || match.output_json?.practical_details?.working_pattern;
-              if (_et && _et !== 'Not stated') {
-                const _line3El = document.getElementById('doc-meta-line3');
-                const _prefix = (_line3El && _line3El.textContent.trim()) ? ' · ' : '';
-                _empTypeEl.textContent = _prefix + _et;
-              }
-            }
-            // Back-fill salary as line 4 below meta row
-            const _salaryLineEl = document.getElementById('doc-meta-salary');
-            if (_salaryLineEl) {
-              const _sal = _normaliseSalaryDisplay(match.output_json?.practical_details?.salary_annual);
-              if (_sal !== 'Not stated' && _sal !== 'Not disclosed') {
-                _salaryLineEl.textContent = _sal;
-                _salaryLineEl.style.display = '';
-              }
-            }
-            // Back-fill role archetype row
-            const _archRow = document.getElementById('doc-archetype-row');
-            if (_archRow) {
-              const _arch = match.output_json?.role_archetype;
-              if (_arch && _arch.primary) {
-                const _secHtml = _arch.secondary
-                  ? `<span class="archetype-secondary">${esc(_arch.secondary)}</span>`
-                  : '';
-                _archRow.innerHTML = `<span class="archetype-primary">${esc(_arch.primary)}</span>${_secHtml}`;
-                _archRow.style.display = '';
-              }
-            }
-
-            // ── Back-fill Role Lens ────────────────────────────────────────────
-            {
-              const _rlEl  = document.getElementById('doc-role-lens');
-              const _rlOut = match.output_json;
-              if (_rlEl && _rlOut) {
-                // Source text for domain / structural detection
-                const _rlText = [
-                  typeof _rlOut.role_reality === 'string' ? _rlOut.role_reality : '',
-                  Array.isArray(_rlOut.fit_reality_summary)
-                    ? _rlOut.fit_reality_summary.map(x => typeof x === 'object' ? (x.text || '') : String(x || '')).join(' ')
-                    : (typeof _rlOut.fit_reality_summary === 'string' ? _rlOut.fit_reality_summary : ''),
-                  (_rlOut.role_archetype?.primary || '') + ' ' + (_rlOut.role_archetype?.secondary || ''),
-                ].join(' ');
-
-                // ── Structural signals (priority 1 — highest) ──
-                // Strong signals: include when present
-                const _rlStruct = [];
-                if (_rlOut.hard_no) _rlStruct.push('Production code required');
-                const _rlRep = (_rlOut.practical_details?.reporting_line || '').toLowerCase();
-                if (/no pm|without pm|no product manager|self.direct/i.test(_rlRep))  _rlStruct.push('PM absent');
-                if (/\bfounder\b|ceo|co.founder/i.test(_rlText + ' ' + _rlRep))       _rlStruct.push('Founder collaboration');
-                // Salary undisclosed — weak signal, only include when no stronger structural signals
-                if (_rlStruct.length === 0) {
-                  const _rlSal = _rlOut.practical_details?.salary_annual;
-                  if (!_rlSal || _rlSal === 'Not stated') _rlStruct.push('Salary undisclosed');
-                }
-                const _rlStructFinal = _rlStruct.slice(0, 2);
-
-                // ── Role shape (priority 2) ──
-                let _rlShape = null;
-                const _rlArch = (_rlOut.role_archetype?.primary || '').trim();
-                if (_rlArch) {
-                  if (/founding|early.stage/i.test(_rlArch)) {
-                    // Preserve specificity (e.g. "Founding designer") if short enough
-                    const _base = _rlArch.split(/[,;(]/)[0].trim();
-                    _rlShape = _base.length <= 30 ? _base : 'Founding scope';
-                  } else if (/principal|staff/i.test(_rlArch))               _rlShape = 'Principal IC';
-                  else if (/player.coach|ic.to.manager/i.test(_rlArch))      _rlShape = 'Player-coach';
-                  else if (/squad|delivery/i.test(_rlArch))                  _rlShape = 'Squad delivery';
-                  else if (/platform|systems|infrastructure/i.test(_rlArch)) _rlShape = 'Platform systems';
-                  else if (/design\s*system/i.test(_rlArch))                 _rlShape = 'Design systems';
-                  else if (/senior|sr\./i.test(_rlArch))                     _rlShape = 'Senior IC';
-                  else if (/lead|leadership/i.test(_rlArch))                 _rlShape = 'IC lead';
-                  else _rlShape = _rlArch.length > 28 ? _rlArch.slice(0, 26) + '\u2026' : _rlArch;
-                }
-
-                // ── Domain / company type (priority 3) ──
-                let _rlDomain = null;
-                if      (/healthcare|clinical|medical|health\s*tech/i.test(_rlText)) _rlDomain = 'Healthcare';
-                else if (/fintech|financial\s*tech|payment/i.test(_rlText))          _rlDomain = 'Fintech';
-                else if (/b2b\s*saas|enterprise\s*saas/i.test(_rlText))              _rlDomain = 'B2B SaaS';
-                else if (/\bconsumer\b/i.test(_rlText))                              _rlDomain = 'Consumer product';
-                else if (/public\s*sector|government|\bgov\b/i.test(_rlText))        _rlDomain = 'Public sector';
-                else if (/marketplace/i.test(_rlText))                               _rlDomain = 'Marketplace';
-                else if (/enterprise\s*software|enterprise\s*saas/i.test(_rlText))   _rlDomain = 'Enterprise software';
-                else if (/regulated|compliance.driven/i.test(_rlText))               _rlDomain = 'Regulated domain';
-                if (_rlDomain && /\bai\b|artificial\s*intell|machine\s*learn/i.test(_rlText))
-                  _rlDomain += ' AI';
-
-                // ── Work model (priority 4 — lowest, dropped first when trimming) ──
-                let _rlWork = null;
-                const _rlWM = (role.work_model || '').toLowerCase();
-                if      (_rlWM === 'remote')                         _rlWork = 'Remote';
-                else if (_rlWM === 'hybrid')                         _rlWork = 'Hybrid';
-                else if (_rlWM === 'onsite' || _rlWM === 'on-site') _rlWork = 'Onsite';
-
-                // ── Selection: keep highest-priority items when total > 4 ──
-                // Tag each candidate with priority so we can trim from lowest first
-                const _rlCandidates = [
-                  ..._rlStructFinal.map(v => ({ v, p: 1 })),
-                  ...(_rlShape  ? [{ v: _rlShape,  p: 2 }] : []),
-                  ...(_rlDomain ? [{ v: _rlDomain, p: 3 }] : []),
-                  ...(_rlWork   ? [{ v: _rlWork,   p: 4 }] : []),
-                ];
-                const _rlKept = _rlCandidates.length <= 4
-                  ? _rlCandidates
-                  : [..._rlCandidates].sort((a, b) => a.p - b.p).slice(0, 4);
-
-                // ── Display order: domain (3) → role shape (2) → work model (4) → structural (1) ──
-                const _rlOrder = [3, 2, 4, 1];
-                const _rlFinal = _rlOrder
-                  .flatMap(p => _rlKept.filter(c => c.p === p).map(c => c.v));
-
-                // Fail-safe: hide if fewer than 2 useful items
-                if (_rlFinal.length >= 2) {
-                  _rlEl.innerHTML = `<div class="doc-role-lens">
-                    <div class="doc-role-lens-label">Role Lens</div>
-                    <div class="doc-role-lens-items">${_rlFinal.map(esc).join(' \u00B7 ')}</div>
-                  </div>`;
-                  _rlEl.style.display = '';
-                }
-              }
-            }
-
-            // ── Back-fill Decision Summary ─────────────────────────────────────
-            {
-              const _dsEl  = document.getElementById('doc-decision-summary');
-              const _dsOut = match.output_json;
-              if (_dsEl && _dsOut) {
-                const _dsSA  = _dsOut.suggested_actions || {};
-                const _dsRV  = _dsOut.rolewise_verdict  || {};
-                const _dsNS  = _dsSA.next_step || _dsSA.primary || 'Review';
-                const _dsFS  = Array.isArray(_dsOut.friction_signals) ? _dsOut.friction_signals : [];
-                const _dsFit = Array.isArray(_dsOut.fit_reality_summary)
-                  ? _dsOut.fit_reality_summary.filter(Boolean) : [];
-
-                // Outcome — exactly one of: Not viable | Unclear Fit | Worth Exploring
-                // Routes through computeFitAssessment first for consistent vocabulary,
-                // then falls back to legacy text-matching for older stored analyses.
-                // Note: computeFitAssessment returns verdict 'maybe' (not 'unclear') for
-                // the ambiguous case — both are handled here.
-                let _dsOutcome;
-                if (_dsOut.hard_no) {
-                  _dsOutcome = 'Not viable';
-                } else {
-                  const _dsFa = computeFitAssessment(_dsOut);
-                  if (_dsFa && _dsFa.verdict === 'no') {
-                    _dsOutcome = 'Not viable';
-                  } else if (_dsFa && (_dsFa.verdict === 'maybe' || _dsFa.verdict === 'unclear')) {
-                    _dsOutcome = 'Unclear Fit';
-                  } else if (_dsFa && _dsFa.verdict === 'yes') {
-                    _dsOutcome = 'Worth Exploring';
-                  } else {
-                    // Legacy fallback for stored analyses that pre-date computeFitAssessment
-                    const _rvText = (_dsRV.outcome || '').toLowerCase();
-                    if (/not\s*viable/i.test(_rvText))                               _dsOutcome = 'Not viable';
-                    else if (/worth\s*explor|worth\s*apply|likely\s*worth/i.test(_rvText)) _dsOutcome = 'Worth Exploring';
-                    else if (_dsNS === 'Apply')                                       _dsOutcome = 'Worth Exploring';
-                    else                                                              _dsOutcome = 'Worth Exploring';
-                  }
-                }
-
-                // Reason — short factual phrase from signals
-                let _dsReason;
-                if (_dsOut.hard_no) {
-                  _dsReason = 'Production coding required';
-                } else if (_dsFS.length && _dsFS[0].label) {
-                  _dsReason = _dsFS[0].label;
-                } else {
-                  const _ff = _dsFit[0];
-                  const _ft = _ff && typeof _ff === 'object' ? _ff.text : (typeof _ff === 'string' ? _ff : '');
-                  _dsReason = _ft ? (_ft.length > 70 ? _ft.slice(0, 68) + '\u2026' : _ft) : 'See analysis below';
-                }
-
-                // Suggested action — must match allowed values, derived from outcome
-                const _dsActionMap = {
-                  'Not viable':     'Skip',
-                  'Unclear Fit':    'Clarify details first',
-                  'Worth Exploring': 'Ask questions',
-                };
-                const _dsAction = _dsActionMap[_dsOutcome] || 'Clarify details first';
-
-                // Card colour class based on outcome
-                const _dsColorMap = {
-                  'Worth Exploring': 'ds-amber',
-                  'Not viable':     'ds-red',
-                  'Unclear Fit':    'ds-neutral',
-                };
-                const _dsColorClass = _dsColorMap[_dsOutcome] || '';
-
-                // Recommended CV — only shown when outcome is NOT Not viable
-                const _isHardNo = (_dsOutcome === 'Not viable');
-                const _dsCvName = _isHardNo ? null : ((_dsSA.recommended_cv || '').trim() || null);
-                const _dsCvName_clean = (_dsCvName && _dsCvName !== 'Not stated') ? _dsCvName : null;
-                const _dsCvRowHtml = _dsCvName_clean
-                  ? `<div class="decision-summary-row">
-                      <span class="decision-summary-key">Recommended CV</span>
-                      <span class="decision-summary-val">${esc(_dsCvName_clean)}</span>
-                    </div>`
-                  : '';
-
-                _dsEl.innerHTML = `<div class="decision-summary${_dsColorClass ? ' ' + _dsColorClass : ''}">
-                  <div class="decision-summary-header">Decision Summary</div>
-                  <div class="decision-summary-rows">
-                    <div class="decision-summary-row">
-                      <span class="decision-summary-key">Outcome</span>
-                      <span class="decision-summary-val">${esc(_dsOutcome)}</span>
-                    </div>
-                    <div class="decision-summary-row">
-                      <span class="decision-summary-key">Reason</span>
-                      <span class="decision-summary-val">${esc(_dsReason)}</span>
-                    </div>
-                    <div class="decision-summary-row">
-                      <span class="decision-summary-key">Suggested action</span>
-                      <span class="decision-summary-val">${esc(_dsAction)}</span>
-                    </div>
-                    ${_dsCvRowHtml}
-                  </div>
-                </div>`;
-                _dsEl.style.display = '';
-                // Hide the synchronous top decision badge — DS card is now the definitive signal
-                const _topBadgeEl = el.querySelector('.doc-decision');
-                if (_topBadgeEl) _topBadgeEl.style.display = 'none';
-                // If role has progressed past JD Review, DS card becomes secondary context
-                if (_isProgressed) {
-                  const _dsCard = _dsEl.querySelector('.decision-summary');
-                  if (_dsCard) _dsCard.classList.add('ds-secondary');
-                }
-
-                // ── Next Action + Pattern Notice + Decision Bar ────────────────
-                renderNextAction(role);
-                renderPatternNotice(role);
-                // Decision bar (Skip / Save / Apply) is only relevant at JD Review.
-                // For progressed roles the stage + outcome rail handles workflow tracking.
-                if (!_isProgressed && !isArchivedRole(role)) renderDecisionBar(role);
-
-                // ── Sticky Decision Bar ────────────────────────────────────────
-                // Populate the sticky bar (shown via IntersectionObserver when DS scrolls out)
-                {
-                  const _sdbEl = document.getElementById('sticky-decision-bar');
-                  if (_sdbEl) {
-                    const _sdbColorMap = {
-                      'Worth Exploring': 'sdb-amber',
-                      'Not viable':     'sdb-red',
-                      'Unclear Fit':    'sdb-neutral',
-                    };
-                    const _sdbClass = _sdbColorMap[_dsOutcome] || '';
-                    if (_sdbClass) _sdbEl.classList.add(_sdbClass);
-                    // CV name filled after CV block; store for now
-                    _sdbEl.dataset.outcome = _dsOutcome;
-                    _sdbEl.dataset.action  = _dsAction;
-                    // Will be updated when CV block runs
-                    _sdbEl.innerHTML = `<div class="sticky-decision-inner">
-                      <span class="sticky-decision-outcome">${esc(_dsOutcome)}</span>
-                      <span class="sticky-decision-meta">
-                        <span>Suggested: ${esc(_dsAction)}</span>
-                        <span id="sticky-decision-cv-slot"></span>
-                      </span>
-                    </div>`;
-                    // IntersectionObserver: show sticky bar when DS scrolls out of view
-                    const _colCenter = document.getElementById('col-overview-body');
-                    if (_colCenter && window.IntersectionObserver) {
-                      const _sdbObs = new IntersectionObserver(entries => {
-                        entries.forEach(entry => {
-                          // Show sticky bar when decision card is scrolled OUT of view
-                          _sdbEl.style.display = entry.isIntersecting ? 'none' : 'block';
-                        });
-                      }, { root: document.getElementById('col-overview-body') || _colCenter, threshold: 0 });
-                      _sdbObs.observe(_dsEl);
-                    }
-                  }
-                }
-
-                // ── Jump Links ─────────────────────────────────────────────────
-                {
-                  const _jlEl = document.getElementById('doc-jump-links');
-                  if (_jlEl) {
-                    _jlEl.innerHTML = `<div class="jump-links-wrap">
-                      <span class="jump-links-label">Jump to</span>
-                      <button class="jump-link" data-jump="section-decision-line">Decision</button>
-                      <span class="jump-link-sep">&middot;</span>
-                      <button class="jump-link" data-jump="section-questions">Questions</button>
-                      <span class="jump-link-sep">&middot;</span>
-                      <button class="jump-link" data-jump="section-practical">Practical Details</button>
-                    </div>`;
-                    _jlEl.style.display = '';
-                    // Smooth scroll on click (delegated)
-                    _jlEl.addEventListener('click', e => {
-                      const btn = e.target.closest('[data-jump]');
-                      if (!btn) return;
-                      const target = document.getElementById(btn.dataset.jump);
-                      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    });
-                  }
-                }
-
-                // ── Questions emphasis for Maybe outcome ───────────────────────
-                if (decision === 'Maybe') {
-                  const _qEl = document.getElementById('section-questions');
-                  if (_qEl) _qEl.classList.add('questions-maybe');
-                }
-              }
-            }
-
-            // ── Update sticky bar CV slot (CV is now inside Decision Summary card) ─
-            {
-              const _rcvSA   = match.output_json?.suggested_actions || {};
-              const _rcvName = (_rcvSA.recommended_cv || '').trim();
-              const _rcvIsHardNo = (document.getElementById('doc-decision-summary')
-                ?.querySelector('.decision-summary')
-                ?.classList.contains('ds-red')) || false;
-              if (_rcvName && _rcvName !== 'Not stated' && !_rcvIsHardNo) {
-                const _sdbCvSlot = document.getElementById('sticky-decision-cv-slot');
-                if (_sdbCvSlot) {
-                  _sdbCvSlot.innerHTML = `<span class="sticky-decision-sep">&middot;</span> CV: ${esc(_rcvName)}`;
-                }
-              }
-            }
-
-            // ── Back-fill Pattern Signals ──────────────────────────────────────
-            {
-              const _psEl = document.getElementById('doc-pattern-signals');
-              if (_psEl && typeof allRoles !== 'undefined') {
-                const _analysed = allRoles.filter(r => {
-                  const fo = r.analysis?.full_output || r.latest_match_output;
-                  return fo && typeof fo === 'object';
-                });
-
-                if (_analysed.length >= 2) {
-                  const _sigs = [];
-
-                  // Signal: production coding requirement in multiple roles
-                  const _hardNoCount = _analysed.filter(r => {
-                    const fo = r.analysis?.full_output || r.latest_match_output;
-                    return fo && fo.hard_no === true;
-                  }).length;
-                  if (_hardNoCount >= 2) {
-                    _sigs.push(`Production coding requirement present in ${_hardNoCount} of your analysed roles`);
-                  }
-
-                  // Signal: salary missing from most listings
-                  const _noSalary = _analysed.filter(r => {
-                    const fo = r.analysis?.full_output || r.latest_match_output;
-                    const pd = fo?.practical_details;
-                    return !pd?.salary_annual || pd.salary_annual === 'Not stated' || pd.salary_annual === 'Not disclosed' || pd.salary_annual === 'Mentioned but not specified';
-                  }).length;
-                  if (_noSalary >= 2) {
-                    _sigs.push(`Salary information absent from ${_noSalary} of ${_analysed.length} analysed roles`);
-                  }
-
-                  // Signal: reporting structure unspecified
-                  const _noReporting = _analysed.filter(r => {
-                    const fo = r.analysis?.full_output || r.latest_match_output;
-                    const pd = fo?.practical_details;
-                    return !pd?.reporting_line || pd.reporting_line === 'Not stated';
-                  }).length;
-                  if (_noReporting >= 2) {
-                    _sigs.push(`Reporting structure unspecified in ${_noReporting} of ${_analysed.length} roles`);
-                  }
-
-                  // Signal: remote / hybrid majority
-                  const _remoteHybrid = _analysed.filter(r =>
-                    r.work_model === 'remote' || r.work_model === 'hybrid'
-                  ).length;
-                  if (_remoteHybrid >= 2 && _remoteHybrid > _analysed.length / 2) {
-                    _sigs.push(`Majority of analysed roles (${_remoteHybrid} of ${_analysed.length}) offer remote or hybrid work`);
-                  }
-
-                  if (_sigs.length > 0) {
-                    const _items = _sigs.slice(0, 3).map(s => `<li class="pattern-signal-item">${esc(s)}</li>`).join('');
-                    _psEl.innerHTML = `<div class="pattern-signals">
-                      <div class="pattern-signals-header">Pattern Signals</div>
-                      <ul class="pattern-signals-list">${_items}</ul>
-                    </div>`;
-                    _psEl.style.display = '';
-                  }
-                }
-              }
-            }
-
-            // ── Back-fill Preference Signal ────────────────────────────────────
-            // Derives from repeated user behaviour on past roles.
-            // Renders nothing if fewer than 3 past roles share a pattern with the current role.
-            // Injected at top of analysis panel (inside the analysis flow, not the header zone).
-            {
-              if (typeof allRoles !== 'undefined' && match && match.output_json) {
-                const _fo = match.output_json;
-
-                // Extracts behavioural signals from a single role record.
-                // Only includes signals that represent genuine user choices — NOT structural market patterns.
-                // Salary and reporting structure are market patterns (captured by Pattern Signals instead).
-                const _extractSigs = (workModel, fo) => {
-                  const s = new Set();
-                  // Work model — a genuine role-type preference (user actively filters on this)
-                  if (workModel === 'remote' || workModel === 'hybrid') s.add('remote · hybrid');
-                  else if (workModel === 'on-site' || workModel === 'onsite') s.add('onsite');
-                  if (!fo || typeof fo !== 'object') return s;
-                  // Production coding hard-no — clear behavioural avoidance pattern
-                  if (fo.hard_no) s.add('production coding');
-                  // NOTE: salary signals deliberately excluded here.
-                  // Salary absence is a market pattern (already shown in Pattern Signals),
-                  // not a behavioural preference of the user.
-                  // Role archetype — genuine scope/seniority preferences
-                  const _arch = (fo.role_archetype?.primary || '').toLowerCase();
-                  if (/founding|early.stage|startup/i.test(_arch))              s.add('early-stage · founding');
-                  if (/platform|systems|infrastructure/i.test(_arch))           s.add('platform · systems');
-                  if (/squad|delivery/i.test(_arch))                            s.add('squad delivery');
-                  if (/leadership|lead\b|head\b|director|manager/i.test(_arch)) s.add('leadership');
-                  if (/design system/i.test(_arch))                             s.add('design systems');
-                  return s;
-                };
-
-                // Categorise past roles (excluding current) into pursued vs avoided
-                const _PURSUED_OUTCOMES = new Set(['applied','recruiter_replied','interviewed','offer_received','accepted']);
-                const _AVOIDED_OUTCOMES = new Set(['skipped']);
-                const _otherRoles = allRoles.filter(r => r.id !== role.id);
-
-                const _pursued = _otherRoles.filter(r =>
-                  r.analysis?.decision === 'Apply' || _PURSUED_OUTCOMES.has(r.outcome_state)
-                );
-                const _avoided = _otherRoles.filter(r =>
-                  r.analysis?.decision === 'Skip' ||
-                  _AVOIDED_OUTCOMES.has(r.outcome_state) ||
-                  !!(r.analysis?.full_output?.hard_no || r.latest_match_output?.hard_no)
-                );
-
-                // Count signal frequencies across each behaviour group
-                const _countSigs = roles => {
-                  const counts = {};
-                  for (const r of roles) {
-                    const fo = r.analysis?.full_output || r.latest_match_output;
-                    for (const sig of _extractSigs(r.work_model, fo)) {
-                      counts[sig] = (counts[sig] || 0) + 1;
-                    }
-                  }
-                  return counts;
-                };
-                const _pursuedCounts = _countSigs(_pursued);
-                const _avoidedCounts = _countSigs(_avoided);
-
-                // Extract signals from the current role (use live analysis output)
-                const _currentSigs = _extractSigs(role.work_model, _fo);
-
-                // Minimum 3 past roles must share a signal for it to qualify
-                const _MIN = 3;
-                const _alignSigs    = [];
-                const _conflictSigs = [];
-                for (const sig of _currentSigs) {
-                  if ((_pursuedCounts[sig] || 0) >= _MIN)
-                    _alignSigs.push({ sig, count: _pursuedCounts[sig] });
-                  if ((_avoidedCounts[sig] || 0) >= _MIN)
-                    _conflictSigs.push({ sig, count: _avoidedCounts[sig] });
-                }
-                _alignSigs.sort((a, b)    => b.count - a.count);
-                _conflictSigs.sort((a, b) => b.count - a.count);
-
-                // Build 2-part observational block — calm, factual, no scoring language
-                // Only renders when signal reflects actual user behaviour (pursuit or avoidance),
-                // not a structural market pattern.
-                let _prefBodyHtml = '';
-                if (_alignSigs.length > 0) {
-                  // Pursuit pattern — user has consistently applied to/pursued these role types
-                  const _sigs = _alignSigs.slice(0, 3);
-                  const _labels = esc(_sigs.map(s => s.sig).join(' \u00b7 '));
-                  const _line1 = _sigs.length === 1
-                    ? `You\u2019ve usually pursued roles with ${_labels}.`
-                    : `You\u2019ve usually pursued roles with: ${_labels}.`;
-                  _prefBodyHtml =
-                    `<p class="doc-prose" style="color:var(--text-secondary);margin-bottom:6px;">${esc(_line1)}</p>` +
-                    `<p class="doc-prose" style="color:var(--text-secondary);">This role shares those patterns.</p>`;
-                } else if (_conflictSigs.length > 0) {
-                  // Avoidance pattern — user has consistently skipped roles with these traits
-                  const _sigs = _conflictSigs.slice(0, 3);
-                  const _labels = esc(_sigs.map(s => s.sig).join(' \u00b7 '));
-                  const _line1 = _sigs.length === 1
-                    ? `You\u2019ve often skipped roles with ${_labels}.`
-                    : `You\u2019ve often skipped roles with: ${_labels}.`;
-                  _prefBodyHtml =
-                    `<p class="doc-prose" style="color:var(--text-secondary);margin-bottom:6px;">${esc(_line1)}</p>` +
-                    `<p class="doc-prose" style="color:var(--text-secondary);">This role contains those signals.</p>`;
-                }
-
-                // Only render if there is something meaningful to show — insert inside analysis panel
-                if (_prefBodyHtml && panel) {
-                  const _prefSectionHtml =
-                    `<div class="doc-section" id="pref-signal-section" style="padding-top:0;margin-bottom:0;">` +
-                    `<div class="doc-section-heading">Preference Signal</div>` +
-                    `${_prefBodyHtml}` +
-                    `</div>`;
-                  panel.insertAdjacentHTML('afterbegin', _prefSectionHtml);
-                }
-                // If no strong pattern → nothing rendered, panel unchanged
-              }
-            }
-
-            // ── Section Context: decorate supported headings with icons + inline notes ──
-            if (typeof _scDecorateRenderedSections === 'function') {
-              _scDecorateRenderedSections(role.id);
-            }
-          } else {
-            // No saved analysis — open the unified ingestion overlay immediately.
-            // If the role already has a JD, pre-fill the textarea so the user
-            // can review/edit it before triggering analysis.
-            const rawJD = role.job_description_raw || '';
-            panel.innerHTML = '';
-            openIngestionOverlay({ context: 'unanalysed', role, prefillText: rawJD });
-          }
-        } catch (_) {
-          if (!_analysisFound) {
-            // Error fetching analysis, or no analysis row exists —
-            // open the ingestion overlay so the user can provide or re-run the JD.
-            const rawJD = role.job_description_raw || '';
-            panel.innerHTML = '';
-            openIngestionOverlay({ context: 'unanalysed', role, prefillText: rawJD });
-          } else {
-            // Analysis was found but a rendering error occurred —
-            // show a simple inline message rather than replacing the page with the overlay.
-            panel.innerHTML = `<p class="doc-no-analysis">Couldn't load saved analysis right now.</p>`;
-          }
-        }
-      })();
-
-      // ── Role memory — load timeline async after main doc is rendered ──────
-      (async () => {
-        const memorySec = document.getElementById('role-memory-section');
-        if (!memorySec) return;
-        const events = await loadTimeline(role.id);
-        renderTimelineSection(events, role.id, memorySec);
-      })();
-
-      // Load and render role snapshots asynchronously
-      (async () => {
-        const snapshotsSec = document.getElementById('role-snapshots-section');
-        if (!snapshotsSec) return;
-        const snapshots = await loadSnapshots(role.id);
-        renderSnapshotsSection(snapshots, snapshotsSec);
-      })();
-
-      // Load and render outcome learning asynchronously
-      (async () => {
-        const outcomeSec = document.getElementById('role-outcome-section');
-        if (!outcomeSec) return;
-        const learnings = await loadLearnings(role.id);
-        renderOutcomeSection(role, learnings, outcomeSec);
-      })();
+      // ── Analysis v2 (no workspace data) ──────────────────────────────────────
+      renderAnalysisView(role);
     }
 
     // ─── Right: Decision Rail ─────────────────────────────────────────────────
