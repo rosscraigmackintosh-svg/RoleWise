@@ -30004,6 +30004,10 @@ If a field cannot be determined from the message, return null for that field.`,
             <h1 class="rwo-title">Overview</h1>
             <p class="rwo-sub"><span class="rwo-dot rwo-dot--live"></span>Live · last updated ${esc(_lastUpd)}</p>
           </div>
+          <div class="rwo-header-actions">
+            <button class="rwo-btn" data-rwo-range disabled aria-label="Time range">This week</button>
+            <button class="rwo-btn rwo-btn--primary" data-rwo-add aria-label="Add role"><span class="rwo-plus" aria-hidden="true"></span>Add role</button>
+          </div>
         </header>`;
 
       // ── Render ─────────────────────────────────────────────────────────────
@@ -30038,6 +30042,13 @@ If a field cannot be determined from the message, return null for that field.`,
         btn.addEventListener('click', () => {
           el.dataset.kpiFilter = '';
           renderOverviewView();
+        });
+      });
+
+      // Add role → reuse the existing ingestion overlay
+      el.querySelectorAll('[data-rwo-add]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (typeof openIngestionOverlay === 'function') openIngestionOverlay({ context: 'add' });
         });
       });
 
