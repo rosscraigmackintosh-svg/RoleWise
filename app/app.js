@@ -1113,22 +1113,24 @@
     // Returns true if the role has ANY record in any of the 4 workspace tables.
     // Used by renderRoleDoc to decide whether to open workspace or legacy view.
     async function _wsHasData(roleId) {
+      // Returns true only when there is explicit workspace activity — conversations,
+      // artifacts, interactions, or insights. jd_matches is intentionally excluded:
+      // a role with analysis but no workspace history should open in the editorial
+      // Analysis v2 view (renderAnalysisView), not the workspace shell.
       if (!roleId) return false;
       try {
-        const [convRes, artRes, interRes, insiRes, matchRes] = await Promise.all([
+        const [convRes, artRes, interRes, insiRes] = await Promise.all([
           db.from('role_conversations').select('id', { count: 'exact', head: true }).eq('role_id', roleId).limit(1),
           db.from('role_artifacts')   .select('id', { count: 'exact', head: true }).eq('role_id', roleId).limit(1),
           db.from('role_interactions').select('id', { count: 'exact', head: true }).eq('role_id', roleId).limit(1),
           db.from('role_insights')    .select('id', { count: 'exact', head: true }).eq('role_id', roleId).limit(1),
-          db.from('jd_matches')       .select('id', { count: 'exact', head: true }).eq('role_id', roleId).limit(1),
         ]);
         return (convRes.count  || 0) > 0
             || (artRes.count   || 0) > 0
             || (interRes.count || 0) > 0
-            || (insiRes.count  || 0) > 0
-            || (matchRes.count || 0) > 0;
+            || (insiRes.count  || 0) > 0;
       } catch (_) {
-        return false; // on error, fall through to legacy view safely
+        return false; // on error, fall through to analysis view safely
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -10861,7 +10863,19 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         return;
       }
       // ── Analysis v2 (no workspace data) ──────────────────────────────────────
-      renderAnalysisView(role);
+      // Fetch the latest enriched match output so the analysis page opens
+      // with full content — not the local-only snapshot saved at insert time.
+      let _roleForAnalysis = role;
+      try {
+        const { data: _m } = await db.from('jd_matches')
+          .select('output_json')
+          .eq('role_id', role.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (_m?.output_json) _roleForAnalysis = { ...role, latest_match_output: _m.output_json };
+      } catch (_) { /* render with role data as-is */ }
+      renderAnalysisView(_roleForAnalysis);
     }
 
     // ─── Right: Decision Rail ─────────────────────────────────────────────────
@@ -12993,6 +13007,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       let analysis = null;
       let savedRole = null;
       let analysisError = null;
+      let _matchId = null;
 
       try {
         // ── Duplicate detection for ingestion overlay ────────────────────────
@@ -13232,11 +13247,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           output_json:         analysis,
         }).select('id').single();
         if (matchErr) throw matchErr;
+        _matchId = insertedMatch?.id || null;
         _tDbSaveMs = Math.round(performance.now() - _tDbStart2);
-        console.log('[perf] DB save in', _tDbSaveMs + 'ms');
-
-        // Background: patch narrative into DB when Pass 2 completes
-        if (insertedMatch?.id) _backgroundAIPatch(analysis, savedRole.id, insertedMatch.id);
+        console.log('[perf] DB save in', _tDbSaveMs + 'ms (AI enrichment will complete before Ready)');
 
         if (typeof insertEvent === 'function')
           insertEvent(savedRole.id, { event_type: 'analysis_saved', title: 'Analysis saved', detail: 'Source: ingestion overlay' });
@@ -13293,15 +13306,66 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         return;
       }
 
-      // ── Analysis ready: preload the role view behind the overlay ───────────
+      // ── Analysis ready: await AI enrichment before opening role ─────────────
+      // The animator holds at the gated 'buildrole'/'risks'/'overview' steps
+      // while we await the AI passes. Ready only appears once all required
+      // enrichment is done (or has timed out with a graceful fallback).
       _lineTimers.forEach(clearTimeout);
       _completeLine();
       _ingestionTimerStop(overlay);
       overlay._ingDone = true;
 
-      // Load data + pre-render the analysis view behind the overlay.
-      // We do this before starting the fade-out so there's no second loading
-      // state after the overlay disappears.
+      // Signal animator: Pass 1 has started (already in-flight from callAnalysisAPI)
+      if (_arAnimator) _arAnimator.setAnalysisAiStarted();
+
+      // Await Pass 1 — AI analysis (30 s timeout per ingestion contract)
+      let _aiResult = null;
+      if (analysis?._aiPromise) {
+        try {
+          _aiResult = await Promise.race([
+            analysis._aiPromise,
+            new Promise((_, rej) => setTimeout(() => rej(new Error('Pass 1 timeout')), 30_000)),
+          ]);
+        } catch (e) {
+          console.warn('[ingestion] Pass 1 failed or timed out:', e.message);
+        }
+      }
+      if (_aiResult) {
+        // Merge AI result; preserve the original promise reference
+        Object.assign(analysis, _aiResult, { _aiPromise: analysis._aiPromise });
+      }
+      if (_arAnimator) _arAnimator.setAnalysisAiDone();
+
+      // Await Pass 2 — narrative enrichment (20 s timeout)
+      if (_aiResult?._narrativePromise) {
+        try {
+          const _narr = await Promise.race([
+            _aiResult._narrativePromise,
+            new Promise((_, rej) => setTimeout(() => rej(new Error('Pass 2 timeout')), 20_000)),
+          ]);
+          if (_narr) analysis._narrative = _narr;
+        } catch (e) {
+          console.warn('[ingestion] Pass 2 (narrative) failed or timed out:', e.message);
+        }
+      }
+      if (_arAnimator) _arAnimator.setNarrativeDone();
+
+      // Persist the fully-enriched analysis to jd_matches so the analysis
+      // page opens with complete content. (Initial insert had local-only data.)
+      if (_matchId && analysis) {
+        const _enriched = Object.assign({}, analysis);
+        delete _enriched._aiPromise;
+        delete _enriched._narrativePromise;
+        try {
+          await db.from('jd_matches').update({ output_json: _enriched }).eq('id', _matchId);
+          console.log('[perf] Enriched analysis persisted to jd_matches');
+        } catch (e) {
+          console.warn('[ingestion] Failed to persist enriched analysis:', e);
+        }
+      }
+
+      // Pre-render the analysis view behind the overlay with the enriched role.
+      // Refresh first so allRoles picks up the updated jd_matches row.
       try {
         selectedRoleId = null;
         _setAppFilter('active');
@@ -13309,18 +13373,15 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         await refresh();
         const _inboxEl = document.getElementById('role-inbox');
         if (_inboxEl) _inboxEl.scrollTop = 0;
-        // Pre-render the role detail (behind overlay — invisible to user)
         selectRole(savedRole.id, { scrollIntoView: true });
       } catch (_) { /* non-fatal — transition anyway */ }
 
       const _tFirstRender = performance.now();
       const _totalMs = Math.round(_tFirstRender - _pipeT0);
       const _p1Ms    = _tPass1Done ? Math.round(_tPass1Done - _tPass1Start) : '?';
-      console.log('[perf] First useful render at', _totalMs + 'ms (total from submit)');
-      console.log('[perf] Breakdown — local analysis:', _p1Ms + 'ms | DB save:', _tDbSaveMs + 'ms | render+refresh:', Math.round(_totalMs - (_tPass1Done ? _tPass1Done - _pipeT0 : 0) - _tDbSaveMs) + 'ms');
-      console.log('[perf] AI enrichment + narrative still loading in background…');
+      console.log('[perf] Role ready at', _totalMs + 'ms (total from submit, includes AI enrichment)');
+      console.log('[perf] Breakdown — local analysis:', _p1Ms + 'ms | DB save:', _tDbSaveMs + 'ms');
 
-      // Mark ready; decide when to fade out
       _readyToTransition = true;
 
       function _doFadeOut() {
@@ -13330,12 +13391,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         }
       }
 
-      // Add Role v2 — hand completion off to the animator. The animator
-      // owns the reading stream, the Extracted panel, the One Thing card
-      // and the Ready CTA. It already has role + analysis fed in via the
-      // checkpoints above, so completePipeline() just unblocks the gated
-      // "done" step (or detects an ambiguity and routes to the One Thing
-      // card instead). The Open role overview button calls _ingFinalize.
+      // Hand completion to the animator — unblocks the gated 'done' step
+      // (or detects an ambiguity and routes to the One Thing card instead).
       if (_arAnimator) {
         _arAnimator.setRole(savedRole);
         _arAnimator.setAnalysis(analysis);
@@ -13497,9 +13554,14 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // Final synthesis
       steps.push({ tag: 'understand', t: 'Understanding requirements…' });
 
-      // Branch: ask vs done. The ask line is added if the detector found a
-      // supported ambiguity (the ask card itself replaces the ready CTA
-      // until the user resolves it).
+      // AI analysis phases — gated on pipeline signals from _runIngestionFlow.
+      // The animator holds at each gate (polling every 250 ms) until the
+      // corresponding promise resolves or times out in the pipeline.
+      steps.push({ tag: 'buildrole', gate: () => !state.analysisAiStarted, t: 'Building role analysis…' });
+      steps.push({ tag: 'risks',     gate: () => !state.analysisAiDone,    t: 'Checking risks and unknowns…' });
+      steps.push({ tag: 'overview',  gate: () => !state.narrativeDone,     t: 'Preparing role overview…' });
+
+      // Branch: ask vs done.
       if (state.ask) {
         const askLabel = (state.ask.label || 'one detail').toLowerCase();
         steps.push({ tag: 'ask', terminal: true, t: `Needs your input — ${askLabel}` });
@@ -13733,20 +13795,22 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const _esc = (typeof esc === 'function') ? esc : (s) => String(s ?? '');
 
       const state = {
-        revealed:       [],          // [{ tag, t (resolved string) }]
-        unveiledTags:   new Set(),
-        role:           null,
-        analysis:       null,
-        metaReady:      false,
-        sourceKind:     opts.sourceKind  || 'text',
-        sourceLabel:    opts.sourceLabel || 'pasted text',
-        pipelineDone:   false,
-        pipelineError:  null,
-        ask:            null,
-        askResolved:    false,
-        timer:          null,
-        terminal:       null,        // 'done' | 'ask' | 'fail' once the
-                                     //  animation hits a terminal step
+        revealed:          [],          // [{ tag, t (resolved string) }]
+        unveiledTags:      new Set(),
+        role:              null,
+        analysis:          null,
+        metaReady:         false,
+        sourceKind:        opts.sourceKind  || 'text',
+        sourceLabel:       opts.sourceLabel || 'pasted text',
+        pipelineDone:      false,
+        pipelineError:     null,
+        ask:               null,
+        askResolved:       false,
+        timer:             null,
+        terminal:          null,        // 'done' | 'ask' | 'fail' once animation hits terminal
+        analysisAiStarted: false,       // Pass 1 AI has begun
+        analysisAiDone:    false,       // Pass 1 AI has resolved (or timed out)
+        narrativeDone:     false,       // Pass 2 narrative has resolved (or timed out)
       };
       overlay._ingState = state;
 
@@ -13925,6 +13989,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         setAsk(ask) {
           state.ask = ask || null;
         },
+        setAnalysisAiStarted() { state.analysisAiStarted = true; },
+        setAnalysisAiDone()    { state.analysisAiDone    = true; },
+        setNarrativeDone()     { state.narrativeDone     = true; },
         completePipeline() {
           state.pipelineDone = true;
           // Detect ask if not set yet
