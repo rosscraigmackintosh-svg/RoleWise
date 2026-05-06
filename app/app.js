@@ -29637,6 +29637,9 @@ If a field cannot be determined from the message, return null for that field.`,
       return _insights;
     }
 
+    // Overview v2 uses an editorial briefing model. Numbers are for orientation,
+    // not performance scoring. Missing data should render as quiet placeholders,
+    // not invented insight.
     function renderOverviewView() {
       const el = document.getElementById('col-overview-cards');
       if (!el) return;
@@ -29999,7 +30002,7 @@ If a field cannot be determined from the message, return null for that field.`,
         <header class="rwo-header">
           <div>
             <h1 class="rwo-title">Overview</h1>
-            <p class="rwo-sub"><span class="rwo-dot rwo-dot--live"></span>Live, last updated ${esc(_lastUpd)}</p>
+            <p class="rwo-sub"><span class="rwo-dot rwo-dot--live"></span>Live · last updated ${esc(_lastUpd)}</p>
           </div>
         </header>`;
 
