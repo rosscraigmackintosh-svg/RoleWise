@@ -10567,9 +10567,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const el = document.getElementById('col-overview-cards');
       if (!el) return;
 
-      // Enable page scroll (same as legacy doc mode) and clear legacy classes
+      // col-overview-cards stays overflow:hidden — .ra-page is the scroll container.
       el.classList.remove('col-ov--legacy-doc');
-      el.classList.add('col-ov--legacy-doc');
       document.getElementById('col-chat')?.classList.remove('ws-active');
 
       // Suppress the legacy sticky header — title lives in the article header
@@ -10724,6 +10723,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // ── Assemble HTML ─────────────────────────────────────────────────────────
       el.innerHTML = `
         <div class="rwa-page ra-page">
+          <div class="ra-content">
 
           <div class="ra-topbar">
             <button class="ra-back" id="ra-btn-back" type="button">
@@ -10785,6 +10785,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
             </aside>
 
+          </div>
           </div>
         </div>`;
 

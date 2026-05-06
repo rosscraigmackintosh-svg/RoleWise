@@ -19010,10 +19010,18 @@ a.rw-rail-contact-name:hover {
    Namespace: ra-*  ───────────────────────────────────────────────────────── */
 
 .ra-page {
-  padding: 48px 56px 96px;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Scroll container — mirrors .rwo-page/.rwr-page pattern.
+     col-overview-cards stays overflow:hidden; this element scrolls. */
+}
+
+/* Inner centering + padding wrapper — mirrors .rwo-page-inner */
+.ra-content {
   max-width: 1200px;
   margin: 0 auto;
-  min-height: 100%;
+  padding: 48px 56px 96px;
   box-sizing: border-box;
 }
 
@@ -19050,8 +19058,8 @@ a.rw-rail-contact-name:hover {
 /* Two-column layout */
 .ra-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 64px;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 72px;
   align-items: start;
 }
 
@@ -19283,7 +19291,7 @@ a.rw-rail-contact-name:hover {
 /* ── Right rail ── */
 .ra-side {
   position: sticky;
-  top: 32px;
+  top: 48px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -19402,12 +19410,12 @@ a.rw-rail-contact-name:hover {
 
 /* Responsive */
 @media (max-width: 1140px) {
-  .ra-page { padding: 40px 40px 80px; }
+  .ra-content { padding: 40px 40px 80px; }
   .ra-layout { grid-template-columns: 1fr; gap: 40px; }
   .ra-side { position: static; }
 }
 @media (max-width: 720px) {
-  .ra-page { padding: 32px 24px 64px; }
+  .ra-content { padding: 32px 24px 64px; }
   .ra-title { font-size: 26px; }
   .ra-lede { font-size: 20px; }
 }
