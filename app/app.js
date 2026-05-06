@@ -13408,9 +13408,12 @@
       // The submit row itself stays visible so the action hierarchy is
       // preserved (Cancel + Analyse always on one row). Primary action
       // is disabled-not-hidden so there is no layout shift.
+      // v2: submit row stays hidden — reading auto-triggers on paste. The
+      // button itself is still wired (Cmd+Enter shortcut, programmatic click
+      // path) so the JS contract is preserved.
       const _updateSubmitRow = () => {
         const hasContent = _textarea.value.trim().length > 0;
-        if (_submitRow) _submitRow.removeAttribute('hidden'); // guard: always visible
+        if (_submitRow) _submitRow.setAttribute('hidden', '');
         if (_submitBtn) {
           if (hasContent) {
             _submitBtn.removeAttribute('disabled');
@@ -13425,12 +13428,37 @@
 
       // ── Copy varies by context ──────────────────────────────────────────────
       if (context === 'unanalysed') {
-        _headline.textContent = 'This role hasn\u2019t been analysed yet';
-        _sub.textContent = 'Paste a job description or a link to one';
+        // Add Role v2 is an understanding flow, not a form. The lede stays
+        // the same in both contexts; sub-copy adapts so an "unanalysed" role
+        // doesn't get the cold-start invitation.
+        _headline.textContent = 'Drop in this role\u2019s description, we\u2019ll make it clear.';
+        _sub.textContent = 'Paste the job description or a link. Rolewise will read it and pull out what matters.';
       } else {
-        _headline.textContent = 'Add a role';
-        _sub.textContent = 'Paste a job description or a link to one';
+        _headline.textContent = 'Drop in a role, we\u2019ll make it clear.';
+        _sub.textContent = 'Paste a job description, a link, or a recruiter message. Rolewise will read it, pull out what matters, and ask only if something\u2019s unclear.';
       }
+
+      // \u2500\u2500 v2 element refs (paste count, extracted, ready, source preview) \u2500\u2500
+      const _pasteCountEl = document.getElementById('rw-ing-paste-count');
+      const _extractedEl  = document.getElementById('rw-ing-extracted');
+      const _readyEl      = document.getElementById('rw-ing-ready');
+      const _readyLabel   = document.getElementById('rw-ing-ready-label');
+      const _openRoleBtn  = document.getElementById('rw-ing-open-role');
+      const _sourceEl     = document.getElementById('rw-ing-source');
+      const _streamWrap   = document.querySelector('.ar-overlay .ar-stream');
+      const _oneThingEl   = document.getElementById('rw-ing-onething');
+      const _setPasteCount = () => {
+        if (!_pasteCountEl) return;
+        const n = _textarea.value.trim().length;
+        _pasteCountEl.textContent = n > 0 ? `${n.toLocaleString()} chars` : '\u2014';
+      };
+      _setPasteCount();
+      // Reset v2-only state slots
+      if (_extractedEl) _extractedEl.innerHTML = '<div class="ar-fields-pending">Reading the role\u2026</div>';
+      if (_readyEl)     _readyEl.setAttribute('hidden', '');
+      if (_oneThingEl)  { _oneThingEl.setAttribute('hidden', ''); _oneThingEl.innerHTML = ''; }
+      if (_sourceEl)    { _sourceEl.setAttribute('hidden', ''); _sourceEl.textContent = ''; }
+      if (_streamWrap)  _streamWrap.classList.remove('is-done');
 
       // ── Show overlay ────────────────────────────────────────────────────────
       _overlay.removeAttribute('hidden');
@@ -13444,32 +13472,65 @@
       const _onCancelBtn = () => _closeIngestionOverlay(_overlay);
       if (_cancelBtn) _cancelBtn.addEventListener('click', _onCancelBtn);
 
-      // ── Keyboard shortcut: Ctrl/Cmd+Enter in textarea to submit ────────────
-      const _onTextareaKey = (e) => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          _submitIngestion();
-        }
-        // Escape to cancel
+      // Global Esc inside the overlay (works whether or not textarea is focused)
+      const _onOverlayKey = (e) => {
         if (e.key === 'Escape') {
           e.preventDefault();
           _closeIngestionOverlay(_overlay);
         }
       };
+      _overlay.addEventListener('keydown', _onOverlayKey);
+
+      // Keyboard shortcut: Ctrl/Cmd+Enter in textarea to submit immediately
+      const _onTextareaKey = (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          _submitIngestion();
+        }
+      };
       _textarea.addEventListener('keydown', _onTextareaKey);
 
-      // ── Textarea input — update submit row visibility ───────────────────────
+      // Textarea input — auto-trigger reading once paste lands.
+      // v2 spec: "Reading starts automatically. No big submit button in the
+      // blank state." We keep _submitIngestion() as the single ingestion path
+      // and just call it after a short debounce when the input crosses a
+      // pasted-text threshold (URL, or >= 60 chars of free text).
+      let _autoSubmitTimer = null;
       const _onTextareaInput = () => {
         _updateSubmitRow();
+        _setPasteCount();
+        clearTimeout(_autoSubmitTimer);
+        const v = _textarea.value.trim();
+        const looksLikeUrl = /^https?:\/\/.{4,}$/i.test(v) || /^www\..{4,}$/i.test(v);
+        const longEnough   = v.length >= 60;
+        if ((looksLikeUrl || longEnough) && !_submitted) {
+          _autoSubmitTimer = setTimeout(() => {
+            if (_submitted) return;
+            const cur = _textarea.value.trim();
+            if (cur.length >= 60 || /^https?:\/\/.{4,}$/i.test(cur) || /^www\..{4,}$/i.test(cur)) {
+              _submitIngestion();
+            }
+          }, 350);
+        }
       };
       _textarea.addEventListener('input', _onTextareaInput);
 
-      // ── Internal cleanup reference ──────────────────────────────────────────
+      // Open role overview button — Ready state CTA. The pipeline preloads
+      // the role detail behind the overlay; this button just commits the
+      // already-rendered transition.
+      const _onOpenRole = () => {
+        if (typeof _overlay._ingFinalize === 'function') _overlay._ingFinalize();
+      };
+      if (_openRoleBtn) _openRoleBtn.addEventListener('click', _onOpenRole);
+
       _overlay._ingCleanup = () => {
+        clearTimeout(_autoSubmitTimer);
         _textarea.removeEventListener('keydown', _onTextareaKey);
         _textarea.removeEventListener('input', _onTextareaInput);
+        _overlay.removeEventListener('keydown', _onOverlayKey);
         if (_submitBtn) _submitBtn.removeEventListener('click', _onSubmitBtn);
         if (_cancelBtn) _cancelBtn.removeEventListener('click', _onCancelBtn);
+        if (_openRoleBtn) _openRoleBtn.removeEventListener('click', _onOpenRole);
       };
 
       // ── URL detection helper ────────────────────────────────────────────────
@@ -13508,7 +13569,16 @@
         _idleEl.setAttribute('hidden', '');
         _procEl.removeAttribute('hidden');
 
-        // Start processing timer
+        // Source preview: echo the user's input back to them so the page
+        // stays grounded in what they actually pasted. Truncate generously
+        // so long JDs don't dominate the screen.
+        if (_sourceEl) {
+          const _previewText = _raw.length > 600 ? _raw.slice(0, 600) + '…' : _raw;
+          _sourceEl.textContent = _previewText;
+          _sourceEl.removeAttribute('hidden');
+        }
+
+        // Start processing timer (kept alive for telemetry; UI does not show it)
         _ingestionTimerStart(_overlay);
 
         // Run the analysis flow
@@ -13829,9 +13899,9 @@
         if (_procEl) _procEl.setAttribute('hidden', '');
         if (_idleEl) _idleEl.removeAttribute('hidden');
         // Preserve the pasted input — do NOT clear the textarea.
-        // The user can see what they entered, clear it themselves, and paste JD text.
-        // Submit row is always visible; re-enable Analyse if content is present.
-        if (_submitRow) _submitRow.removeAttribute('hidden');
+        // The user can see what they entered, clear it themselves, and paste again.
+        // v2: submit row stays hidden (auto-trigger handles re-entry on edit).
+        if (_submitRow) _submitRow.setAttribute('hidden', '');
         const _submitBtnRetry = document.getElementById('rw-ing-submit');
         if (_submitBtnRetry) {
           if (_textarea?.value.trim()) {
@@ -13887,17 +13957,114 @@
         }
       }
 
-      if (_userIsTypingContext) {
-        // User is mid-type — defer until they pause or blur
-        _contextDoneCallback = _doFadeOut;
-      } else if (_userFocusedContext) {
-        // User had focused a field but is no longer typing — short grace then go
-        setTimeout(_doFadeOut, 400);
-      } else {
-        // User never touched the context fields — fade out after a brief moment
-        // so the last progress line is visible for a beat
-        setTimeout(_doFadeOut, 500);
+      // Add Role v2 — show the calm Ready state instead of auto-closing.
+      // The user clicks "Open role overview" to commit the transition; the
+      // analysis view is already pre-rendered behind the overlay so the swap
+      // is instant. The legacy context-typing branches are dead code in v2
+      // (the Q1/Q2/Q3 inputs are hidden) but the path stays correct: if a
+      // future flow re-enables them, _ingFinalize is still the single exit.
+      _populateExtractedFields(overlay, savedRole, analysis);
+      _showAddRoleReadyState(overlay, savedRole);
+      overlay._ingFinalize = _doFadeOut;
+    }
+
+    // ─── Add Role v2: extracted fields + Ready state helpers ──────────────────
+    function _populateExtractedFields(overlay, role, analysis) {
+      const slot = document.getElementById('rw-ing-extracted');
+      if (!slot || !role) return;
+
+      const _esc = (typeof esc === 'function') ? esc : (s) => String(s ?? '');
+      const _capitalise = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+      const _initials = (name) => {
+        if (!name) return '?';
+        const parts = String(name).trim().split(/\s+/);
+        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+        return parts[0].slice(0, 2);
+      };
+      const _wmLabel = {
+        remote: 'Remote',
+        hybrid: 'Hybrid',
+        onsite: 'On-site',
+      };
+
+      const _title   = role.role_title || (analysis && analysis._roleTitle) || null;
+      const _company = (typeof sanitiseCompanyName === 'function'
+        ? sanitiseCompanyName(role.company_name)
+        : role.company_name) || null;
+      const _location = role.location_text || null;
+      const _wm       = role.work_model ? (_wmLabel[role.work_model.toLowerCase()] || _capitalise(role.work_model)) : null;
+      const _salary   = role.salary_text_raw || null;
+      const _type     = role.engagement_type || (analysis?.practical_details?.contract_type) || null;
+      const _sen      = (analysis?.role_archetype?.primary)
+        || (analysis?.what_they_are_really_looking_for?.seniority)
+        || null;
+      const _industry = (analysis?.role_archetype?.industry)
+        || (analysis?.practical_details?.industry)
+        || null;
+      const _src = (() => {
+        const url = role.job_url || '';
+        if (!url) return 'Pasted text';
+        if (/linkedin\./i.test(url))    return 'LinkedIn';
+        if (/greenhouse\./i.test(url))  return 'Greenhouse';
+        if (/lever\./i.test(url))       return 'Lever';
+        if (/workable\./i.test(url))    return 'Workable';
+        if (/ashbyhq\./i.test(url))     return 'Ashby';
+        try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return 'Web'; }
+      })();
+
+      const _row = (k, v) => {
+        const missing = !v;
+        const valHtml = missing
+          ? '<span class="ar-field-v is-missing">Not stated</span>'
+          : '<span class="ar-field-v">' + _esc(v) + '</span>';
+        return '<div class="ar-field-row">'
+          +   '<span class="ar-field-k">' + _esc(k) + '</span>'
+          +   valHtml
+          + '</div>';
+      };
+
+      let head = '';
+      if (_title || _company) {
+        head = '<div class="ar-field-head">'
+          +   (_title ? '<div class="ar-field-head-title">' + _esc(_title) + '</div>' : '')
+          +   (_company
+              ? '<span class="ar-field-head-company"><span class="ar-field-head-logo">' + _esc(_initials(_company)) + '</span>' + _esc(_company) + '</span>'
+              : '')
+          + '</div>';
       }
+
+      slot.innerHTML = head
+        + _row('Location',  _location)
+        + _row('Work model', _wm)
+        + _row('Salary',    _salary)
+        + _row('Type',      _type)
+        + _row('Seniority', _sen)
+        + _row('Industry',  _industry)
+        + _row('Source',    _src);
+
+      const stream = document.querySelector('.ar-overlay .ar-stream');
+      if (stream) stream.classList.add('is-done');
+      const streamLabel = document.querySelector('.ar-overlay .ar-stream-k-label');
+      if (streamLabel) streamLabel.textContent = 'read';
+    }
+
+    function _showAddRoleReadyState(overlay, role) {
+      const readyEl    = document.getElementById('rw-ing-ready');
+      const readyLabel = document.getElementById('rw-ing-ready-label');
+      if (!readyEl) return;
+      if (readyLabel) {
+        const _esc = (typeof esc === 'function') ? esc : (s) => String(s ?? '');
+        const t = role?.role_title || 'this role';
+        const c = (typeof sanitiseCompanyName === 'function'
+          ? sanitiseCompanyName(role?.company_name)
+          : role?.company_name) || '';
+        readyLabel.innerHTML = c
+          ? _esc(t) + ' · ' + _esc(c) + ' — ready to open.'
+          : _esc(t) + ' — ready to open.';
+      }
+      readyEl.removeAttribute('hidden');
+      const cta = document.getElementById('rw-ing-open-role');
+      if (cta) setTimeout(() => cta.focus(), 80);
     }
 
     function _closeIngestionOverlay(overlayEl) {
