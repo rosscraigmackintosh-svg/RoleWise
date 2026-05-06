@@ -25312,7 +25312,6 @@
     // live pages yet. They render a calm placeholder rather than inventing
     // page content. Each entry has a title and a one-line description.
     const PLACEHOLDER_PAGES = {
-      decisions:     { title: 'Decision History', description: 'This area will collect decisions made on roles once available.' },
       insights:      { title: 'Insights',          description: 'This area will collect patterns and observations from your search once available.' },
       patterns:      { title: 'Patterns',          description: 'This area will collect recurring patterns surfaced from your decisions once available.' },
       career_memory: { title: 'Career Memory',     description: 'This area will collect long-term context from your search once available.' },
@@ -31909,6 +31908,441 @@ If a field cannot be determined from the message, return null for that field.`,
       }
     }
 
+    // ─── Decision History v2 ──────────────────────────────────────────────────
+    // A calm editorial memory surface. Renders a record of decisions
+    // (Applied / Skipped / Revisited) sourced ONLY from real data:
+    // role_decision_snapshots + SKIP_REASONS + role_dna. Group-level patterns
+    // are aggregated from real fields (skip_reason counts, role_dna work_model
+    // share). When evidence is weak, sections are omitted entirely. No invented
+    // motivation, no scoring, no advice voice.
+    let _rwdFilter = 'all'; // 'all' | 'applied' | 'skipped' | 'revisited'
+
+    async function renderDecisionsView() {
+      const el = document.getElementById('col-overview-cards');
+      if (!el) return;
+      el.classList.remove('col-ov--legacy-doc');
+      _updateNavCounts();
+      const railSec = document.getElementById('col-rail-section');
+      if (railSec) railSec.innerHTML = '';
+      _setRailVisible(false);
+
+      // ── Initial paint with quiet placeholder while we fetch snapshots ────
+      el.innerHTML = `
+        <div class="rwa-page rwd-page">
+          <div class="rwa-page-inner rwd-page-inner">
+            <header class="rwa-header">
+              <div>
+                <h1 class="rwa-title">Decision history</h1>
+                <p class="rwa-sub">A record of what you chose to pursue, what you set aside, and why — so your judgement stays legible to you.</p>
+              </div>
+            </header>
+            <div class="rwo-divider"></div>
+            <div class="rwd-loading">Loading…</div>
+          </div>
+        </div>`;
+
+      // ── Load decision snapshots ──────────────────────────────────────────
+      let snaps = [];
+      try {
+        const { data, error } = await db.from('role_decision_snapshots')
+          .select('id, role_id, user_decision, skip_reason, skip_reason_other, role_dna, confirmed_blockers, notes, created_at')
+          .order('created_at', { ascending: false })
+          .limit(500);
+        if (error) throw error;
+        snaps = data || [];
+      } catch (e) {
+        console.warn('[renderDecisionsView]', e);
+      }
+
+      // ── Helpers ──────────────────────────────────────────────────────────
+      const SKIP_LABEL = {};
+      SKIP_REASONS.forEach(r => { SKIP_LABEL[r.key] = r.label; });
+
+      const roleMap = {};
+      (allRoles || []).forEach(r => { roleMap[r.id] = r; });
+
+      const _fmtAbsLong = (iso) => {
+        if (!iso) return '';
+        try {
+          return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        } catch (_) { return iso.slice(0, 10); }
+      };
+      const _fmtRel = (iso) => {
+        if (!iso) return '';
+        const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+        if (days <= 0) return 'today';
+        if (days === 1) return '1 day ago';
+        if (days < 7) return `${days} days ago`;
+        if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+        if (days < 365) return `${Math.floor(days / 30)} months ago`;
+        return `${Math.floor(days / 365)} years ago`;
+      };
+
+      const _signalsFor = (snap) => {
+        const dna = snap.role_dna || {};
+        const out = [];
+        const wm  = (dna.work_model || '').trim();
+        const loc = (dna.location_text || '').trim();
+        if (loc && wm) out.push({ k: `${loc} · ${wm.charAt(0).toUpperCase() + wm.slice(1)}` });
+        else if (loc)  out.push({ k: loc });
+        else if (wm)   out.push({ k: wm.charAt(0).toUpperCase() + wm.slice(1) });
+        const sal = (dna.salary_text_raw || '').trim();
+        if (sal) out.push({ k: sal });
+        else     out.push({ k: 'Salary not stated', tone: 'dim' });
+        return out;
+      };
+
+      // Reasons: derive 1-3 short bullets from real fields
+      const _reasonsFor = (snap) => {
+        const out = [];
+        const dec = snap.user_decision;
+
+        if (dec === 'skip') {
+          // Primary skip reason → top bullet
+          if (snap.skip_reason) {
+            const lbl = SKIP_LABEL[snap.skip_reason] || snap.skip_reason;
+            out.push(snap.skip_reason_other ? `${lbl}: ${snap.skip_reason_other}` : lbl);
+          }
+          // Confirmed blockers (real list) → up to 2 more bullets
+          const blockers = Array.isArray(snap.confirmed_blockers) ? snap.confirmed_blockers : [];
+          for (const b of blockers.slice(0, 2)) {
+            const label = b.label || SKIP_LABEL[b.key] || b.key;
+            if (label && !out.some(x => x.toLowerCase().includes(String(label).toLowerCase()))) {
+              out.push(label);
+            }
+          }
+        } else if (dec === 'apply') {
+          // Apply: surface role_dna signals as factual reasons
+          const dna = snap.role_dna || {};
+          const wm = (dna.work_model || '').toLowerCase();
+          if (wm.includes('remote'))      out.push('Remote-first role');
+          else if (wm.includes('hybrid')) out.push('Hybrid work model');
+          else if (wm.includes('onsite') || wm.includes('on-site') || wm.includes('on site')) out.push('On-site role');
+          const arch = dna.role_archetype?.primary;
+          if (arch) out.push(arch);
+          const verdict = dna.rolewise_verdict?.label || dna.rolewise_verdict;
+          if (typeof verdict === 'string' && verdict && !out.includes(verdict)) out.push(verdict);
+        } else if (dec === 'save') {
+          out.push('Saved for later review');
+        }
+        return out.slice(0, 3);
+      };
+
+      // ── Build decision items ─────────────────────────────────────────────
+      const items = snaps.map(s => {
+        const dna = s.role_dna || {};
+        const role  = dna.role_title  || roleMap[s.role_id]?.role_title  || 'Untitled role';
+        const company = sanitiseCompanyName(dna.company_name || roleMap[s.role_id]?.company_name) || '';
+        const dec = s.user_decision;
+        const verb = dec === 'apply' ? 'Applied' : dec === 'skip' ? 'Reviewed' : dec === 'save' ? 'Saved' : 'Recorded';
+        return {
+          id: s.id,
+          roleId: s.role_id,
+          outcome: dec, // 'apply' | 'skip' | 'save'
+          role,
+          company,
+          when: `${verb} ${_fmtAbsLong(s.created_at)}`,
+          rel: _fmtRel(s.created_at),
+          createdAt: s.created_at,
+          reasons: _reasonsFor(s),
+          signals: _signalsFor(s),
+          note: s.notes ? String(s.notes).trim() : null,
+        };
+      });
+
+      // ── Detect revisits: role_id with multiple distinct decisions ─────────
+      const byRole = {};
+      snaps.forEach(s => {
+        if (!byRole[s.role_id]) byRole[s.role_id] = [];
+        byRole[s.role_id].push(s);
+      });
+      const revisitedRoleIds = new Set();
+      Object.values(byRole).forEach(list => {
+        if (list.length < 2) return;
+        const decisions = new Set(list.map(s => s.user_decision));
+        if (decisions.size >= 2) revisitedRoleIds.add(list[0].role_id);
+      });
+
+      // Build the revisited group from the latest snapshot of each revisited role
+      const revisitedItems = [...revisitedRoleIds].map(rid => {
+        const latest = byRole[rid][0]; // newest first
+        const earlier = byRole[rid].slice(1);
+        const prevDec = earlier.find(s => s.user_decision !== latest.user_decision)?.user_decision;
+        const it = items.find(i => i.id === latest.id);
+        if (!it) return null;
+        const prevLabel = { apply: 'applied', skip: 'skipped', save: 'saved' }[prevDec] || 'recorded';
+        const currLabel = { apply: 'applied', skip: 'skipped', save: 'saved' }[latest.user_decision] || 'recorded';
+        return {
+          ...it,
+          when: `Revisited ${_fmtAbsLong(latest.created_at)}`,
+          reasons: [`Decision changed from ${prevLabel} to ${currLabel}`, ...it.reasons].slice(0, 3),
+        };
+      }).filter(Boolean);
+
+      // Top-level grouping (revisited excluded from applied/skipped to avoid double-counting)
+      const applied = items.filter(i => i.outcome === 'apply' && !revisitedRoleIds.has(i.roleId));
+      const skipped = items.filter(i => i.outcome === 'skip'  && !revisitedRoleIds.has(i.roleId));
+
+      // ── Group-level patterns (only if N >= 5 and signal is strong) ───────
+      const _appliedSnaps = snaps.filter(s => s.user_decision === 'apply');
+      const _skippedSnaps = snaps.filter(s => s.user_decision === 'skip');
+
+      let appliedPattern = null;
+      if (_appliedSnaps.length >= 5) {
+        const points = [];
+        const wmCounts = { remote: 0, hybrid: 0, onsite: 0 };
+        let wmKnown = 0;
+        _appliedSnaps.forEach(s => {
+          const wm = (s.role_dna?.work_model || '').toLowerCase();
+          if (wm.includes('remote'))                                                    { wmCounts.remote++; wmKnown++; }
+          else if (wm.includes('hybrid'))                                                { wmCounts.hybrid++; wmKnown++; }
+          else if (wm.includes('on-site') || wm.includes('onsite') || wm.includes('on site')) { wmCounts.onsite++; wmKnown++; }
+        });
+        if (wmKnown >= 3) {
+          const top = Object.entries(wmCounts).sort((a, b) => b[1] - a[1])[0];
+          const ratio = top[1] / wmKnown;
+          const labels = { remote: 'are remote-first', hybrid: 'are hybrid', onsite: 'are on-site' };
+          if (ratio >= 0.6) points.push(labels[top[0]]);
+        }
+        const archCounts = {};
+        _appliedSnaps.forEach(s => {
+          const a = s.role_dna?.role_archetype?.primary;
+          if (a) archCounts[a] = (archCounts[a] || 0) + 1;
+        });
+        const topArch = Object.entries(archCounts).sort((a, b) => b[1] - a[1])[0];
+        if (topArch && topArch[1] >= Math.max(2, Math.ceil(_appliedSnaps.length * 0.4))) {
+          points.push(`fit a ${String(topArch[0]).toLowerCase()} archetype`);
+        }
+        const salaryStated = _appliedSnaps.filter(s => (s.role_dna?.salary_text_raw || '').trim().length > 0).length;
+        if (salaryStated / _appliedSnaps.length >= 0.7) {
+          points.push('list a salary range');
+        }
+        if (points.length) {
+          appliedPattern = { headline: 'You tend to apply to roles that…', points: points.slice(0, 3) };
+        }
+      }
+
+      let skippedPattern = null;
+      if (_skippedSnaps.length >= 5) {
+        const reasonCounts = {};
+        _skippedSnaps.forEach(s => {
+          if (s.skip_reason) reasonCounts[s.skip_reason] = (reasonCounts[s.skip_reason] || 0) + 1;
+        });
+        const REASON_PHRASE = {
+          production_coding: 'require production coding in the take-home',
+          salary_missing:    'do not list a salary range',
+          salary_too_low:    'sit below your salary threshold',
+          hybrid_onsite:     'require regular on-site presence',
+          domain_mismatch:   'sit outside your product domain',
+          scope_unclear:     'have unclear scope or seniority',
+          marketing_heavy:   'lean heavily on marketing or growth scope',
+          too_junior:        'sit below your seniority',
+        };
+        const points = Object.entries(reasonCounts)
+          .filter(([k, c]) => c >= 2 && REASON_PHRASE[k])
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([k]) => REASON_PHRASE[k]);
+        if (points.length) {
+          skippedPattern = { headline: 'You tend to skip roles that…', points };
+        }
+      }
+
+      // ── Summary (real numbers) ───────────────────────────────────────────
+      const summary = {
+        reviewed: snaps.length,
+        applied:  _appliedSnaps.length,
+        skipped:  _skippedSnaps.length,
+        revisited: revisitedItems.length,
+      };
+
+      // Time window for summary meta line
+      let summaryWindow = '';
+      if (snaps.length) {
+        const oldest = snaps[snaps.length - 1].created_at;
+        const days = Math.floor((Date.now() - new Date(oldest).getTime()) / 86400000);
+        if (days < 14)      summaryWindow = `Past ${days} days`;
+        else if (days < 60) summaryWindow = `Past ${Math.round(days / 7)} weeks`;
+        else                summaryWindow = `Past ${Math.round(days / 30)} months`;
+      }
+
+      // ── Filter logic ─────────────────────────────────────────────────────
+      const filter = _rwdFilter || 'all';
+      const counts = {
+        all:       applied.length + skipped.length + revisitedItems.length,
+        applied:   applied.length,
+        skipped:   skipped.length,
+        revisited: revisitedItems.length,
+      };
+      const visible = {
+        applied:   (filter === 'all' || filter === 'applied')   ? applied        : [],
+        skipped:   (filter === 'all' || filter === 'skipped')   ? skipped        : [],
+        revisited: (filter === 'all' || filter === 'revisited') ? revisitedItems : [],
+      };
+      const anyVisible = visible.applied.length + visible.skipped.length + visible.revisited.length > 0;
+
+      // ── Render helpers ───────────────────────────────────────────────────
+      const _itemHtml = (d) => {
+        const reasonsHtml = d.reasons.length
+          ? `<ul class="rwd-reasons">${d.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`
+          : '';
+        const signalsHtml = d.signals.length
+          ? `<div class="rwd-signals">${d.signals.map(s => `<span class="rwd-signal${s.tone === 'dim' ? ' is-dim' : ''}">${esc(s.k)}</span>`).join('')}</div>`
+          : '';
+        const noteHtml = d.note ? `<div class="rwd-note">${esc(d.note)}</div>` : '';
+        return `
+          <a class="rwd-item" href="#" data-role-id="${esc(d.roleId)}" data-decision-id="${esc(d.id)}">
+            <div class="rwd-item-head">
+              <div class="rwd-item-role">
+                ${esc(d.role)}${d.company ? `<span class="rwd-item-company">${esc(d.company)}</span>` : ''}
+              </div>
+            </div>
+            <div class="rwd-item-ts">
+              ${esc(d.when)}
+              <span class="rwd-item-rel">${esc(d.rel)}</span>
+            </div>
+            <div class="rwd-item-body">
+              ${reasonsHtml}
+              ${signalsHtml}
+              ${noteHtml}
+            </div>
+          </a>`;
+      };
+
+      const _patternHtml = (p) => p ? `
+        <div class="rwd-pattern">
+          <div class="rwd-pattern-t">${esc(p.headline)}</div>
+          <ul class="rwd-pattern-list">${p.points.map(pt => `<li>${esc(pt)}</li>`).join('')}</ul>
+        </div>` : '';
+
+      const _groupHtml = (num, outcome, title, list, pattern) => {
+        if (!list.length) return '';
+        return `
+          <section class="rwd-group" data-outcome="${esc(outcome)}">
+            <div class="rwd-group-label">
+              <span class="rwd-group-num">${esc(num)}</span>${esc(outcome)}
+              <span class="rwd-group-ct">${list.length} ${list.length === 1 ? 'decision' : 'decisions'}</span>
+            </div>
+            <div class="rwd-group-body">
+              <div class="rwd-group-head">
+                <h2 class="rwd-group-t"><span class="rwd-group-dot"></span>${esc(title)}</h2>
+              </div>
+              ${_patternHtml(pattern)}
+              <div class="rwd-list">${list.map(_itemHtml).join('')}</div>
+            </div>
+          </section>`;
+      };
+
+      // ── Filter bar ───────────────────────────────────────────────────────
+      const _filterOptions = [
+        { k: 'all',     label: 'All',       ct: counts.all },
+        { k: 'applied', label: 'Applied',   ct: counts.applied },
+        { k: 'skipped', label: 'Skipped',   ct: counts.skipped },
+      ];
+      if (counts.revisited > 0) {
+        _filterOptions.push({ k: 'revisited', label: 'Revisited', ct: counts.revisited });
+      }
+      const filterHtml = `
+        <div class="rwd-filter" role="group" aria-label="Filter decisions">
+          ${_filterOptions.map(o => `
+            <button class="rwd-filter-btn${filter === o.k ? ' is-on' : ''}" data-rwd-filter="${esc(o.k)}">
+              ${esc(o.label)}<span class="rwd-filter-ct">${o.ct}</span>
+            </button>
+          `).join('')}
+        </div>`;
+
+      // ── Summary line ─────────────────────────────────────────────────────
+      const summaryHtml = snaps.length ? `
+        <div class="rwd-summary">
+          <span class="rwd-sum-frag"><span class="rwd-sum-v">${summary.reviewed}</span> ${summary.reviewed === 1 ? 'role' : 'roles'} reviewed</span>
+          <span class="rwd-sum-dot"></span>
+          <span class="rwd-sum-frag"><span class="rwd-sum-v">${summary.applied}</span> applied</span>
+          <span class="rwd-sum-dot"></span>
+          <span class="rwd-sum-frag"><span class="rwd-sum-v">${summary.skipped}</span> skipped</span>
+          ${summary.revisited > 0 ? `<span class="rwd-sum-dot"></span><span class="rwd-sum-frag"><span class="rwd-sum-v">${summary.revisited}</span> revisited</span>` : ''}
+          ${summaryWindow ? `<span class="rwd-sum-meta">${esc(summaryWindow.toLowerCase())}</span>` : ''}
+        </div>` : '';
+
+      // ── Body ─────────────────────────────────────────────────────────────
+      let bodyHtml;
+      const noTerminalDecisions = (applied.length + skipped.length + revisitedItems.length) === 0;
+      if (snaps.length === 0) {
+        bodyHtml = `
+          <div class="rwd-empty">
+            <div class="rwd-empty-mark"></div>
+            <div class="rwd-empty-t">No decisions yet</div>
+            <p class="rwd-empty-s">Review roles to start building your decision history. Every choice — to apply or to set aside — will be recorded here alongside its reasoning.</p>
+          </div>`;
+      } else if (filter === 'all' && noTerminalDecisions) {
+        bodyHtml = `
+          <div class="rwd-empty">
+            <div class="rwd-empty-mark"></div>
+            <div class="rwd-empty-t">No applied or skipped decisions yet</div>
+            <p class="rwd-empty-s">Saved roles aren’t shown here. Apply or set a role aside to start building your decision record.</p>
+          </div>`;
+      } else if (!anyVisible) {
+        bodyHtml = `
+          <div class="rwd-empty">
+            <div class="rwd-empty-mark"></div>
+            <div class="rwd-empty-t">Nothing in this view</div>
+            <p class="rwd-empty-s">Try a different filter.</p>
+          </div>`;
+      } else {
+        const groups = [
+          _groupHtml('01', 'applied',   'Applied — pursued',         visible.applied,   appliedPattern),
+          _groupHtml('02', 'skipped',   'Skipped — set aside',       visible.skipped,   skippedPattern),
+          _groupHtml('03', 'revisited', 'Revisited — reconsidered',  visible.revisited, null),
+        ].filter(Boolean);
+        bodyHtml = `<div class="rwd-groups">${groups.join('')}</div>`;
+      }
+
+      const closeHtml = snaps.length ? `
+        <div class="rwd-close">
+          <div class="rwd-close-l">Your decisions make sense. Come back here when you’re second-guessing a call — the reasoning is already written down.</div>
+          <div class="rwd-close-r">end of record</div>
+        </div>` : '';
+
+      // ── Render ───────────────────────────────────────────────────────────
+      el.innerHTML = `
+        <div class="rwa-page rwd-page">
+          <div class="rwa-page-inner rwd-page-inner">
+            <header class="rwa-header">
+              <div>
+                <h1 class="rwa-title">Decision history</h1>
+                <p class="rwa-sub">A record of what you chose to pursue, what you set aside, and why — so your judgement stays legible to you.</p>
+              </div>
+              ${snaps.length ? filterHtml : ''}
+            </header>
+            <div class="rwo-divider"></div>
+            ${summaryHtml}
+            ${bodyHtml}
+            ${closeHtml}
+          </div>
+        </div>`;
+
+      // ── Wire filter buttons ──────────────────────────────────────────────
+      el.querySelectorAll('[data-rwd-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _rwdFilter = btn.dataset.rwdFilter;
+          renderDecisionsView();
+        });
+      });
+
+      // ── Wire role click-through (open in Applications) ───────────────────
+      el.querySelectorAll('.rwd-item').forEach(row => {
+        row.addEventListener('click', (e) => {
+          e.preventDefault();
+          const id = row.dataset.roleId;
+          if (!id) return;
+          const role = (allRoles || []).find(r => r.id === id);
+          if (!role) return;
+          if (typeof _setAppFilter === 'function') _setAppFilter('all');
+          switchNav('applications');
+          selectRole(role.id, { scrollIntoView: true });
+        });
+      });
+    }
+
     // ── Monthly Hiring Reality Review ────────────────────────────────────────
     // Lightweight modal overlay showing a calm, factual summary of the current
     // calendar month. No scoring, judgement, or advice — just clarity.
@@ -32183,7 +32617,7 @@ If a field cannot be determined from the message, return null for that field.`,
       // model. Roles v2 is the canonical archive view and role analysis opens
       // as a focused reading surface. The col-list panel survives only for
       // the Recruiters view (which mounts its own list inside it).
-      const _NO_RAIL_VIEWS = new Set(['overview', 'radar', 'recruiters', 'review', 'safeguards', 'admin']);
+      const _NO_RAIL_VIEWS = new Set(['overview', 'radar', 'recruiters', 'review', 'safeguards', 'admin', 'decisions']);
       rightPanelVisible = !_NO_RAIL_VIEWS.has(view);
       const _colRight = document.getElementById('col-chat');
       if (_colRight) _colRight.style.display = 'none'; // chat panel hidden from UI
@@ -32231,7 +32665,7 @@ If a field cannot be determined from the message, return null for that field.`,
       }
 
       // ── Full interactive views ─────────────────────────────────────────────────
-      const FULL_VIEWS = { 'profile': renderProfileView, 'review': renderReviewView, 'recruiters': renderRecruitersView, 'safeguards': renderSafeguardsView, 'admin': renderAdminView, 'applications_timeline': renderApplicationsView };
+      const FULL_VIEWS = { 'profile': renderProfileView, 'review': renderReviewView, 'recruiters': renderRecruitersView, 'safeguards': renderSafeguardsView, 'admin': renderAdminView, 'applications_timeline': renderApplicationsView, 'decisions': renderDecisionsView };
       if (FULL_VIEWS[view]) {
         selectedRoleId = null;
         document.querySelectorAll('.inbox-role').forEach(r => r.classList.remove('active'));
