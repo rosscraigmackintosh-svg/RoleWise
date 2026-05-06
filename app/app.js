@@ -13833,7 +13833,15 @@
             const _aiTitle = analysis._roleTitle || null;
             if (_aiTitle) { _patch.role_title = _aiTitle; savedRole = { ...savedRole, role_title: _aiTitle }; }
           }
-          if (Object.keys(_patch).length) db.from('roles').update(_patch).eq('id', savedRole.id).catch(() => {});
+          // Fire-and-forget backfill. The Supabase v2 query builder is a
+          // thenable but doesn't expose .catch directly, so wrap in an async
+          // IIFE to preserve the original "swallow errors silently" intent.
+          if (Object.keys(_patch).length) {
+            (async () => {
+              try { await db.from('roles').update(_patch).eq('id', savedRole.id); }
+              catch (_) { /* non-fatal: company/title backfill */ }
+            })();
+          }
         }
 
         // ── Save jd_matches row ──────────────────────────────────────────────
@@ -14329,8 +14337,14 @@
             const _aiTitle = analysis._roleTitle || null;
             if (_aiTitle) { _patch.role_title = _aiTitle; role.role_title = _aiTitle; }
           }
+          // Fire-and-forget backfill. The Supabase v2 query builder is a
+          // thenable but doesn't expose .catch directly, so wrap in an async
+          // IIFE to preserve the original "swallow errors silently" intent.
           if (Object.keys(_patch).length) {
-            db.from('roles').update(_patch).eq('id', role.id).catch(() => {});
+            (async () => {
+              try { await db.from('roles').update(_patch).eq('id', role.id); }
+              catch (_) { /* non-fatal: company/title backfill */ }
+            })();
           }
         }
 
