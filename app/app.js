@@ -13838,6 +13838,23 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         });
       }
 
+      // ── Provenance: pasted text with no source URL ───────────────────────────
+      // The original job link is important for provenance and future tracking.
+      // Only ask for pasted text — URL ingestion and recruiter messages already
+      // have a source. Skip if job_url was extracted from the JD text itself.
+      // Priority 4: beats salary (5 would win over this) but lower than
+      // disambiguation (7) and hard no (9). Salary (5) > source-url (4).
+      if (state.sourceKind === 'text' && !state.role?.job_url) {
+        candidates.push({
+          priority: 4,
+          key:      'source-url',
+          label:    'Source link missing',
+          question: 'Add the original job link?',
+          choices:  [], // handled by _showSourceUrlAsk — inline URL input
+          skip:     'Open without link',
+        });
+      }
+
       candidates.sort((a, b) => b.priority - a.priority);
       return candidates.length ? candidates[0] : null;
     }
@@ -13913,6 +13930,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
 
       function _showAskCard(ask) {
+        // source-url has its own inline URL-input flow
+        if (ask.key === 'source-url') { _showSourceUrlAsk(ask); return; }
         _markLastAsDone();
         const slot = document.getElementById('rw-ing-onething');
         if (!slot) return;
@@ -13941,6 +13960,98 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             _showReadyState();
           });
         });
+      }
+
+      function _showSourceUrlAsk(ask) {
+        _markLastAsDone();
+        const slot = document.getElementById('rw-ing-onething');
+        if (!slot) return;
+
+        function _resolveAsk() {
+          slot.setAttribute('hidden', '');
+          slot.innerHTML = '';
+          state.askResolved = true;
+          state.ask = null;
+          _appendStepLine('Ready — opening role overview');
+          state.unveiledTags.add('done');
+          _arRenderFields(fieldsEl, state);
+          _markLastAsDone();
+          _showReadyState();
+        }
+
+        function _renderChoices() {
+          slot.innerHTML =
+            '<span class="ar-ask-k">ONE THING</span>'
+            + '<span class="ar-ask-q">' + _esc(ask.question) + '</span>'
+            + '<span class="ar-ask-choices">'
+            +   '<button type="button" class="ar-ask-choice is-primary" id="ar-ask-url-add">Add link</button>'
+            +   '<button type="button" class="ar-ask-choice" id="ar-ask-url-skip-now">Skip for now</button>'
+            +   '<button type="button" class="ar-ask-skip" id="ar-ask-url-escape">Open without link</button>'
+            + '</span>';
+          slot.removeAttribute('hidden');
+          slot.querySelector('#ar-ask-url-add')?.addEventListener('click', _renderInput);
+          slot.querySelector('#ar-ask-url-skip-now')?.addEventListener('click', _resolveAsk);
+          slot.querySelector('#ar-ask-url-escape')?.addEventListener('click', _resolveAsk);
+        }
+
+        function _renderInput() {
+          const choicesEl = slot.querySelector('.ar-ask-choices');
+          if (!choicesEl) return;
+          choicesEl.innerHTML =
+            '<div class="ar-ask-url-wrap">'
+            +   '<div class="ar-ask-url-row">'
+            +     '<input type="url" id="ar-ask-url-input" class="ar-ask-url-input" placeholder="Paste job URL…" autocomplete="off" spellcheck="false">'
+            +     '<button type="button" class="ar-ask-choice is-primary" id="ar-ask-url-save">Save</button>'
+            +   '</div>'
+            +   '<span class="ar-ask-url-feedback" id="ar-ask-url-feedback"></span>'
+            +   '<button type="button" class="ar-ask-skip" id="ar-ask-url-escape2">Open without link</button>'
+            + '</div>';
+
+          const input    = slot.querySelector('#ar-ask-url-input');
+          const saveBtn  = slot.querySelector('#ar-ask-url-save');
+          const feedback = slot.querySelector('#ar-ask-url-feedback');
+
+          input?.focus();
+
+          input?.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); saveBtn?.click(); }
+          });
+
+          slot.querySelector('#ar-ask-url-escape2')?.addEventListener('click', _resolveAsk);
+
+          saveBtn?.addEventListener('click', async () => {
+            const rawUrl = (input?.value || '').trim();
+            if (!rawUrl || !/^https?:\/\/.{4,}/i.test(rawUrl)) {
+              if (feedback) feedback.textContent = 'That does not look like a job link.';
+              input?.focus();
+              return;
+            }
+            saveBtn.disabled = true;
+            if (feedback) feedback.textContent = '';
+            const roleId = state.role?.id;
+            if (roleId) {
+              try {
+                const { error: _urlErr } = await db.from('roles')
+                  .update({ job_url: rawUrl })
+                  .eq('id', roleId);
+                if (_urlErr) throw _urlErr;
+                if (state.role) state.role.job_url = rawUrl;
+              } catch (_e) {
+                saveBtn.disabled = false;
+                if (feedback) {
+                  feedback.textContent = 'Couldn’t save the link. You can add it later.';
+                }
+                // Promote "Open without link" so user is never stuck
+                const _esc2 = slot.querySelector('#ar-ask-url-escape2');
+                if (_esc2) _esc2.style.display = 'inline';
+                return;
+              }
+            }
+            _resolveAsk();
+          });
+        }
+
+        _renderChoices();
       }
 
       function _showErrorState() {

@@ -18901,6 +18901,42 @@ a.rw-rail-contact-name:hover {
 }
 .ar-overlay .ar-ask-skip:hover { color: var(--text-muted); }
 
+/* Source-URL ask: inline input variant */
+.ar-overlay .ar-ask-url-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.ar-overlay .ar-ask-url-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ar-overlay .ar-ask-url-input {
+  all: unset;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 10px;
+  width: 220px;
+  max-width: 100%;
+  box-sizing: border-box;
+  transition: border-color 160ms ease;
+}
+.ar-overlay .ar-ask-url-input:focus { outline: none; border-color: var(--text-muted); }
+.ar-overlay .ar-ask-url-input::placeholder { color: var(--text-light); }
+.ar-overlay .ar-ask-url-feedback {
+  font-size: 11.5px;
+  color: var(--error-600, #d92d20);
+  letter-spacing: -0.003em;
+  min-height: 14px;
+  display: block;
+}
+
 /* Error card — shown when the pipeline can't read the role (broken link,
    empty paste, etc.). Replaces the half-finished extracted panel so the
    user isn't left with a fake parsing UI. */
