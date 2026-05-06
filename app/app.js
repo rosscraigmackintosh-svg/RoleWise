@@ -25303,7 +25303,6 @@
     // live pages yet. They render a calm placeholder rather than inventing
     // page content. Each entry has a title and a one-line description.
     const PLACEHOLDER_PAGES = {
-      applications_timeline: { title: 'Applications', description: 'Application history will appear here.' },
       decisions:             { title: 'Decision history', description: 'A record of decisions you have made on roles.' },
       insights:              { title: 'Insights', description: 'Patterns and observations from your job search.' },
       patterns:              { title: 'Pattern history', description: 'Recurring patterns surfaced from your decisions over time.' },
@@ -30322,6 +30321,388 @@ If a field cannot be determined from the message, return null for that field.`,
       });
     }
 
+    // ─── Applications page (Applications v2) ─────────────────────────────────
+    // Applications v2 is a timeline/history view for roles the user has
+    // actively applied to. It should not duplicate the Roles archive or
+    // introduce performance tracking.
+    let _appsLens = 'all';
+    function renderApplicationsView() {
+      const el = document.getElementById('col-overview-cards');
+      if (!el) return;
+      el.classList.remove('col-ov--legacy-doc');
+      _updateNavCounts();
+
+      const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const _fmtDate = (iso) => {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.getDate() + ' ' + _MONTHS[d.getMonth()];
+      };
+      const _fmtRel = (iso) => {
+        if (!iso) return '';
+        const ms = Date.now() - new Date(iso).getTime();
+        const mins = Math.floor(ms / 60000);
+        if (mins < 1)   return 'just now';
+        if (mins < 60)  return mins + 'm ago';
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24)   return hrs + 'h ago';
+        const days = Math.floor(hrs / 24);
+        if (days === 1) return 'Yesterday';
+        if (days < 7)   return days + 'd ago';
+        if (days < 30)  return Math.floor(days / 7) + 'w ago';
+        return Math.floor(days / 30) + 'mo ago';
+      };
+      const _fmtRespDays = (appliedIso, respIso) => {
+        if (!appliedIso || !respIso) return null;
+        const d = Math.floor((new Date(respIso).getTime() - new Date(appliedIso).getTime()) / 86400000);
+        if (d <= 0) return 'Same day';
+        return d === 1 ? '1 day' : (d + ' days');
+      };
+
+      // ── Pool: roles the user has actually applied to ─────────────────────
+      const _all = (allRoles || []).filter(r => !!r._appliedDate);
+
+      // ── Group classification (mutually exclusive, priority order) ─────────
+      const _isClosed = r => isArchivedRole(r) || r.user_decision === 'skip';
+      const _isAttention = r => !_isClosed(r) && !!_roleNudge(r);
+      const _isInProcess = r => !_isClosed(r) && _IN_PROGRESS_STAGES.has(currentStageLabel(r));
+      const _isAwaiting  = r => !_isClosed(r) && currentStageLabel(r) === 'Applied' && !r._firstResponseDate;
+
+      const _classifyGroup = (r) => {
+        if (_isAttention(r))  return 'attention';
+        if (_isInProcess(r))  return 'progress';
+        if (_isAwaiting(r))   return 'awaiting';
+        if (_isClosed(r))     return 'closed';
+        // Applied + first response received but not yet at an in-process stage —
+        // still loosely "awaiting" the next step.
+        return 'awaiting';
+      };
+
+      const _grouped = { attention: [], progress: [], awaiting: [], closed: [] };
+      for (const r of _all) _grouped[_classifyGroup(r)].push(r);
+      // Sort each group by recency (latest update first)
+      for (const k of Object.keys(_grouped)) _grouped[k].sort(roleSort);
+
+      const _GROUPS = [
+        { key: 'attention', label: 'Needs attention',   hint: 'No response for 14+ days, or follow-up due' },
+        { key: 'progress',  label: 'In process',        hint: 'Active interview stages' },
+        { key: 'awaiting',  label: 'Awaiting response', hint: 'Applied — no reply yet' },
+        { key: 'closed',    label: 'Closed',            hint: 'Rejected, withdrawn, or offer settled' },
+      ];
+
+      const _LENSES = [
+        { key: 'all',       label: 'All' },
+        { key: 'attention', label: 'Needs attention' },
+        { key: 'progress',  label: 'In process' },
+        { key: 'awaiting',  label: 'Awaiting' },
+        { key: 'closed',    label: 'Closed' },
+      ];
+
+      const _summary = {
+        total:     _all.length,
+        inProcess: _grouped.progress.length,
+        awaiting:  _grouped.awaiting.length + _grouped.attention.length,
+        closed:    _grouped.closed.length,
+      };
+      const _activeCount = _all.length - _grouped.closed.length;
+
+      const _counts = {
+        all:       _all.length,
+        attention: _grouped.attention.length,
+        progress:  _grouped.progress.length,
+        awaiting:  _grouped.awaiting.length,
+        closed:    _grouped.closed.length,
+      };
+
+      // ── Status pill text per group ───────────────────────────────────────
+      const _statusFor = (r, group) => {
+        const stage = currentStageLabel(r);
+        if (group === 'closed') {
+          const o = r.outcome_state;
+          if (o === 'rejected')        return { stage: 'Rejected',       sub: r.outcome_reason || null };
+          if (o === 'no_response')     return { stage: 'No response',    sub: null };
+          if (o === 'ghosted')         return { stage: 'Ghosted',        sub: null };
+          if (o === 'withdrew')        return { stage: 'Withdrew',       sub: null };
+          if (o === 'offer_accepted')  return { stage: 'Offer accepted', sub: null };
+          if (o === 'closed')          return { stage: 'Closed',         sub: r.outcome_reason || null };
+          if (r.user_decision === 'skip') return { stage: 'Closed', sub: r.outcome_reason || 'Stopped pursuing' };
+          return { stage: 'Closed', sub: null };
+        }
+        if (group === 'attention') {
+          const ars = _appResponseStatus(r);
+          if (ars && ars.days != null && (ars.status === 'stale' || ars.status === 'ghosted' || ars.status === 'waiting')) {
+            return { stage, sub: 'No response · ' + ars.days + ' days' };
+          }
+          return { stage, sub: 'Needs follow-up' };
+        }
+        if (group === 'progress') {
+          const lastUpd = r.role_updates?.[0]?.created_at;
+          return { stage, sub: lastUpd ? _fmtRel(lastUpd) : null };
+        }
+        // awaiting
+        const ars = _appResponseStatus(r);
+        if (ars && ars.status === 'waiting' && ars.days != null) {
+          return { stage, sub: 'Awaiting · ' + ars.days + ' days' };
+        }
+        return { stage, sub: 'Awaiting response' };
+      };
+
+      // ── Timeline construction from role_updates ──────────────────────────
+      // Only application-progression stages are meaningful here. JD Review
+      // and Skipped are pre/non-application states and would add noise to
+      // the timeline of an applied role.
+      const _APP_TL_STAGES = new Set(['Applied', 'Recruiter Screen', 'Hiring Manager', 'Panel', 'Final', 'Offer']);
+      const _buildTimeline = (r, group) => {
+        const stageEvents = (r.role_updates || [])
+          .filter(u => (!u.event_type || u.event_type === 'stage') && _APP_TL_STAGES.has(u.stage_reached))
+          .slice()
+          .reverse(); // oldest first
+        // Dedupe consecutive same-stage entries — only the first occurrence
+        // of each stage in a run is meaningful for the timeline.
+        const deduped = [];
+        let lastStage = null;
+        for (const u of stageEvents) {
+          const s = u.stage_reached;
+          if (s === lastStage) continue;
+          deduped.push(u);
+          lastStage = s;
+        }
+        // Cap to the most recent 6 transitions to keep cards readable.
+        const trimmed = deduped.length > 6 ? deduped.slice(-6) : deduped;
+        const items = trimmed.map(u => ({
+          date:  _fmtDate(u.created_at),
+          label: u.stage_reached,
+        }));
+        // Mark most recent stage event as "live" for active groups
+        if (items.length && (group === 'progress' || group === 'attention')) {
+          items[items.length - 1].live = true;
+        }
+        // Synthetic pending row for stale awaiting/attention
+        if (group === 'attention' || group === 'awaiting') {
+          const ars = _appResponseStatus(r);
+          if (ars && ars.days != null && !r._firstResponseDate) {
+            items.push({
+              date:  '—',
+              label: 'No response in ' + ars.days + ' days',
+              pending: true,
+              warn: group === 'attention',
+            });
+          }
+        }
+        // Closed outcome row
+        if (group === 'closed') {
+          const o = r.outcome_state;
+          const reason = r.outcome_reason ? ' — ' + r.outcome_reason : '';
+          let lbl = null;
+          if (o === 'rejected')        lbl = 'Rejected' + reason;
+          else if (o === 'no_response') lbl = 'No response' + reason;
+          else if (o === 'ghosted')     lbl = 'Ghosted' + reason;
+          else if (o === 'withdrew')    lbl = 'Withdrew' + reason;
+          else if (o === 'offer_accepted') lbl = 'Offer accepted';
+          else if (o === 'closed')      lbl = 'Closed' + reason;
+          else if (r.user_decision === 'skip') lbl = 'Stopped pursuing' + reason;
+          if (lbl) {
+            const closeDate = r.outcome_at || r.role_updates?.[0]?.created_at;
+            items.push({ date: _fmtDate(closeDate), label: lbl, closed: true });
+          }
+        }
+        return items;
+      };
+
+      // ── Card render ──────────────────────────────────────────────────────
+      const _renderCard = (r, idx, group) => {
+        const _company  = sanitiseCompanyName(r.company_name) || 'Unknown';
+        const _title    = r.role_title || 'Untitled role';
+        const _initials = _companyInitials(r.company_name);
+        const _logoIdx  = _companyColorIndex(_company);
+        const _location = r.location_text || '';
+        const _salary   = r.salary_text_raw || null;
+        const _appliedDateFmt = _fmtDate(r._appliedDate);
+        const _firstRespDays  = _fmtRespDays(r._appliedDate, r._firstResponseDate);
+        const _lastActivity   = _fmtRel(r.role_updates?.[0]?.created_at || r.created_at);
+
+        const _status = _statusFor(r, group);
+        const _timeline = _buildTimeline(r, group);
+
+        const _metaParts = [];
+        if (_location) _metaParts.push('<span>' + esc(_location) + '</span>');
+        if (_salary) _metaParts.push('<span class="rwa-salary">' + esc(_salary) + '</span>');
+        else _metaParts.push('<span class="rwa-salary rwa-salary--missing">Not stated</span>');
+        _metaParts.push('<span>Applied <span class="rwa-num">' + esc(_appliedDateFmt) + '</span></span>');
+        const _metaHtml = _metaParts.join('<span class="rwa-sep">·</span>');
+
+        const _tlHtml = _timeline.map((it, i) => {
+          const isLast = i === _timeline.length - 1;
+          const cls = [
+            'rwa-tl-item',
+            it.pending && 'rwa-tl-item--pending',
+            it.warn    && 'rwa-tl-item--warn',
+            it.live    && 'rwa-tl-item--live',
+            it.closed  && 'rwa-tl-item--closed',
+            it.subtle  && 'rwa-tl-item--subtle',
+            isLast     && 'rwa-tl-item--last',
+          ].filter(Boolean).join(' ');
+          return '<li class="' + cls + '">' +
+            '<span class="rwa-tl-rail" aria-hidden="true"></span>' +
+            '<span class="rwa-tl-dot" aria-hidden="true"></span>' +
+            '<span class="rwa-tl-date">' + esc(it.date) + '</span>' +
+            '<span class="rwa-tl-label">' + esc(it.label) + '</span>' +
+            '</li>';
+        }).join('');
+
+        return `
+          <article class="rwa-card rwa-card--${group}" data-role-id="${esc(r.id)}" tabindex="0">
+            <div class="rwa-card-head">
+              <div class="rwa-card-head-logo">
+                <div class="rwa-card-logo rwa-logo-${_logoIdx}">${esc(_initials)}</div>
+              </div>
+              <div class="rwa-card-head-main">
+                <div class="rwa-card-title-row">
+                  <h3 class="rwa-card-title">${esc(_title)}</h3>
+                  <span class="rwa-card-company">${esc(_company)}</span>
+                </div>
+                <div class="rwa-card-meta">${_metaHtml}</div>
+              </div>
+              <div class="rwa-status rwa-status--${group}">
+                <div class="rwa-status-stage">${group === 'progress' ? '<span class="rwa-dot rwa-dot--live"></span>' : ''}${esc(_status.stage)}</div>
+                ${_status.sub ? '<div class="rwa-status-sub">' + esc(_status.sub) + '</div>' : ''}
+              </div>
+            </div>
+            <div class="rwa-card-body">
+              <ol class="rwa-tl">${_tlHtml}</ol>
+              <div class="rwa-side">
+                <div class="rwa-resp-row">
+                  <span class="rwa-resp-k">First response</span>
+                  <span class="rwa-resp-v rwa-num">${esc(_firstRespDays || '—')}</span>
+                </div>
+                <div class="rwa-resp-row">
+                  <span class="rwa-resp-k">Last activity</span>
+                  <span class="rwa-resp-v rwa-num">${esc(_lastActivity || '—')}</span>
+                </div>
+              </div>
+            </div>
+          </article>`;
+      };
+
+      // ── Group section render ─────────────────────────────────────────────
+      const _renderGroup = (g) => {
+        const apps = _grouped[g.key];
+        if (apps.length === 0) return '';
+        let idx = 0;
+        const cards = apps.map((r) => _renderCard(r, idx++, g.key)).join('');
+        const markHtml =
+          g.key === 'attention' ? '<span class="rwa-group-mark"></span>' :
+          g.key === 'progress'  ? '<span class="rwa-dot rwa-dot--live"></span>' : '';
+        return `
+          <section class="rwa-group">
+            <div class="rwa-group-head">
+              <div class="rwa-group-left">
+                ${markHtml}
+                <h2 class="rwa-group-title">${esc(g.label)}</h2>
+                <span class="rwa-group-count">${apps.length}</span>
+              </div>
+              <span class="rwa-group-hint">${esc(g.hint)}</span>
+            </div>
+            <div class="rwa-list">${cards}</div>
+          </section>`;
+      };
+
+      // ── Body: grouped (lens=all) or single filtered list ─────────────────
+      let _bodyHtml;
+      if (!_all.length) {
+        _bodyHtml = `
+          <div class="rwa-empty">
+            <div class="rwa-empty-dot"></div>
+            <div class="rwa-empty-title">No applications yet</div>
+            <div class="rwa-empty-sub">Apply to a role to start tracking your progress.</div>
+          </div>`;
+      } else if (_appsLens === 'all') {
+        _bodyHtml = _GROUPS.map(_renderGroup).filter(Boolean).join('');
+      } else {
+        const apps = _grouped[_appsLens] || [];
+        if (apps.length === 0) {
+          const lensLabel = (_LENSES.find(l => l.key === _appsLens) || {}).label || '';
+          _bodyHtml = `
+            <div class="rwa-empty">
+              <div class="rwa-empty-dot"></div>
+              <div class="rwa-empty-title">Nothing in ${esc(lensLabel.toLowerCase())}</div>
+              <div class="rwa-empty-sub">Try a different view.</div>
+            </div>`;
+        } else {
+          let idx = 0;
+          const cards = apps.map(r => _renderCard(r, idx++, _appsLens)).join('');
+          _bodyHtml = `<section class="rwa-group"><div class="rwa-list">${cards}</div></section>`;
+        }
+      }
+
+      // ── Render ────────────────────────────────────────────────────────────
+      el.innerHTML = `
+        <div class="rwa-page">
+          <div class="rwa-page-inner">
+            <header class="rwa-header">
+              <div>
+                <h1 class="rwa-title">Applications</h1>
+                <p class="rwa-sub"><span class="rwa-num">${_activeCount}</span> active ${_activeCount === 1 ? 'application' : 'applications'}</p>
+              </div>
+              <div class="rwa-header-actions">
+                <button class="rwo-btn rwo-btn--primary" data-rwa-add type="button"><span class="rwo-plus" aria-hidden="true"></span>Add role</button>
+              </div>
+            </header>
+            <div class="rwo-divider"></div>
+
+            <div class="rwa-summary">
+              <div class="rwa-summary-item"><span class="rwa-summary-v rwa-num">${_summary.total}</span><span class="rwa-summary-k">total applied</span></div>
+              <span class="rwa-summary-sep"></span>
+              <div class="rwa-summary-item"><span class="rwa-summary-v rwa-num">${_summary.inProcess}</span><span class="rwa-summary-k">in process</span></div>
+              <span class="rwa-summary-sep"></span>
+              <div class="rwa-summary-item"><span class="rwa-summary-v rwa-num">${_summary.awaiting}</span><span class="rwa-summary-k">awaiting response</span></div>
+              <span class="rwa-summary-sep"></span>
+              <div class="rwa-summary-item"><span class="rwa-summary-v rwa-num">${_summary.closed}</span><span class="rwa-summary-k">closed</span></div>
+            </div>
+
+            <div class="rwa-lens-bar" role="tablist">
+              ${_LENSES.map(l => `
+                <button class="rwa-lens ${_appsLens === l.key ? 'rwa-lens--active' : ''}" data-rwa-lens="${esc(l.key)}" role="tab" aria-selected="${_appsLens === l.key}" type="button">
+                  <span>${esc(l.label)}</span>
+                  <span class="rwa-lens-count">${_counts[l.key] ?? 0}</span>
+                </button>
+              `).join('')}
+              <span class="rwa-lens-sep"></span>
+              <span class="rwa-sort">Sorted by <span class="rwa-sort-key">most recently updated</span></span>
+            </div>
+
+            <div class="rwa-sections">${_bodyHtml}</div>
+          </div>
+        </div>`;
+
+      // ── Wiring ────────────────────────────────────────────────────────────
+      el.querySelectorAll('[data-rwa-lens]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _appsLens = btn.dataset.rwaLens;
+          renderApplicationsView();
+        });
+      });
+      el.querySelectorAll('[data-rwa-add]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (typeof openIngestionOverlay === 'function') openIngestionOverlay({ context: 'add' });
+        });
+      });
+      el.querySelectorAll('.rwa-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const id = card.dataset.roleId;
+          if (!id) return;
+          selectRole(id, { scrollIntoView: false });
+        });
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            const id = card.dataset.roleId;
+            if (id) selectRole(id, { scrollIntoView: false });
+          }
+        });
+      });
+    }
+
     // ─── Review page ──────────────────────────────────────────────────────────
     async function renderReviewView() {
       const el = document.getElementById('col-overview-cards');
@@ -31102,7 +31483,7 @@ If a field cannot be determined from the message, return null for that field.`,
       }
 
       // ── Full interactive views ─────────────────────────────────────────────────
-      const FULL_VIEWS = { 'profile': renderProfileView, 'review': renderReviewView, 'recruiters': renderRecruitersView, 'safeguards': renderSafeguardsView, 'admin': renderAdminView };
+      const FULL_VIEWS = { 'profile': renderProfileView, 'review': renderReviewView, 'recruiters': renderRecruitersView, 'safeguards': renderSafeguardsView, 'admin': renderAdminView, 'applications_timeline': renderApplicationsView };
       if (FULL_VIEWS[view]) {
         selectedRoleId = null;
         document.querySelectorAll('.inbox-role').forEach(r => r.classList.remove('active'));

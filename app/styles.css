@@ -1435,6 +1435,467 @@
       padding: 4px 8px;
     }
 
+    /* ─── Applications page (Applications v2 — timeline / history) ───────────
+       Timeline-centric application records. Each card shows a real mini-
+       timeline of role events. Cards orient and follow up; never track
+       performance. */
+    .rwa-page {
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      font-family: var(--font);
+      color: var(--text);
+    }
+    .rwa-page-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 48px 80px;
+    }
+
+    /* Header */
+    .rwa-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin: 0 0 20px;
+    }
+    .rwa-title {
+      font-family: var(--font-head, var(--font));
+      font-size: 28px;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--text);
+      margin: 0 0 4px;
+    }
+    .rwa-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin: 0;
+    }
+    .rwa-header-actions { display: flex; gap: 8px; align-items: center; }
+    .rwa-num { font-family: var(--font-mono); }
+
+    /* Light summary row (calm inline; not a dashboard) */
+    .rwa-summary {
+      display: flex;
+      align-items: baseline;
+      gap: 18px;
+      padding: 4px 2px 22px;
+      flex-wrap: wrap;
+    }
+    .rwa-summary-item {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 7px;
+    }
+    .rwa-summary-v {
+      font-size: 18px;
+      color: var(--text);
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+    .rwa-summary-k {
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+    .rwa-summary-sep {
+      width: 1px;
+      height: 14px;
+      background: var(--border-light, var(--border));
+      display: inline-block;
+      align-self: center;
+    }
+
+    /* Lens (filter) bar */
+    .rwa-lens-bar {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 0 0 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--border-light, var(--border));
+      flex-wrap: wrap;
+    }
+    .rwa-lens {
+      all: unset;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 12px;
+      border-radius: 7px;
+      font-size: 13px;
+      color: var(--text-muted);
+      cursor: pointer;
+      position: relative;
+      transition: background 180ms ease, color 180ms ease;
+      font-family: inherit;
+    }
+    .rwa-lens:hover { background: var(--gray-50, #fafafa); color: var(--text); }
+    .rwa-lens--active { color: var(--text); font-weight: 500; }
+    .rwa-lens--active::after {
+      content: '';
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: -21px;
+      height: 2px;
+      background: var(--accent);
+    }
+    .rwa-lens-count {
+      font-size: 11px;
+      color: var(--text-light);
+      padding: 1px 6px;
+      border-radius: 8px;
+      background: var(--gray-100, #f5f5f5);
+      border: 1px solid var(--border-light, var(--border));
+      font-family: var(--font-mono);
+    }
+    .rwa-lens--active .rwa-lens-count {
+      color: var(--accent);
+      border-color: var(--accent-soft-2, var(--accent-soft));
+      background: var(--accent-soft);
+    }
+    .rwa-lens-sep { flex: 1; }
+    .rwa-sort {
+      font-size: 12px;
+      color: var(--text-light);
+      padding: 7px 4px;
+    }
+    .rwa-sort-key { color: var(--text-muted); }
+
+    /* Section + groups */
+    .rwa-sections {
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+    .rwa-group-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 0 2px 12px;
+      margin-bottom: 10px;
+      border-bottom: 1px dashed var(--border-light, var(--border));
+    }
+    .rwa-group-left { display: flex; align-items: center; gap: 10px; }
+    .rwa-group-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      margin: 0;
+      letter-spacing: 0.01em;
+    }
+    .rwa-group-count {
+      font-size: 12px;
+      color: var(--text-light);
+      font-family: var(--font-mono);
+    }
+    .rwa-group-hint {
+      font-size: 12px;
+      color: var(--text-light);
+    }
+    .rwa-group-mark {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--warning-700, #b54708);
+      opacity: 0.75;
+      display: inline-block;
+    }
+
+    /* Live dot (small) — used in status pill / group head */
+    .rwa-dot {
+      display: inline-block;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      margin-right: 8px;
+      vertical-align: middle;
+      position: relative;
+      top: -1px;
+      flex-shrink: 0;
+    }
+    .rwa-dot--live { background: var(--success-500, #17b26a); opacity: 0.9; }
+
+    /* Card */
+    .rwa-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .rwa-card {
+      display: block;
+      padding: 20px 22px 18px;
+      background: var(--surface);
+      border: 1px solid var(--border-light, var(--border));
+      border-radius: 12px;
+      cursor: pointer;
+      position: relative;
+      transition: background 180ms ease, border-color 180ms ease;
+      outline: none;
+    }
+    .rwa-card:hover {
+      background: var(--gray-25, #fdfdfd);
+      border-color: var(--border);
+    }
+    .rwa-card:focus-visible {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .rwa-card--attention {
+      border-left: 2px solid oklch(65% 0.09 40 / 0.5);
+    }
+    .rwa-card--closed { opacity: 0.72; }
+    .rwa-card--closed:hover { opacity: 1; }
+
+    /* Card head */
+    .rwa-card-head {
+      display: grid;
+      grid-template-columns: 44px 1fr auto;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .rwa-card-head-logo { padding-top: 2px; }
+    .rwa-card-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+    .rwa-logo-0 { background: #e7e0d6; color: #4a4337; }
+    .rwa-logo-1 { background: #dde7d6; color: #36433a; }
+    .rwa-logo-2 { background: #d6dee7; color: #364150; }
+    .rwa-logo-3 { background: #ded6e7; color: #44364f; }
+    .rwa-logo-4 { background: #e7d6d6; color: #503737; }
+    .rwa-logo-5 { background: #d6e7e3; color: #364c47; }
+
+    .rwa-card-head-main { min-width: 0; }
+    .rwa-card-title-row {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .rwa-card-title {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: -0.005em;
+      margin: 0;
+      line-height: 1.3;
+    }
+    .rwa-card-company {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    .rwa-card-meta {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .rwa-card-meta .rwa-sep { color: var(--border); }
+    .rwa-salary {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text);
+    }
+    .rwa-salary--missing {
+      color: var(--text-light);
+      font-style: italic;
+      font-family: var(--font);
+      font-size: 12.5px;
+    }
+
+    /* Status pill (right side of card head) */
+    .rwa-status {
+      text-align: right;
+      padding-top: 2px;
+      min-width: 160px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 3px;
+    }
+    .rwa-status-stage {
+      font-size: 12.5px;
+      color: var(--text);
+      font-weight: 500;
+      letter-spacing: -0.005em;
+      display: inline-flex;
+      align-items: center;
+    }
+    .rwa-status-sub {
+      font-size: 11.5px;
+      color: var(--text-light);
+      font-family: var(--font-mono);
+    }
+    .rwa-status--attention .rwa-status-stage { color: var(--warning-700, #b54708); }
+    .rwa-status--attention .rwa-status-sub  { color: var(--warning-700, #b54708); opacity: 0.85; }
+    .rwa-status--closed .rwa-status-stage { color: var(--text-light); font-weight: 400; }
+    .rwa-status--awaiting .rwa-status-stage { color: var(--text); }
+
+    /* Card body: timeline + side context */
+    .rwa-card-body {
+      display: grid;
+      grid-template-columns: 1fr 210px;
+      gap: 28px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px dashed var(--border-light, var(--border));
+      align-items: start;
+    }
+
+    /* Timeline */
+    .rwa-tl {
+      list-style: none;
+      margin: 0;
+      padding: 2px 0 0 0;
+      position: relative;
+    }
+    .rwa-tl-item {
+      position: relative;
+      display: grid;
+      grid-template-columns: 68px 1fr;
+      gap: 14px;
+      padding: 4px 0 10px;
+      min-height: 22px;
+      align-items: baseline;
+    }
+    .rwa-tl-item--last { padding-bottom: 0; }
+    .rwa-tl-rail {
+      position: absolute;
+      left: 76px;
+      top: 14px;
+      bottom: -4px;
+      width: 1px;
+      background: var(--border-light, var(--border));
+    }
+    .rwa-tl-item--last .rwa-tl-rail { display: none; }
+    .rwa-tl-dot {
+      position: absolute;
+      left: 73px;
+      top: 8px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+    }
+    .rwa-tl-item--subtle .rwa-tl-dot { border-color: var(--border-light, var(--border)); }
+    .rwa-tl-item--live .rwa-tl-dot {
+      border-color: var(--success-500, #17b26a);
+      background: var(--success-500, #17b26a);
+      box-shadow: 0 0 0 3px oklch(55% 0.12 150 / 0.15);
+    }
+    .rwa-tl-item--upcoming .rwa-tl-dot {
+      border-color: var(--accent);
+      background: var(--surface);
+    }
+    .rwa-tl-item--pending .rwa-tl-dot {
+      background: var(--surface);
+      border: 1.5px dashed var(--border);
+    }
+    .rwa-tl-item--warn .rwa-tl-dot {
+      border-color: var(--warning-700, #b54708);
+      background: var(--surface);
+    }
+    .rwa-tl-item--closed .rwa-tl-dot {
+      border-color: var(--text-muted);
+      background: var(--text-muted);
+    }
+    .rwa-tl-date {
+      font-size: 11.5px;
+      color: var(--text-light);
+      text-align: right;
+      padding-right: 4px;
+      line-height: 1.4;
+      padding-top: 1px;
+      font-family: var(--font-mono);
+    }
+    .rwa-tl-label {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.4;
+      padding-left: 12px;
+    }
+    .rwa-tl-item--subtle .rwa-tl-label { color: var(--text-muted); }
+    .rwa-tl-item--pending .rwa-tl-label { color: var(--text-muted); font-style: italic; }
+    .rwa-tl-item--warn .rwa-tl-label { color: var(--warning-700, #b54708); font-style: normal; }
+    .rwa-tl-item--upcoming .rwa-tl-label { color: var(--accent); font-weight: 500; }
+    .rwa-tl-item--closed .rwa-tl-label { color: var(--text-muted); }
+
+    /* Side context (response info) */
+    .rwa-side {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 2px;
+      border-left: 1px dashed var(--border-light, var(--border));
+      padding-left: 20px;
+    }
+    .rwa-resp-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .rwa-resp-k {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .rwa-resp-v {
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    /* Empty state */
+    .rwa-empty {
+      padding: 80px 24px;
+      text-align: center;
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+    }
+    .rwa-empty-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      margin: 0 auto 14px;
+    }
+    .rwa-empty-title {
+      font-size: 15px;
+      color: var(--text);
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .rwa-empty-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* Responsive: collapse side column on narrower */
+    @media (max-width: 980px) {
+      .rwa-card-body { grid-template-columns: 1fr; }
+      .rwa-side {
+        border-left: none;
+        padding-left: 0;
+        border-top: 1px dashed var(--border-light, var(--border));
+        padding-top: 12px;
+      }
+    }
+
     .review-section {
       margin-bottom: 40px;
     }
