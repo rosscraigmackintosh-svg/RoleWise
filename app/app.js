@@ -10692,19 +10692,67 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         ? '<p class="ra-no-analysis">No analysis available for this role yet. Paste the job description to generate one.</p>'
         : '';
 
+      // ── Monthly salary equivalent ─────────────────────────────────────────────
+      let _salaryMonthStr = null;
+      if (_salary) {
+        const _salRaw  = pd.salary_annual || role.salary_text_raw || null;
+        const _salPars = _salRaw ? _parseSalaryRange(_salRaw) : null;
+        if (_salPars && _salPars.min) {
+          const _fmtM  = n => `${_salPars.symbol}${Math.round(n).toLocaleString('en-GB')}`;
+          const _moMin = Math.round(_salPars.min / 12);
+          const _moMax = _salPars.max ? Math.round(_salPars.max / 12) : null;
+          _salaryMonthStr = (_moMax && _moMax !== _moMin)
+            ? `${_fmtM(_moMin)}–${_fmtM(_moMax)}/mo`
+            : `${_fmtM(_moMin)}/mo`;
+        }
+      }
+
       // ── At-a-glance facts ─────────────────────────────────────────────────────
       const _factRows = [
         { k: 'Location',  v: _loc  || (_wm && !_loc ? _wm : null) },
         { k: 'Work model',v: _wm && _loc ? _wm : null },
         { k: 'Type',      v: _engType },
-        { k: 'Salary',    v: _salary },
+        { k: 'Salary',    v: _salary, missing: !_salary, sub: _salaryMonthStr },
         { k: 'Company',   v: _company || null },
         { k: 'Industry',  v: _str(pd.industry) || _str(fo.role_archetype && fo.role_archetype.industry) || null },
         { k: 'Source',    v: _str((role.source_meta && role.source_meta.source_label) || role.source) || null },
-      ].filter(f => f.v);
+      ].filter(f => f.v || f.missing);
       const _factsHtml = _factRows.length
-        ? _factRows.map(f => `<div class="ra-fact"><span class="ra-fact-k">${esc(f.k)}</span><span class="ra-fact-v">${esc(f.v)}</span></div>`).join('')
+        ? _factRows.map(f => {
+            const _vHtml   = f.missing
+              ? `<span class="ra-fact-v ra-fact-v--muted">Not stated</span>`
+              : `<span class="ra-fact-v">${esc(f.v)}</span>`;
+            const _subHtml = f.sub ? `<span class="ra-fact-sub">${esc(f.sub)}</span>` : '';
+            return `<div class="ra-fact"><span class="ra-fact-k">${esc(f.k)}</span><div class="ra-fact-v-wrap">${_vHtml}${_subHtml}</div></div>`;
+          }).join('')
         : '<span class="ra-fact-missing">No facts available.</span>';
+
+      // ── Key signals ───────────────────────────────────────────────────────────
+      // Derived from real analysis data only — no invented signals.
+      const _sigBlockers = typeof _detectBlockers === 'function' ? _detectBlockers(role) : [];
+      const _sigItems    = [];
+      // Salary stated/not stated
+      if (_salary) _sigItems.push('Salary stated');
+      // Work model
+      if ((role.work_model || '').toLowerCase() === 'remote') _sigItems.push('Remote role');
+      // Recruiter-mediated (linked recruiter record present)
+      if (role.role_recruiters && role.role_recruiters.length > 0) _sigItems.push('Recruiter-mediated role');
+      // Blocker signals → observation language
+      const _sigBlockerLang = {
+        production_coding: 'Production coding expectation mentioned',
+        salary_missing:    'Salary not stated',
+        hybrid_onsite:     'Hybrid / on-site requirement stated',
+        scope_unclear:     'Scope ambiguity present',
+        domain_concern:    'Domain concern noted',
+        marketing_heavy:   'Marketing-heavy role',
+      };
+      _sigBlockers.forEach(b => {
+        if (b.key === 'salary_missing' && _salary) return; // already covered above
+        _sigItems.push(_sigBlockerLang[b.key] || b.label);
+      });
+      const _signalsHtml = _sigItems.length
+        ? _sigItems.map(s => `<div class="ra-signal">${esc(s)}</div>`).join('')
+        : `<div class="ra-signal-empty">No signals detected.</div>`;
 
       // ── Notes ─────────────────────────────────────────────────────────────────
       const _notesKey   = `rw_role_notes_${role.id}`;
@@ -10771,6 +10819,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
               <section class="ra-block">
                 <div class="ra-block-label">At a glance</div>
                 <div class="ra-facts">${_factsHtml}</div>
+              </section>
+
+              <section class="ra-block" id="ra-block-signals">
+                <div class="ra-block-label">Key signals</div>
+                <div class="ra-signals">${_signalsHtml}</div>
               </section>
 
               <section class="ra-block" id="ra-block-notes">
