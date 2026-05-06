@@ -31045,6 +31045,9 @@ If a field cannot be determined from the message, return null for that field.`,
       }
 
       // ── Applications nav ──────────────────────────────────────────────────────
+      // TODO: Rename Applications nav to Roles when the sidebar migration
+      // happens. The in-page Roles v2 filter row is now the source of truth
+      // for this view.
       // Clicking Applications always returns to the Roles v2 briefing — full
       // width, narrow inbox hidden. To open a role, the user clicks a card,
       // which restores the inbox + workspace split via selectRole.
