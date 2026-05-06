@@ -30290,16 +30290,16 @@ If a field cannot be determined from the message, return null for that field.`,
           if (typeof openIngestionOverlay === 'function') openIngestionOverlay({ context: 'add' });
         });
       });
-      // Card click → open role analysis (existing flow). Restore the inbox so
-      // selectRole can manage its active state and keyboard navigation.
+      // Card click → open role analysis as a focused reading surface.
+      // No inbox panel is mounted: Roles v2 is the canonical archive, and
+      // selectRole's inbox-active-row updates safely no-op when the legacy
+      // .inbox-role nodes are not in the DOM.
       el.querySelectorAll('.rwr-card').forEach(card => {
         card.addEventListener('click', e => {
           if (e.target.closest('[data-rwr-action]')) return;
           const id = card.dataset.roleId;
           if (!id) return;
-          setListPanelVisible(true);
-          renderInbox(allRoles);
-          selectRole(id, { scrollIntoView: true });
+          selectRole(id, { scrollIntoView: false });
         });
       });
       // Hover action → existing decision handler. Stop propagation so the card
@@ -31053,14 +31053,18 @@ If a field cannot be determined from the message, return null for that field.`,
         compareRoleIds.clear();
       }
 
-      // Right panel is only shown on Applications; hide on Overview and all other full-page views
+      // Rolewise no longer uses a persistent inbox/split-pane role browsing
+      // model. Roles v2 is the canonical archive view and role analysis opens
+      // as a focused reading surface. The col-list panel survives only for
+      // the Recruiters view (which mounts its own list inside it).
       const _NO_RAIL_VIEWS = new Set(['overview', 'radar', 'recruiters', 'review', 'safeguards', 'admin']);
       rightPanelVisible = !_NO_RAIL_VIEWS.has(view);
       const _colRight = document.getElementById('col-chat');
       if (_colRight) _colRight.style.display = 'none'; // chat panel hidden from UI
 
-      // Show the role list panel only for Applications
-      setListPanelVisible(view === 'applications');
+      // Default: list panel hidden. Recruiters view re-enables it for its
+      // own list. The Roles v2 briefing fills col-overview-cards full width.
+      setListPanelVisible(false);
 
       // ── Overview nav ──────────────────────────────────────────────────────────
       if (view === 'overview') {
@@ -31076,17 +31080,15 @@ If a field cannot be determined from the message, return null for that field.`,
       // TODO: Rename Applications nav to Roles when the sidebar migration
       // happens. The in-page Roles v2 filter row is now the source of truth
       // for this view.
-      // Clicking Applications always returns to the Roles v2 briefing — full
-      // width, narrow inbox hidden. To open a role, the user clicks a card,
-      // which restores the inbox + workspace split via selectRole.
+      // Roles v2 is full-width; no inbox is mounted. Clicking a card opens
+      // the role analysis as a focused reading surface, and clicking Roles
+      // again returns to the briefing archive.
       if (view === 'applications') {
-        // Restore app sub-panel if recruiter view was active
-        const _appPanel = document.getElementById('app-list-panel');
-        const _rcPanel  = document.getElementById('rc-list-panel-wrapper');
-        if (_appPanel) _appPanel.style.display = 'flex';
+        // Reset col-list inner panel visibility for the Recruiters view —
+        // app-list-panel itself stays hidden (legacy inbox).
+        const _rcPanel = document.getElementById('rc-list-panel-wrapper');
         if (_rcPanel)  _rcPanel.style.display = 'none';
         selectedRoleId = null;
-        setListPanelVisible(false);
         renderRolesView();
         _resetChatPanel();
         return;
@@ -32142,8 +32144,9 @@ If a field cannot be determined from the message, return null for that field.`,
         // Sidebar v2: refresh counts now that live data is loaded.
         _updateNavCounts();
 
-        // Hide list panel before rendering inbox to prevent flash on non-list views
-        setListPanelVisible(currentNav === 'applications');
+        // Legacy inbox is permanently hidden; renderInbox still populates the
+        // off-screen list so any decision/select code paths that read from it
+        // continue to find consistent state.
         renderInbox(allRoles);
         // Warm boundary cache, then re-render inbox so boundary match indicators
         // appear. Without the re-render the first inbox load always shows no

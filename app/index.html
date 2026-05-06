@@ -1005,7 +1005,9 @@
     <!-- Panel 3: Role list (Applications) -->
     <div class="col-list" id="col-list">
       <!-- Applications sub-panel: search + tabs + role list -->
-      <div id="app-list-panel" style="display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0;">
+      <!-- Legacy v1 role inbox — kept mounted (renderInbox writes here for analysis-side compat) but never displayed.
+           Roles v2 is the canonical role-list surface. col-list is still used by the Recruiters view. -->
+      <div id="app-list-panel" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0;">
         <!-- Add JD lives here — only visible in the applications/roles section -->
         <div class="list-panel-header">
           <button class="btn-add-jd" id="btn-open-add">+ Add JD</button>
