@@ -10556,6 +10556,344 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     }
 
     // ────────────────────────────────────────────────────────────────────────────
+    // Analysis v2 — Status & Stage readout + inline action prompts.
+    // Replaces the dense stage/outcome chip grid with a calm 4-row readout
+    // (Status / date / Current state / since) and a 2×2 action grid that opens
+    // inline prompts. Reuses setOutcome/markStage/reopenRole — does not create
+    // a parallel state system.
+    // ────────────────────────────────────────────────────────────────────────────
+
+    // Maps an outcome_state to the user-facing status word + visual state key.
+    // state key drives ra-pulse-dot colour: applied | process | skipped | closed.
+    function _analysisStatusForRole(role) {
+      const stage    = currentStageLabel(role);
+      const outcome  = role.outcome_state || null;
+      const stageIdx = currentStageIndex(role);
+
+      if (outcome === 'skipped') {
+        return { status: 'Skipped', state: 'skipped', currentState: 'No longer active' };
+      }
+      if (outcome && outcome !== 'applied' && outcome !== 'interviewing' && outcome !== 'offer_received' && outcome !== 'no_response') {
+        // Closed: rejected | withdrew | offer_accepted | ghosted | closed
+        const label = {
+          rejected:       'Rejected',
+          withdrew:       'Withdrew',
+          offer_accepted: 'Offer accepted',
+          ghosted:        'Ghosted',
+          closed:         'Closed',
+        }[outcome] || 'Closed';
+        return { status: 'Closed', state: 'closed', currentState: label };
+      }
+      // In process: Recruiter Screen and beyond
+      if (stageIdx >= 2) {
+        return { status: 'In process', state: 'process', currentState: stage };
+      }
+      // Applied (no movement) — currentState is "No response" until an outcome lands
+      if (role._appliedDate) {
+        return { status: 'Applied', state: 'applied', currentState: 'No response' };
+      }
+      // Pre-applied (just saved / JD review) — neutral grey dot, not orange
+      return { status: 'Saved', state: 'saved', currentState: stage || 'JD Review' };
+    }
+
+    function _formatShortDate(iso) {
+      if (!iso) return '—';
+      try {
+        const d = new Date(iso);
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+      } catch (_) { return '—'; }
+    }
+
+    function _humanDaysSince(iso) {
+      if (!iso) return '—';
+      const diff = Date.now() - new Date(iso).getTime();
+      const days = Math.floor(diff / 86400000);
+      if (days <= 0) return 'Today';
+      if (days === 1) return '1 day';
+      return `${days} days`;
+    }
+
+    // Latest stage update timestamp (most recent stage row, regardless of label)
+    function _latestStageAt(role) {
+      const stageRows = (role.role_updates || []).filter(u => !u.event_type || u.event_type === 'stage');
+      return stageRows.length ? stageRows[0].created_at : null;
+    }
+
+    function _renderAnalysisStatusBlock(role) {
+      const root = document.getElementById('ra-block-stage');
+      if (!root) return;
+      const readout = root.querySelector('#ra-status-readout');
+      const promptHost = root.querySelector('#ra-prompt-host');
+      const actions = root.querySelector('#ra-actions');
+      if (!readout || !promptHost || !actions) return;
+
+      const meta = _analysisStatusForRole(role);
+
+      // Date row label + value
+      // Spec: Applied (active); Closed on (closed); Last touched (skipped + no applied date)
+      let dateK, dateV;
+      if (meta.state === 'closed') {
+        dateK = 'Closed on';
+        dateV = _formatShortDate(role.outcome_at);
+      } else if (meta.state === 'skipped' && role._appliedDate) {
+        dateK = 'Applied';
+        dateV = _formatShortDate(role._appliedDate);
+      } else if (meta.state === 'skipped') {
+        dateK = 'Last touched';
+        dateV = _formatShortDate(role.outcome_at || _latestStageAt(role) || role.updated_at);
+      } else if (role._appliedDate) {
+        dateK = 'Applied';
+        dateV = _formatShortDate(role._appliedDate);
+      } else {
+        dateK = 'Saved';
+        dateV = _formatShortDate(role.created_at);
+      }
+
+      // Since-X row
+      let sinceK, sinceV;
+      if (meta.state === 'process') {
+        sinceK = 'Since last update';
+        sinceV = _humanDaysSince(_latestStageAt(role));
+      } else if (meta.state === 'skipped' || meta.state === 'closed') {
+        sinceK = 'Last touched';
+        sinceV = _humanDaysSince(role.outcome_at || _latestStageAt(role) || role.updated_at);
+      } else if (role._appliedDate) {
+        sinceK = 'Since applied';
+        sinceV = _humanDaysSince(role._appliedDate);
+      } else {
+        sinceK = 'Since saved';
+        sinceV = _humanDaysSince(role.created_at);
+      }
+
+      // Inference / reason strip
+      let interpHtml = '';
+      const stalledDays = role._appliedDate
+        ? Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000)
+        : 0;
+      if (meta.state === 'applied' && stalledDays >= 14) {
+        interpHtml = `<div class="ra-interp"><span class="ra-interp-glyph">inference</span><span class="ra-interp-t">This is likely stalled.</span></div>`;
+      } else if (meta.state === 'skipped' && role.outcome_reason) {
+        interpHtml = `<div class="ra-interp"><span class="ra-interp-glyph">reason</span><span class="ra-interp-t">${esc(role.outcome_reason)}</span></div>`;
+      } else if (meta.state === 'closed' && role.outcome_reason) {
+        interpHtml = `<div class="ra-interp"><span class="ra-interp-glyph">reason</span><span class="ra-interp-t">${esc(role.outcome_reason)}</span></div>`;
+      }
+
+      readout.innerHTML = `
+        <div class="ra-status-rows">
+          <div class="ra-status-row">
+            <span class="ra-status-k">Status</span>
+            <span class="ra-status-v ra-status-v--${meta.state}">${esc(meta.status)}</span>
+          </div>
+          <div class="ra-status-row">
+            <span class="ra-status-k">${esc(dateK)}</span>
+            <span class="ra-status-v ra-status-v--mono">${esc(dateV)}</span>
+          </div>
+          <div class="ra-status-row">
+            <span class="ra-status-k">Current state</span>
+            <span class="ra-status-v ra-status-v--pulse">
+              <span class="ra-pulse-dot" data-state="${meta.state}"></span>
+              ${esc(meta.currentState)}
+            </span>
+          </div>
+          <div class="ra-status-row">
+            <span class="ra-status-k">${esc(sinceK)}</span>
+            <span class="ra-status-v ra-status-v--mono">${esc(sinceV)}</span>
+          </div>
+        </div>
+        ${interpHtml}
+      `;
+
+      // ── Wire action buttons (idempotent re-render: replace prior listeners) ──
+      // Inline-prompt state lives in a single closure variable.
+      let openPrompt = null;
+      const closePrompt = () => {
+        openPrompt = null;
+        promptHost.innerHTML = '';
+        actions.querySelectorAll('.ra-btn[data-ra-action]').forEach(b => b.removeAttribute('data-active'));
+      };
+      const openInlinePrompt = (kind, html, wireFn) => {
+        if (openPrompt === kind) { closePrompt(); return; }
+        openPrompt = kind;
+        promptHost.innerHTML = html;
+        actions.querySelectorAll('.ra-btn[data-ra-action]').forEach(b => {
+          if (b.dataset.raAction === kind) b.setAttribute('data-active', 'true');
+          else b.removeAttribute('data-active');
+        });
+        const dismiss = promptHost.querySelector('.ra-prompt-close');
+        if (dismiss) dismiss.addEventListener('click', closePrompt);
+        if (wireFn) wireFn(promptHost);
+      };
+
+      const SKIP_REASONS = ['Salary not stated', 'Too many on-site days', 'Scope unclear', 'Not a good fit'];
+      const CLOSE_AS = [
+        { label: 'Rejected',       outcome: 'rejected',  reason: null               },
+        { label: 'Withdrew',       outcome: 'withdrew',  reason: null               },
+        { label: 'Offer declined', outcome: 'withdrew',  reason: 'Offer declined'   },
+      ];
+      const UPDATE_STAGES = ['Recruiter Screen', 'Hiring Manager', 'Panel', 'Offer'];
+
+      // Replace existing buttons with cloned nodes to drop any prior listeners
+      actions.querySelectorAll('.ra-btn[data-ra-action]').forEach(btn => {
+        const fresh = btn.cloneNode(true);
+        btn.replaceWith(fresh);
+      });
+
+      actions.querySelector('.ra-btn[data-ra-action="skip"]').addEventListener('click', () => {
+        const html = `
+          <div class="ra-prompt">
+            <div class="ra-prompt-head">
+              <span class="ra-prompt-t">Why did you skip this?</span>
+              <button type="button" class="ra-prompt-close">dismiss</button>
+            </div>
+            <div class="ra-chips">
+              ${SKIP_REASONS.map(r => `<button type="button" class="ra-chip" data-skip-reason="${esc(r)}">${esc(r)}</button>`).join('')}
+              <button type="button" class="ra-chip ra-chip--add" data-skip-reason="">Add note</button>
+            </div>
+          </div>`;
+        openInlinePrompt('skip', html, (host) => {
+          host.querySelectorAll('.ra-chip[data-skip-reason]').forEach(chip => {
+            chip.addEventListener('click', async () => {
+              const reason = chip.dataset.skipReason || null;
+              try {
+                await setOutcome(role.id, 'skipped', reason);
+              } catch (_) { /* setOutcome surfaces errors via UI */ }
+              const fresh = allRoles.find(r => r.id === role.id) || role;
+              closePrompt();
+              _renderAnalysisStatusBlock(fresh);
+            });
+          });
+        });
+      });
+
+      actions.querySelector('.ra-btn[data-ra-action="close"]').addEventListener('click', () => {
+        const html = `
+          <div class="ra-prompt">
+            <div class="ra-prompt-head">
+              <span class="ra-prompt-t">Close role as…</span>
+              <button type="button" class="ra-prompt-close">dismiss</button>
+            </div>
+            <div class="ra-chips">
+              ${CLOSE_AS.map((c, i) => `<button type="button" class="ra-chip" data-close-idx="${i}">${esc(c.label)}</button>`).join('')}
+            </div>
+          </div>`;
+        openInlinePrompt('close', html, (host) => {
+          host.querySelectorAll('.ra-chip[data-close-idx]').forEach(chip => {
+            chip.addEventListener('click', async () => {
+              const c = CLOSE_AS[parseInt(chip.dataset.closeIdx, 10)];
+              if (!c) return;
+              try {
+                await setOutcome(role.id, c.outcome, c.reason);
+              } catch (_) { /* surfaced by setOutcome */ }
+              const fresh = allRoles.find(r => r.id === role.id) || role;
+              closePrompt();
+              _renderAnalysisStatusBlock(fresh);
+            });
+          });
+        });
+      });
+
+      actions.querySelector('.ra-btn[data-ra-action="stage"]').addEventListener('click', () => {
+        const html = `
+          <div class="ra-prompt">
+            <div class="ra-prompt-head">
+              <span class="ra-prompt-t">Move to stage…</span>
+              <button type="button" class="ra-prompt-close">dismiss</button>
+            </div>
+            <div class="ra-chips">
+              ${UPDATE_STAGES.map(s => `<button type="button" class="ra-chip" data-stage="${esc(s)}">${esc(s)}</button>`).join('')}
+            </div>
+          </div>`;
+        openInlinePrompt('stage', html, (host) => {
+          host.querySelectorAll('.ra-chip[data-stage]').forEach(chip => {
+            chip.addEventListener('click', async () => {
+              const stage = chip.dataset.stage;
+              try {
+                await markStage(role.id, 'in_progress', stage);
+              } catch (_) { /* surfaced */ }
+              const fresh = allRoles.find(r => r.id === role.id) || role;
+              closePrompt();
+              _renderAnalysisStatusBlock(fresh);
+            });
+          });
+        });
+      });
+
+      actions.querySelector('.ra-btn[data-ra-action="interview"]').addEventListener('click', () => {
+        _openAddInterviewSlideIn(role);
+      });
+    }
+
+    // ── Add Interview slide-in (Analysis v2) ─────────────────────────────────
+    // Mock-aligned right-side panel: title, subtitle, stage chips, optional date.
+    // Saves via markStage when a chip is clicked. No calendar integration.
+    function _openAddInterviewSlideIn(role) {
+      // Tear down any existing slide-in (idempotent)
+      document.querySelectorAll('.ra-slidein, .ra-overlay').forEach(n => n.remove());
+
+      const company = role.company_name || (role.analysis && role.analysis._company) || '';
+      const title   = role.role_title || (role.analysis && role.analysis._roleTitle) || 'this role';
+      const STAGES  = ['Recruiter Screen', 'Hiring Manager', 'Panel', 'Final'];
+
+      const overlay = document.createElement('div');
+      overlay.className = 'ra-overlay';
+      const panel = document.createElement('aside');
+      panel.className = 'ra-slidein';
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-label', 'Add interview');
+      panel.innerHTML = `
+        <div class="ra-slidein-head">
+          <div>
+            <h3 class="ra-slidein-t">Add interview</h3>
+            <div class="ra-slidein-s">${esc(company ? company + ' · ' + title : title)}</div>
+          </div>
+          <button type="button" class="ra-slidein-close" aria-label="Close">×</button>
+        </div>
+        <div class="ra-field">
+          <div class="ra-field-label">Stage</div>
+          <div class="ra-chips">
+            ${STAGES.map(s => `<button type="button" class="ra-chip" data-stage="${esc(s)}">${esc(s)}</button>`).join('')}
+          </div>
+        </div>
+        <div class="ra-field">
+          <div class="ra-field-label">Date <span class="ra-field-optional">optional</span></div>
+          <input type="date" class="ra-date-input" />
+        </div>
+        <div class="ra-slidein-hint" id="ra-slidein-hint">Pick a stage to save instantly. Nothing else required.</div>
+      `;
+      document.body.appendChild(overlay);
+      document.body.appendChild(panel);
+
+      const close = () => {
+        overlay.remove();
+        panel.remove();
+        document.removeEventListener('keydown', onKey);
+      };
+      const onKey = (e) => { if (e.key === 'Escape') close(); };
+      overlay.addEventListener('click', close);
+      panel.querySelector('.ra-slidein-close').addEventListener('click', close);
+      document.addEventListener('keydown', onKey);
+
+      const hint = panel.querySelector('#ra-slidein-hint');
+      panel.querySelectorAll('.ra-chip[data-stage]').forEach(chip => {
+        chip.addEventListener('click', async () => {
+          panel.querySelectorAll('.ra-chip[data-stage]').forEach(c => c.removeAttribute('data-selected'));
+          chip.setAttribute('data-selected', 'true');
+          const stage = chip.dataset.stage;
+          if (hint) hint.textContent = 'Saving…';
+          try {
+            await markStage(role.id, 'in_progress', stage);
+            if (hint) hint.textContent = 'Saved. Close when done.';
+            const fresh = allRoles.find(r => r.id === role.id) || role;
+            _renderAnalysisStatusBlock(fresh);
+          } catch (_) {
+            if (hint) hint.textContent = 'Couldn’t save. Try again.';
+          }
+        });
+      });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
     // Analysis v2 — document-first role briefing.
     // Analysis v2 is a document-first role briefing. It should help the user
     // understand the role and update state without becoming a dashboard,
@@ -10844,7 +11182,26 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
               <section class="ra-block" id="ra-block-stage">
                 <div class="ra-block-label">Status &amp; stage</div>
-                <div id="role-chips-section"></div>
+                <div id="ra-status-readout"></div>
+                <div class="ra-actions-wrap">
+                  <div class="ra-actions" id="ra-actions">
+                    <button class="ra-btn" type="button" data-ra-action="skip">
+                      <span>Mark as skipped</span><span class="ra-btn-glyph">↘</span>
+                    </button>
+                    <button class="ra-btn" type="button" data-ra-action="interview">
+                      <span>Add interview</span><span class="ra-btn-glyph">+</span>
+                    </button>
+                    <button class="ra-btn" type="button" data-ra-action="close">
+                      <span>Close role</span><span class="ra-btn-glyph">×</span>
+                    </button>
+                    <button class="ra-btn" type="button" data-ra-action="stage">
+                      <span>Update stage</span><span class="ra-btn-glyph">↻</span>
+                    </button>
+                  </div>
+                  <div class="ra-prompt-host" id="ra-prompt-host"></div>
+                  <div class="ra-patterns-note">This contributes to your decision patterns</div>
+                </div>
+                <div id="role-chips-section" hidden></div>
               </section>
 
               <section class="ra-block">
@@ -10873,9 +11230,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           </div>
         </div>`;
 
-      // ── Populate stage rail ───────────────────────────────────────────────────
-      renderRail(role);
-      // Hide the legacy col-rail-section (empty — renderRail now targets #role-chips-section in the aside)
+      // ── Populate Status & Stage block (Analysis v2: readout + action prompts) ─
+      _renderAnalysisStatusBlock(role);
+      // Hide the legacy col-rail-section
       const _oldRailEl = document.getElementById('col-rail-section');
       if (_oldRailEl) { _oldRailEl.style.display = 'none'; _oldRailEl.innerHTML = ''; }
 
