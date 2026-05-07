@@ -2373,6 +2373,7 @@
     // paste field; the existing auto-trigger handles the rest. The badge maps
     // 1:1 to the pasted shape (link / jd / msg / role / paste). No fake
     // loading shortcuts — every example flows through the real ingestion path.
+    /* allow-em-dash-block: sample JD seed text emulates raw user-pasted JDs */
     const RW_INGEST_EXAMPLES = [
       {
         label:  'Senior Product Designer · AI SaaS',
@@ -2471,6 +2472,7 @@ You'll work on the core product. Scope includes "everything from research to hig
 About 5+ years of experience required. Generous equity. Pre-Series B fintech, profitable, 35 people.`
       },
     ];
+    /* end-allow-em-dash-block */
 
     function _renderIngestExamples(slot, onPick) {
       if (!slot) return;
@@ -29382,6 +29384,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         const PROMPTS_VERSION = 'Version 1';
         const PROMPTS_UPDATED = '7 March 2026';
 
+        /* allow-em-dash-block: LLM prompt templates rendered verbatim in admin view */
         const ADMIN_PROMPTS = [
           {
             id:      'jd_analysis',
@@ -29474,6 +29477,7 @@ Extract the following fields and return as JSON:
 If a field cannot be determined from the message, return null for that field.`,
           },
         ];
+        /* end-allow-em-dash-block */
 
         function _esc(s) {
           return s == null ? '' : String(s)
