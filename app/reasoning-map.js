@@ -154,11 +154,11 @@
   // buildGuidedSteps() picks the first node of each type from the live graph.
   const GUIDED_TYPE_INFO = {
     role:             { title: 'The role',          description: 'This is the role you\u2019re evaluating. Every other node in this graph exists to help you understand whether this role is a good fit. Start here.' },
-    company:          { title: 'The company',       description: 'Context about the company behind this role \u2014 stage, sector, and culture signals that shape the opportunity.' },
+    company:          { title: 'The company',       description: 'Context about the company behind this role: stage, sector, and culture signals that shape the opportunity.' },
     trait:            { title: 'Key traits',        description: 'Traits are characteristics Rolewise has inferred from the JD and company context. They shape what the day-to-day would feel like.' },
     blocker:          { title: 'Active blockers',   description: 'Blockers are conflicts between what this role requires and your saved preferences. These need to be resolved or accepted before committing.' },
     career_signal:    { title: 'Career signals',    description: 'Career signals are patterns Rolewise has learned from your past outcomes. They help predict whether you\u2019d thrive in this kind of role.' },
-    missing_evidence: { title: 'Missing evidence',  description: 'Missing evidence nodes represent gaps \u2014 things Rolewise can\u2019t assess yet because the information hasn\u2019t been provided or discovered.' },
+    missing_evidence: { title: 'Missing evidence',  description: 'Missing evidence nodes represent gaps: things Rolewise can\u2019t assess yet because the information hasn\u2019t been provided or discovered.' },
     jd_evidence:      { title: 'JD evidence',       description: 'Evidence extracted directly from the job description. These are concrete facts that support or challenge the role\u2019s fit.' },
   };
 
@@ -920,7 +920,7 @@
 
     return `
 <div id="rm-overlay" class="rm-overlay" role="dialog" aria-modal="true"
-     aria-label="Reasoning Map \u2014 ${_esc(title)}">
+     aria-label="Reasoning Map: ${_esc(title)}">
 
   <!-- ── Top bar ────────────────────────────────────────────────────────── -->
   <header class="rm-topbar">
@@ -1290,7 +1290,7 @@
       g.dataset.id   = edge.id;
       g.dataset.from = edge.from;
       g.dataset.to   = edge.to;
-      g.setAttribute('aria-label', `${def.label} \u2014 from ${fromNode.label} to ${toNode.label}`);
+      g.setAttribute('aria-label', `${def.label}: from ${fromNode.label} to ${toNode.label}`);
 
       const hit = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       hit.classList.add('rm-edge-hit');

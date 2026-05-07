@@ -79,13 +79,13 @@ function classifySignals(output, narrative, viability, userPrefs) {
       var wmLbl = dbPd.remote_model || ('Hybrid (' + hybDays + ' days)');
       addSig('Work model: ' + wmLbl, (upWMs && !upWMs.some(function(m) { return m === 'hybrid'; })) ? 'BREAKS' : 'POSITIVE');
     } else {
-      addSig('Hybrid \u2014 confirm office days required', 'NEEDS_CLARITY');
+      addSig('Hybrid: confirm office days required', 'NEEDS_CLARITY');
     }
   } else if (_isOnsite) {
     if (upWMs && !upWMs.some(function(m) { return m === 'on-site' || m === 'onsite'; })) {
       addSig('On-site role (not in your accepted work models)', 'BREAKS');
     } else {
-      addSig('On-site role \u2014 confirm location viability', 'NEEDS_CLARITY');
+      addSig('On-site role: confirm location viability', 'NEEDS_CLARITY');
     }
   } else if (!dbWm || dbWm.startsWith('not stated')) {
     addSig('Work model not stated', 'NEEDS_CLARITY');
@@ -141,7 +141,7 @@ function classifySignals(output, narrative, viability, userPrefs) {
       addSig('Salary \u00a3' + Math.round(_salCeiling / 1000) + 'k below your minimum (\u00a3' + Math.round(upSalaryMin / 1000) + 'k)', 'BREAKS');
     } else if (_salFloor !== null && upSalaryMin !== null && _salFloor < upSalaryMin && _salCeiling >= upSalaryMin) {
       // Case 2: range overlaps — lower band below, upper band meets minimum → caution
-      addSig('Compensation: ' + dbPd.salary_annual + ' \u2014 lower band below your \u00a3' + Math.round(upSalaryMin / 1000) + 'k minimum, upper band meets it', 'NEEDS_CLARITY');
+      addSig('Compensation: ' + dbPd.salary_annual + ', lower band below your \u00a3' + Math.round(upSalaryMin / 1000) + 'k minimum, upper band meets it', 'NEEDS_CLARITY');
     } else {
       // Case 3: salary meets or exceeds minimum, or no user minimum set → positive
       addSig('Compensation: ' + dbPd.salary_annual, 'POSITIVE');
@@ -160,7 +160,7 @@ function classifySignals(output, narrative, viability, userPrefs) {
       addSig(_engLabel + ' role (you prefer ' + up.employment_types.join(' / ') + ')', 'BREAKS');
     }
   } else if (!_engType && upEmpTypes) {
-    addSig('Role type not stated \u2014 worth confirming', 'NEEDS_CLARITY');
+    addSig('Role type not stated, worth confirming', 'NEEDS_CLARITY');
   }
 
   // ── Seniority ────────────────────────────────────────────────────
@@ -254,7 +254,7 @@ function classifySignals(output, narrative, viability, userPrefs) {
       rTrunc = rTrunc
         .replace(/^Seniority mismatch\b/i, 'Seniority level may differ')
         .replace(/^Design strategy void\b/i, 'Design strategy role unclear')
-        .replace(/^Solo or very small\b/i, 'Team size unclear \u2014 may be solo or small');
+        .replace(/^Solo or very small\b/i, 'Team size unclear, may be solo or small');
       addSig(rTrunc, 'NEEDS_CLARITY');
       _narrClarityAdded++;
     }

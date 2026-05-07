@@ -2835,18 +2835,18 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           if (_prefWms.indexOf(_wm) >= 0) {
             return 'This may reflect alignment with your preferred work model';
           }
-          return 'This is based on a small sample \u2014 may not reflect your fit alone';
+          return 'This is based on a small sample, may not reflect your fit alone';
         }
       }
 
       // Stalled trait: "X of Y similar remote roles have not progressed past application"
       if (/have not progressed past application/.test(l)) {
-        return 'This is a small sample \u2014 many factors are outside your control';
+        return 'This is a small sample, many factors are outside your control';
       }
 
       // Engagement type: "Contract roles have had a lower response rate"
       if (/lower response rate in your search/.test(l)) {
-        return 'Response rates vary widely \u2014 this may not reflect your fit alone';
+        return 'Response rates vary widely, this may not reflect your fit alone';
       }
 
       // Monthly dominance: "Most applications this month were for remote roles"
@@ -2856,12 +2856,12 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
       // Outcome insight: "Closed roles have tended to end at Applied, no reply came back"
       if (/tended to end at applied/.test(l)) {
-        return 'This is common across the market \u2014 most applications receive no reply';
+        return 'This is common across the market: most applications receive no reply';
       }
 
       // Outcome insight: "None of the X applications have had a reply yet"
       if (/none of the .+ applications have had a reply/.test(l)) {
-        return 'Response timelines vary \u2014 some processes take several weeks';
+        return 'Response timelines vary: some processes take several weeks';
       }
 
       return null;
@@ -4385,7 +4385,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           _ctx = _stageForCopy ? `Rejected after ${_stage}` : 'Rejected after review';
           if (role._appliedDate) {
             const _d = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
-            _ctx += ` \u2014 ${_d} day${_d !== 1 ? 's' : ''} after applying`;
+            _ctx += `, ${_d} day${_d !== 1 ? 's' : ''} after applying`;
           }
         } else if (currentVal === 'no_response' && role._appliedDate) {
           const _d = Math.floor((Date.now() - new Date(role._appliedDate).getTime()) / 86400000);
@@ -5262,7 +5262,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
               _dynSkipLine = (_se > 0 && _se <= 80) ? _dynSkipLine.slice(0, _se + 1) : _dynSkipLine.slice(0, 78) + '\u2026';
             }
           }
-          _overlay.innerHTML = `<div class="rp-skipped-msg">Skipped \u2014 that looks like the right call</div>
+          _overlay.innerHTML = `<div class="rp-skipped-msg">Skipped, that looks like the right call</div>
             ${_dynSkipLine ? `<div class="rp-skipped-reason">${esc(_dynSkipLine)}</div>` : ''}
             <button class="rw-btn rw-btn-sm" id="rp-btn-reconsider">Reconsider</button>`;
           _analysisPanel.prepend(_overlay);
@@ -10111,7 +10111,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // Applied panel HTML — uses .doc-section pattern for consistency with Analysis
       const _appliedHtml = `
         <div class="rp-applied-content">
-          <div class="as-header">Applied \u2014 nice. Let\u2019s make this count.</div>
+          <div class="as-header">Applied. Let\u2019s make this count.</div>
           ${_qcHtml}
 
           <div class="doc-section">
@@ -10159,7 +10159,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         }
         _skipOverlay = `
           <div class="rp-skipped-section" id="rp-skipped-overlay">
-            <div class="rp-skipped-msg">Skipped \u2014 that looks like the right call</div>
+            <div class="rp-skipped-msg">Skipped, that looks like the right call</div>
             ${_skipSignalLine ? `<div class="rp-skipped-reason">${esc(_skipSignalLine)}</div>` : ''}
             <button class="rw-btn rw-btn-sm" id="rp-btn-reconsider">Reconsider</button>
           </div>`;
@@ -10349,7 +10349,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         : '';
 
       _pActEl.innerHTML = `
-        <div class="as-header">Applied \u2014 nice. Let\u2019s make this count.</div>
+        <div class="as-header">Applied. Let\u2019s make this count.</div>
         <div class="as-stage-timeline">${_tlHtml}</div>
         ${_qcHtml}
         <div class="as-action-block">
@@ -10597,16 +10597,16 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     }
 
     function _formatShortDate(iso) {
-      if (!iso) return '—';
+      if (!iso) return '-';
       try {
         const d = new Date(iso);
         const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-      } catch (_) { return '—'; }
+      } catch (_) { return '-'; }
     }
 
     function _humanDaysSince(iso) {
-      if (!iso) return '—';
+      if (!iso) return '-';
       const diff = Date.now() - new Date(iso).getTime();
       const days = Math.floor(diff / 86400000);
       if (days <= 0) return 'Today';
@@ -10976,7 +10976,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       let _s02 = null;
       if (_s02src) {
         const _infNote = fo.why_this_role_exists_confidence === 'inferred'
-          ? '<p class="ra-note">Inferred from context — not explicitly stated in the JD.</p>'
+          ? '<p class="ra-note">Inferred from context, not explicitly stated in the JD.</p>'
           : '';
         _s02 = `<p class="ra-p">${esc(_sanitizeUiText(_s02src))}</p>${_infNote}`;
       }
@@ -13220,7 +13220,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const _setPasteCount = () => {
         if (!_pasteCountEl) return;
         const n = _textarea.value.trim().length;
-        _pasteCountEl.textContent = n > 0 ? `${n.toLocaleString()} chars` : '\u2014';
+        _pasteCountEl.textContent = n > 0 ? `${n.toLocaleString()} chars` : '-';
       };
       _setPasteCount();
       // Reset v2-only state slots
@@ -13920,7 +13920,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
       // Source recognition
       if (state.sourceKind === 'url') {
-        steps.push({ tag: 'source', t: `Recognised link source — ${state.sourceLabel || 'link'}` });
+        steps.push({ tag: 'source', t: `Recognised link source: ${state.sourceLabel || 'link'}` });
       } else if (state.sourceKind === 'recruiter') {
         steps.push({ tag: 'source', t: 'Recognised recruiter message' });
       } else {
@@ -13934,7 +13934,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         tag: 'title',
         gate: () => !state.metaReady,
         skipIf: () => !state.role?.role_title,
-        t: () => state.role?.role_title ? `Found title — ${state.role.role_title}` : null,
+        t: () => state.role?.role_title ? `Found title: ${state.role.role_title}` : null,
       });
       steps.push({
         tag: 'company',
@@ -13944,7 +13944,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           const c = (typeof sanitiseCompanyName === 'function'
             ? sanitiseCompanyName(state.role?.company_name)
             : state.role?.company_name) || null;
-          return c ? `Found company — ${c}` : null;
+          return c ? `Found company: ${c}` : null;
         },
       });
 
@@ -13960,8 +13960,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             || (String(r.work_model).charAt(0).toUpperCase() + String(r.work_model).slice(1))) : null;
           const sal = (r.salary_text_raw || '').trim() || null;
           const loc = r.location_text || _wm || null;
-          if (sal && loc)  return `Salary — ${sal} · ${loc}`;
-          if (sal)         return `Salary — ${sal}`;
+          if (sal && loc)  return `Salary: ${sal} · ${loc}`;
+          if (sal)         return `Salary: ${sal}`;
           if (loc)         return `Salary not stated · ${loc}`;
           return 'Salary not stated';
         },
@@ -13989,7 +13989,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         t: () => {
           const ind = state.analysis?.role_archetype?.industry
             || state.analysis?.practical_details?.industry;
-          return ind ? `Industry — ${ind}` : null;
+          return ind ? `Industry: ${ind}` : null;
         },
       });
 
@@ -14006,9 +14006,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // Branch: ask vs done.
       if (state.ask) {
         const askLabel = (state.ask.label || 'one detail').toLowerCase();
-        steps.push({ tag: 'ask', terminal: true, t: `Needs your input — ${askLabel}` });
+        steps.push({ tag: 'ask', terminal: true, t: `Needs your input: ${askLabel}` });
       } else {
-        steps.push({ tag: 'done', terminal: true, gate: () => !state.pipelineDone, t: 'Ready — opening role overview' });
+        steps.push({ tag: 'done', terminal: true, gate: () => !state.pipelineDone, t: 'Ready, opening role overview' });
       }
 
       return steps;
@@ -14157,7 +14157,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           priority: 7,
           key:      'work-model',
           label:    'Work model unclear',
-          question: 'Mostly remote with occasional office — how should we track this?',
+          question: 'Mostly remote with occasional office. How should we track this?',
           choices:  [
             { k: 'remote', label: 'Remote', primary: true },
             { k: 'hybrid', label: 'Hybrid', primary: false },
@@ -14180,7 +14180,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           priority: 9,
           key:      'production-coding',
           label:    'Production coding mentioned',
-          question: 'This role requires production coding — keep reviewing?',
+          question: 'This role requires production coding. Keep reviewing?',
           choices:  [
             { k: 'continue', label: 'Keep reviewing',  primary: true },
             { k: 'flag',     label: 'Flag as blocker', primary: false },
@@ -14200,7 +14200,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           priority: 5,
           key:      'salary',
           label:    'Salary not stated',
-          question: 'No salary listed — track anyway?',
+          question: 'No salary listed. Track anyway?',
           choices:  [
             { k: 'track', label: 'Track anyway', primary: true },
             { k: 'note',  label: 'Add a note',   primary: false },
@@ -14217,7 +14217,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           priority: 3,
           key:      'recruiter-source',
           label:    'Via recruiter',
-          question: 'This arrived via recruiter outreach — treat as active pipeline?',
+          question: 'This arrived via recruiter outreach. Treat as active pipeline?',
           choices:  [
             { k: 'active',   label: 'Active pipeline', primary: true },
             { k: 'tracking', label: 'Tracking only',   primary: false },
@@ -14309,8 +14309,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           const _rawC = role.company_name || (state.analysis && state.analysis._company) || '';
           const c = (typeof sanitiseCompanyName === 'function' ? sanitiseCompanyName(_rawC) : _rawC) || '';
           readyLabel.innerHTML = c
-            ? _esc(t) + ' · ' + _esc(c) + ' — ready to open.'
-            : _esc(t) + ' — ready to open.';
+            ? _esc(t) + ' · ' + _esc(c) + ', ready to open.'
+            : _esc(t) + ', ready to open.';
         }
         if (readyEl) readyEl.removeAttribute('hidden');
         const cta = document.getElementById('rw-ing-open-role');
@@ -14340,7 +14340,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             state.askResolved = true;
             state.ask = null;
             // Continue: append the final "Ready" line and show ready state.
-            _appendStepLine('Ready — opening role overview');
+            _appendStepLine('Ready, opening role overview');
             state.unveiledTags.add('done');
             // Re-render fields once more in case ask resolution touched any
             _arRenderFields(fieldsEl, state);
@@ -14360,7 +14360,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           slot.innerHTML = '';
           state.askResolved = true;
           state.ask = null;
-          _appendStepLine('Ready — opening role overview');
+          _appendStepLine('Ready, opening role overview');
           state.unveiledTags.add('done');
           _arRenderFields(fieldsEl, state);
           _markLastAsDone();
@@ -14600,11 +14600,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
       const lines = [];
       lines.push({ t: 'Reading role…' });
-      if (sourceKind === 'url')           lines.push({ t: 'Recognised link source — ' + sourceLabel });
+      if (sourceKind === 'url')           lines.push({ t: 'Recognised link source: ' + sourceLabel });
       else if (sourceKind === 'recruiter') lines.push({ t: 'Recognised recruiter message' });
       else                                 lines.push({ t: 'Recognised pasted text' });
-      if (_title)   lines.push({ t: 'Found title — ' + _title });
-      if (_company) lines.push({ t: 'Found company — ' + _company });
+      if (_title)   lines.push({ t: 'Found title: ' + _title });
+      if (_company) lines.push({ t: 'Found company: ' + _company });
       if (_location || _salary || _wm) {
         lines.push({ t: 'Extracting location and salary…' });
         // Compose the salary line with location only — the work model has its
@@ -14613,16 +14613,16 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         // location, fall back to the work model so the line still says
         // something useful.
         const _locStr = _location || _wm || '';
-        if (_salary && _locStr)      lines.push({ t: 'Salary — ' + _salary + ' · ' + _locStr });
-        else if (_salary)            lines.push({ t: 'Salary — ' + _salary });
+        if (_salary && _locStr)      lines.push({ t: 'Salary: ' + _salary + ' · ' + _locStr });
+        else if (_salary)            lines.push({ t: 'Salary: ' + _salary });
         else if (_locStr)            lines.push({ t: 'Salary not stated · ' + _locStr });
         else                          lines.push({ t: 'Salary not stated' });
       }
       lines.push({ t: 'Identifying key requirements…' });
       if (_seniority) lines.push({ t: 'Seniority reads as ' + _seniority });
-      if (_industry)  lines.push({ t: 'Industry — ' + _industry });
+      if (_industry)  lines.push({ t: 'Industry: ' + _industry });
       lines.push({ t: 'Understanding requirements…' });
-      lines.push({ t: 'Ready — opening role overview' });
+      lines.push({ t: 'Ready, opening role overview' });
 
       linesEl.innerHTML = lines.map(l =>
         '<div class="rw-ing-progress-line rw-ing-progress-line--done">' + _esc(l.t) + '</div>'
@@ -14725,8 +14725,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           ? sanitiseCompanyName(_rawC)
           : _rawC) || '';
         readyLabel.innerHTML = c
-          ? _esc(t) + ' · ' + _esc(c) + ' — ready to open.'
-          : _esc(t) + ' — ready to open.';
+          ? _esc(t) + ' · ' + _esc(c) + ', ready to open.'
+          : _esc(t) + ', ready to open.';
       }
       readyEl.removeAttribute('hidden');
       const cta = document.getElementById('rw-ing-open-role');
@@ -27714,7 +27714,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
       // Helpers ──────────────────────────────────────────────────────────────
       const _fmtRel = (iso) => {
-        if (!iso) return '—';
+        if (!iso) return '-';
         const ms = Date.now() - new Date(iso).getTime();
         const mins = Math.floor(ms / 60000);
         if (mins < 1)   return 'just now';
@@ -30937,8 +30937,8 @@ If a field cannot be determined from the message, return null for that field.`,
               <span class="rwo-sec-sub">Responsiveness</span>
             </div>
             <div class="rwo-resp">
-              ${_row('Fastest response', _fastest === null ? '<span class="rwo-resp-mono">—</span>' : _numUnit(_fastest, _fastest === 1 ? 'day' : 'days'))}
-              ${_row('Average response', _avg     === null ? '<span class="rwo-resp-mono">—</span>' : _numUnit(_avg,     _avg     === 1 ? 'day' : 'days'))}
+              ${_row('Fastest response', _fastest === null ? '<span class="rwo-resp-mono">-</span>' : _numUnit(_fastest, _fastest === 1 ? 'day' : 'days'))}
+              ${_row('Average response', _avg     === null ? '<span class="rwo-resp-mono">-</span>' : _numUnit(_avg,     _avg     === 1 ? 'day' : 'days'))}
               ${_row('No response after 14 days', _numUnit(_unrespondedAfter14, _unrespondedAfter14 === 1 ? 'role' : 'roles'))}
               ${_longest ? _row('Longest wait', '<span class="rwo-resp-mono">' + esc(sanitiseCompanyName(_longest.company_name) || 'Role') + ' · ' + _longestDays + ' days</span>') : ''}
             </div>
@@ -31476,7 +31476,7 @@ If a field cannot be determined from the message, return null for that field.`,
 
       const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       const _fmtDate = (iso) => {
-        if (!iso) return '—';
+        if (!iso) return '-';
         const d = new Date(iso);
         return d.getDate() + ' ' + _MONTHS[d.getMonth()];
       };
@@ -31528,7 +31528,7 @@ If a field cannot be determined from the message, return null for that field.`,
       const _GROUPS = [
         { key: 'attention', label: 'Needs attention',   hint: 'No response for 14+ days, or follow-up due' },
         { key: 'progress',  label: 'In process',        hint: 'Active interview stages' },
-        { key: 'awaiting',  label: 'Awaiting response', hint: 'Applied — no reply yet' },
+        { key: 'awaiting',  label: 'Awaiting response', hint: 'Applied, no reply yet' },
         { key: 'closed',    label: 'Closed',            hint: 'Rejected, withdrawn, or offer settled' },
       ];
 
@@ -31624,7 +31624,7 @@ If a field cannot be determined from the message, return null for that field.`,
           const ars = _appResponseStatus(r);
           if (ars && ars.days != null && !r._firstResponseDate) {
             items.push({
-              date:  '—',
+              date:  '-',
               label: 'No response in ' + ars.days + ' days',
               pending: true,
               warn: group === 'attention',
@@ -31634,7 +31634,7 @@ If a field cannot be determined from the message, return null for that field.`,
         // Closed outcome row
         if (group === 'closed') {
           const o = r.outcome_state;
-          const reason = r.outcome_reason ? ' — ' + r.outcome_reason : '';
+          const reason = r.outcome_reason ? ': ' + r.outcome_reason : '';
           let lbl = null;
           if (o === 'rejected')        lbl = 'Rejected' + reason;
           else if (o === 'no_response') lbl = 'No response' + reason;
@@ -31715,11 +31715,11 @@ If a field cannot be determined from the message, return null for that field.`,
               <div class="rwa-side">
                 <div class="rwa-resp-row">
                   <span class="rwa-resp-k">First response</span>
-                  <span class="rwa-resp-v rwa-num">${esc(_firstRespDays || '—')}</span>
+                  <span class="rwa-resp-v rwa-num">${esc(_firstRespDays || '-')}</span>
                 </div>
                 <div class="rwa-resp-row">
                   <span class="rwa-resp-k">Last activity</span>
-                  <span class="rwa-resp-v rwa-num">${esc(_lastActivity || '—')}</span>
+                  <span class="rwa-resp-v rwa-num">${esc(_lastActivity || '-')}</span>
                 </div>
               </div>
             </div>
@@ -32112,7 +32112,7 @@ If a field cannot be determined from the message, return null for that field.`,
           ${rows.map(r => `
             <div class="rww-pipe-row${r.tone === 'quiet' ? ' rww-pipe-row--quiet' : ''}">
               <span class="rww-pipe-k">${esc(r.k)}</span>
-              <span class="rww-pipe-v${r.v === 0 ? ' rww-pipe-v--zero' : ''}">${r.v === 0 ? '—' : r.v}</span>
+              <span class="rww-pipe-v${r.v === 0 ? ' rww-pipe-v--zero' : ''}">${r.v === 0 ? '-' : r.v}</span>
             </div>`).join('')}
         </div>`;
       const _lessonsHtml = (items) => `
@@ -32127,7 +32127,7 @@ If a field cannot be determined from the message, return null for that field.`,
         <header class="rwa-header rww-head">
           <div class="rww-head-l">
             <h1 class="rwa-title">Weekly review</h1>
-            <p class="rwa-sub rww-sub">A quiet check-in with your job search — what happened, what you’re noticing, and one small thing to reflect on.</p>
+            <p class="rwa-sub rww-sub">A quiet check-in with your job search: what happened, what you’re noticing, and one small thing to reflect on.</p>
           </div>
           <div class="rww-weekpick" role="group" aria-label="Choose week">
             <button class="rww-weekpick-arrow" id="rww-prev" ${canPrev ? '' : 'disabled'} aria-label="Previous week">←</button>
@@ -32303,7 +32303,7 @@ If a field cannot be determined from the message, return null for that field.`,
               visual: { kind: 'split', left: { label: 'Salary disclosed', pct: withSalaryPct }, right: { label: 'No salary', pct: noSalaryPct } },
               why: {
                 observedAcross: [
-                  { k: 'Applied — no salary',              v: String(noSalary.length) },
+                  { k: 'Applied, no salary',                v: String(noSalary.length) },
                   { k: 'No-salary reached recruiter screen', v: String(noSalaryProgressed) },
                   { k: 'Salary-disclosed comparison',       v: String(withSalary.length) },
                 ],
@@ -32391,9 +32391,9 @@ If a field cannot be determined from the message, return null for that field.`,
             ].filter(s => s.trim() !== '.'),
             why: {
               observedAcross: [
-                { k: 'Skipped — salary missing',     v: String(noSalary) },
-                { k: 'Skipped — heavy on-site',      v: String(onSiteHeavy) },
-                { k: 'Skipped — production coding', v: String(codingFlag) },
+                { k: 'Skipped: salary missing',     v: String(noSalary) },
+                { k: 'Skipped: heavy on-site',      v: String(onSiteHeavy) },
+                { k: 'Skipped: production coding',  v: String(codingFlag) },
               ],
               roles: _rwiCompactList(skipped.filter(r => !((r.salary_text_raw || '').trim().length > 0)).map(r => r.company_name).filter(Boolean), 4),
             },
@@ -32424,7 +32424,7 @@ If a field cannot be determined from the message, return null for that field.`,
             sections['market direction'].push({
               id: 'md-hybrid-up',
               strength: 'strong',
-              statement: 'Hybrid listings are trending up — remote holding steady.',
+              statement: 'Hybrid listings are trending up. Remote holding steady.',
               evidence: [
                 `Hybrid roles made up ${curHybrid}% of new listings in the last 14 days, up from ${prevHybrid}% the prior period.`,
                 'On-site share has continued to drift down over the same window.',
@@ -32622,7 +32622,7 @@ If a field cannot be determined from the message, return null for that field.`,
       const framingHtml = `
         <p class="rwi-framing">
           Insights appear when repeated patterns emerge across analysed roles,
-          applications, and outcomes. They describe what has happened — not what will.
+          applications, and outcomes. They describe what has happened, not what will.
         </p>`;
 
       const contextHtml = `
@@ -32642,7 +32642,7 @@ If a field cannot be determined from the message, return null for that field.`,
             <div class="rwi-empty-t">Not enough activity yet to surface patterns.</div>
             <p class="rwi-empty-s">
               Insights start to appear after around 10–15 reviewed roles. So far: ${context.rolesSeen}.
-              Keep reviewing — patterns surface as decisions accumulate.
+              Keep reviewing. Patterns surface as decisions accumulate.
             </p>
           </div>`;
       } else {
@@ -33266,7 +33266,7 @@ If a field cannot be determined from the message, return null for that field.`,
             <header class="rwa-header">
               <div>
                 <h1 class="rwa-title">Decision history</h1>
-                <p class="rwa-sub">A record of what you chose to pursue, what you set aside, and why — so your judgement stays legible to you.</p>
+                <p class="rwa-sub">A record of what you chose to pursue, what you set aside, and why, so your judgement stays legible to you.</p>
               </div>
             </header>
             <div class="rwo-divider"></div>
@@ -33604,7 +33604,7 @@ If a field cannot be determined from the message, return null for that field.`,
           <div class="rwd-empty">
             <div class="rwd-empty-mark"></div>
             <div class="rwd-empty-t">No decisions yet</div>
-            <p class="rwd-empty-s">Review roles to start building your decision history. Every choice — to apply or to set aside — will be recorded here alongside its reasoning.</p>
+            <p class="rwd-empty-s">Review roles to start building your decision history. Every choice, to apply or to set aside, will be recorded here alongside its reasoning.</p>
           </div>`;
       } else if (filter === 'all' && noTerminalDecisions) {
         bodyHtml = `
@@ -33622,16 +33622,16 @@ If a field cannot be determined from the message, return null for that field.`,
           </div>`;
       } else {
         const groups = [
-          _groupHtml('01', 'applied',   'Applied — pursued',         visible.applied,   appliedPattern),
-          _groupHtml('02', 'skipped',   'Skipped — set aside',       visible.skipped,   skippedPattern),
-          _groupHtml('03', 'revisited', 'Revisited — reconsidered',  visible.revisited, null),
+          _groupHtml('01', 'applied',   'Applied: pursued',         visible.applied,   appliedPattern),
+          _groupHtml('02', 'skipped',   'Skipped: set aside',       visible.skipped,   skippedPattern),
+          _groupHtml('03', 'revisited', 'Revisited: reconsidered',  visible.revisited, null),
         ].filter(Boolean);
         bodyHtml = `<div class="rwd-groups">${groups.join('')}</div>`;
       }
 
       const closeHtml = snaps.length ? `
         <div class="rwd-close">
-          <div class="rwd-close-l">Your decisions make sense. Come back here when you’re second-guessing a call — the reasoning is already written down.</div>
+          <div class="rwd-close-l">Your decisions make sense. Come back here when you’re second-guessing a call. The reasoning is already written down.</div>
           <div class="rwd-close-r">end of record</div>
         </div>` : '';
 
@@ -33642,7 +33642,7 @@ If a field cannot be determined from the message, return null for that field.`,
             <header class="rwa-header">
               <div>
                 <h1 class="rwa-title">Decision history</h1>
-                <p class="rwa-sub">A record of what you chose to pursue, what you set aside, and why — so your judgement stays legible to you.</p>
+                <p class="rwa-sub">A record of what you chose to pursue, what you set aside, and why, so your judgement stays legible to you.</p>
               </div>
               ${snaps.length ? filterHtml : ''}
             </header>
@@ -34546,7 +34546,7 @@ If a field cannot be determined from the message, return null for that field.`,
         case 'success':
           return `JD loaded from ${source_label}.`;
         case 'partial':
-          return `Loaded what we could from ${source_label}. Some details may be missing \u2014 paste the full job description if anything looks thin.`;
+          return `Loaded what we could from ${source_label}. Some details may be missing. Paste the full job description if anything looks thin.`;
         case 'unsupported':
           return `We can\u2019t auto-fetch from ${source_label} yet. Paste the job description below to continue.`;
         case 'failed':
