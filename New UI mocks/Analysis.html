@@ -1,0 +1,1565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1440" />
+<title>Rolewise — Role analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif&display=swap" rel="stylesheet" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<style>
+  /* ══════════════════════════════════════════════════════════════════
+     GLOBAL SYSTEM — shared with Overview / Decisions / Review / etc.
+     ══════════════════════════════════════════════════════════════════ */
+  :root {
+    --bg:          oklch(99% 0.003 80);
+    --bg-sidebar:  oklch(97.2% 0.004 80);
+    --bg-card:    #ffffff;
+    --bg-hover:   oklch(96% 0.004 80);
+    --bg-subtle:  oklch(97.8% 0.004 80);
+    --bg-panel:   oklch(98% 0.003 80);
+
+    --border:     oklch(92% 0.004 80);
+    --border-strong: oklch(87% 0.005 80);
+
+    --ink:        oklch(22% 0.01 80);
+    --ink-heading: oklch(18% 0.012 80);
+    --ink-muted:  oklch(50% 0.01 80);
+    --ink-subtle: oklch(62% 0.008 80);
+
+    --accent:     oklch(45% 0.06 250);
+    --accent-bg:  oklch(95% 0.015 250);
+
+    --up:    oklch(50% 0.08 150);
+    --down:  oklch(55% 0.06 50);
+
+    --sidebar-w:  240px;
+    --content-max: 1200px;
+
+    --radius-card: 12px;
+    --radius-sm: 6px;
+
+    --dur: 180ms;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  button, a { font-family: inherit; }
+  .num { font-family: 'Geist Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  ::selection { background: var(--accent-bg); color: var(--ink-heading); }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(88% 0.005 80); border-radius: 6px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: oklch(80% 0.005 80); }
+
+  .app {
+    display: grid;
+    grid-template-columns: var(--sidebar-w) 1fr;
+    min-height: 100vh;
+  }
+
+  /* Sidebar (shared) */
+  .sidebar {
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    padding: 24px 16px 20px;
+    display: flex; flex-direction: column;
+    position: sticky; top: 0; height: 100vh;
+  }
+  .brand { padding: 4px 8px 28px; }
+  .brand-mark { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 15px; color: var(--ink-heading); letter-spacing: -0.01em; }
+  .brand-dot { width: 14px; height: 14px; background: var(--ink-heading); border-radius: 3px; position: relative; }
+  .brand-dot::after { content: ''; position: absolute; inset: 3px 3px auto auto; width: 4px; height: 4px; background: var(--bg-sidebar); border-radius: 50%; }
+  .brand-tag { font-size: 12px; color: var(--ink-subtle); margin-top: 6px; padding-left: 22px; letter-spacing: 0.005em; }
+  .nav-group { margin-bottom: 20px; }
+  .nav-label { font-size: 11px; color: var(--ink-subtle); padding: 0 8px 6px; letter-spacing: 0.04em; }
+  .nav-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 10px; border-radius: var(--radius-sm);
+    color: var(--ink-muted); cursor: pointer; user-select: none;
+    border: none; background: transparent; width: 100%;
+    text-align: left; font-size: 14px; margin-bottom: 1px; position: relative;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+  .nav-item:hover { background: var(--bg-hover); color: var(--ink); }
+  .nav-item.active { background: var(--bg-hover); color: var(--ink-heading); font-weight: 500; }
+  .nav-item.active::before { content: ''; position: absolute; left: -16px; top: 6px; bottom: 6px; width: 2px; background: var(--accent); border-radius: 0 2px 2px 0; }
+  .nav-count { font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--ink-subtle); font-weight: 400; }
+  .nav-plus-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); display: inline-block; }
+  .sidebar-footer { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border); }
+  .profile { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--radius-sm); cursor: pointer; }
+  .profile:hover { background: var(--bg-hover); }
+  .avatar { width: 26px; height: 26px; border-radius: 5px; background: oklch(80% 0.02 60); color: oklch(30% 0.02 60); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; letter-spacing: 0.02em; }
+  .profile-name { font-size: 13px; color: var(--ink); line-height: 1.1; }
+  .profile-mail { font-size: 11px; color: var(--ink-subtle); line-height: 1.2; margin-top: 1px; }
+  .upgrade { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); font-size: 12px; color: var(--ink-muted); cursor: pointer; }
+  .upgrade:hover { border-color: var(--border-strong); }
+  .upgrade-t { color: var(--ink-heading); font-weight: 500; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; }
+
+  .main { min-width: 0; padding: 48px 56px 96px; }
+  .content { max-width: var(--content-max); margin: 0 auto; }
+
+  /* ══════════════════════════════════════════════════════════════════
+     ROLE ANALYSIS — page specific
+     Editorial, two-column, document-first. Not a dashboard.
+     ══════════════════════════════════════════════════════════════════ */
+
+  /* Top bar — very light. A crumb and right-side utilities. */
+  .ra-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 28px;
+  }
+  .ra-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: var(--ink-muted);
+    font-size: 13px;
+    letter-spacing: -0.003em;
+    padding: 4px 8px 4px 0;
+    border-radius: 4px;
+    transition: color var(--dur) var(--ease);
+  }
+  .ra-back:hover { color: var(--ink-heading); }
+  .ra-back-arrow {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: var(--ink-subtle);
+  }
+  .ra-top-utils {
+    display: inline-flex;
+    align-items: center;
+    gap: 18px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.03em;
+  }
+  .ra-util {
+    display: inline-flex; align-items: center; gap: 6px;
+    text-decoration: none;
+    color: var(--ink-subtle);
+    transition: color var(--dur) var(--ease);
+  }
+  .ra-util:hover { color: var(--ink); }
+  .ra-util-tick { width: 8px; height: 1px; background: currentColor; opacity: 0.5; }
+
+  /* Two-column layout */
+  .ra-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 72px;
+    align-items: start;
+  }
+
+  /* ── HEADER (inside left column) ── */
+  .ra-header {
+    padding: 8px 0 36px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 40px;
+  }
+  .ra-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+    margin-bottom: 16px;
+  }
+  .ra-eyebrow-tick {
+    width: 8px; height: 1px;
+    background: var(--border-strong);
+    display: inline-block;
+  }
+  .ra-title {
+    margin: 0 0 10px;
+    font-size: 36px;
+    font-weight: 400;
+    color: var(--ink-heading);
+    letter-spacing: -0.022em;
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+  .ra-title .co {
+    color: var(--ink-muted);
+    font-weight: 300;
+  }
+  .ra-title .dot {
+    color: var(--ink-subtle);
+    margin: 0 10px;
+    font-weight: 300;
+  }
+  .ra-meta {
+    margin: 0;
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-muted);
+    letter-spacing: 0.005em;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .ra-meta .sep {
+    width: 3px; height: 3px; border-radius: 50%;
+    background: var(--border-strong);
+    display: inline-block;
+  }
+
+  /* ── SECTIONS ── */
+  .ra-section { padding: 36px 0; }
+  .ra-section + .ra-section { border-top: 1px dashed var(--border); }
+  .ra-section:first-of-type { padding-top: 0; }
+
+  .ra-sec-label {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  .ra-sec-num {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.04em;
+    min-width: 28px;
+  }
+  .ra-sec-title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-heading);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* Section 1 — the insight. Larger, editorial. */
+  .ra-lede {
+    font-family: 'Instrument Serif', 'Geist', serif;
+    font-size: 28px;
+    line-height: 1.3;
+    color: var(--ink-heading);
+    letter-spacing: -0.015em;
+    font-weight: 400;
+    margin: 0;
+    max-width: 34ch;
+    text-wrap: pretty;
+  }
+  .ra-lede em {
+    font-style: italic;
+    color: var(--ink);
+  }
+
+  /* Paragraphs */
+  .ra-p {
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+    margin: 0 0 14px;
+    max-width: 62ch;
+    text-wrap: pretty;
+  }
+  .ra-p:last-child { margin-bottom: 0; }
+
+  .ra-note {
+    font-size: 12.5px;
+    color: var(--ink-subtle);
+    font-style: italic;
+    letter-spacing: -0.003em;
+    margin: 14px 0 0;
+    padding-left: 12px;
+    border-left: 1px solid var(--border-strong);
+    max-width: 52ch;
+    text-wrap: pretty;
+  }
+
+  /* Arrow bullet list */
+  .ra-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 62ch;
+  }
+  .ra-list li {
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--ink);
+    letter-spacing: -0.004em;
+    padding-left: 24px;
+    position: relative;
+    text-wrap: pretty;
+  }
+  .ra-list li::before {
+    content: '→';
+    position: absolute;
+    left: 0; top: 0;
+    color: var(--ink-subtle);
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  /* Questions variant — slightly different feel */
+  .ra-list.questions li {
+    font-size: 15px;
+    color: var(--ink-heading);
+  }
+  .ra-list.questions li::before {
+    content: '?';
+    color: var(--ink-subtle);
+    font-style: italic;
+    font-family: 'Instrument Serif', serif;
+    font-size: 16px;
+  }
+
+  /* Suggested actions — inline, subdued */
+  .ra-actions-list {
+    list-style: none;
+    margin: 0; padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .ra-actions-list li {
+    padding: 14px 0;
+    border-bottom: 1px dashed var(--border);
+    font-size: 15px;
+    color: var(--ink);
+    letter-spacing: -0.004em;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 14px;
+    align-items: baseline;
+    text-wrap: pretty;
+  }
+  .ra-actions-list li:first-child { padding-top: 4px; }
+  .ra-actions-list li:last-child { border-bottom: none; }
+  .ra-actions-list li .idx {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.04em;
+    padding-top: 2px;
+    min-width: 18px;
+  }
+  .ra-actions-list li .do {
+    font-weight: 500;
+    color: var(--ink-heading);
+    margin-right: 8px;
+  }
+  .ra-actions-list li .qualifier {
+    color: var(--ink-muted);
+    font-size: 14px;
+  }
+  .ra-actions-list li .mark {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.04em;
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease);
+    cursor: pointer;
+  }
+  .ra-actions-list li:hover .mark { opacity: 1; }
+
+  /* Close — essay-style end mark */
+  .ra-close {
+    margin-top: 48px;
+    padding-top: 28px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .ra-close-l {
+    font-size: 12.5px;
+    color: var(--ink-muted);
+    font-style: italic;
+    letter-spacing: -0.003em;
+    max-width: 52ch;
+    text-wrap: pretty;
+  }
+  .ra-close-r {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.02em;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     RIGHT PANEL
+     ══════════════════════════════════════════════════════════════════ */
+  .ra-side {
+    position: sticky;
+    top: 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+  .ra-block + .ra-block {
+    padding-top: 28px;
+    border-top: 1px solid var(--border);
+  }
+  .ra-block-label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10.5px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ra-block-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Status */
+  .ra-status-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .ra-status-row + .ra-status-row {
+    border-top: 1px dashed var(--border);
+  }
+  .ra-status-k {
+    color: var(--ink-muted);
+    font-size: 12.5px;
+    letter-spacing: -0.002em;
+  }
+  .ra-status-v {
+    font-size: 13px;
+    color: var(--ink-heading);
+    letter-spacing: -0.003em;
+  }
+  .ra-status-v.mono { font-family: 'Geist Mono', monospace; font-size: 12px; }
+  .ra-status-v.pulse {
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .ra-pulse-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--down);
+    display: inline-block;
+    box-shadow: 0 0 0 3px oklch(55% 0.06 50 / 0.12);
+  }
+  .ra-interp {
+    margin-top: 14px;
+    padding: 11px 12px;
+    background: var(--bg-subtle);
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: var(--ink);
+    letter-spacing: -0.003em;
+    line-height: 1.5;
+    text-wrap: pretty;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .ra-interp-glyph {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.04em;
+    padding-top: 2px;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .ra-interp-t { flex: 1; font-style: italic; }
+
+  /* Actions (2x2 grid of minimal buttons) */
+  .ra-actions {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .ra-btn {
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--ink);
+    padding: 9px 10px;
+    font-size: 12.5px;
+    letter-spacing: -0.003em;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: left;
+    transition: all var(--dur) var(--ease);
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .ra-btn:hover { border-color: var(--border-strong); background: var(--bg-hover); color: var(--ink-heading); }
+  .ra-btn .glyph {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-subtle);
+    font-weight: 400;
+  }
+
+  /* At a glance — tidy key/value stack */
+  .ra-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .ra-fact {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 14px;
+    padding: 9px 0;
+    border-bottom: 1px dashed var(--border);
+    align-items: baseline;
+  }
+  .ra-fact:last-child { border-bottom: none; }
+  .ra-fact-k {
+    font-size: 11px;
+    color: var(--ink-subtle);
+    font-family: 'Geist Mono', monospace;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .ra-fact-v {
+    font-size: 13px;
+    color: var(--ink-heading);
+    letter-spacing: -0.003em;
+    line-height: 1.4;
+  }
+  .ra-fact-v .sub {
+    display: block;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-subtle);
+    margin-top: 2px;
+    letter-spacing: 0;
+  }
+
+  /* Key signals */
+  .ra-signals {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ra-signal {
+    display: grid;
+    grid-template-columns: 16px 1fr;
+    gap: 10px;
+    align-items: baseline;
+    font-size: 13px;
+    color: var(--ink);
+    letter-spacing: -0.003em;
+    line-height: 1.45;
+    text-wrap: pretty;
+  }
+  .ra-signal-glyph {
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.3;
+  }
+  .ra-signal[data-dir='up']     .ra-signal-glyph { color: var(--up); }
+  .ra-signal[data-dir='down']   .ra-signal-glyph { color: var(--down); }
+  .ra-signal[data-dir='flat']   .ra-signal-glyph { color: var(--ink-subtle); }
+  .ra-signal-sub {
+    display: block;
+    font-size: 11.5px;
+    color: var(--ink-subtle);
+    margin-top: 2px;
+    letter-spacing: 0;
+  }
+
+  /* Notes block */
+  .ra-notes {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ink);
+    letter-spacing: -0.003em;
+    text-wrap: pretty;
+    font-family: 'Instrument Serif', serif;
+    font-size: 15px;
+    font-weight: 400;
+  }
+  .ra-notes-edit {
+    display: inline-block;
+    margin-top: 10px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10.5px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .ra-notes-edit:hover { color: var(--ink); }
+
+  /* ══════════════════════════════════════════════════════════════════
+     INTERACTION LAYER — inline prompts, slide-in, toast
+     Low-ceremony. All state updates are instant + reversible.
+     ══════════════════════════════════════════════════════════════════ */
+
+  /* Active action highlight */
+  .ra-btn[data-active='true'] {
+    border-color: var(--ink-heading);
+    background: var(--bg-subtle);
+    color: var(--ink-heading);
+  }
+
+  /* Status block wrapper — gives actions + prompts a shared rhythm */
+  .ra-actions-wrap { margin-top: 16px; }
+
+  .ra-patterns-note {
+    margin-top: 12px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0.7;
+  }
+  .ra-patterns-note::before {
+    content: '';
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--ink-subtle);
+    display: inline-block;
+  }
+
+  /* ── Inline prompts ── */
+  .ra-prompt {
+    margin-top: 14px;
+    padding: 14px 14px 12px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    animation: ra-fade-in 180ms var(--ease);
+  }
+  @keyframes ra-fade-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .ra-prompt-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .ra-prompt-t {
+    font-size: 12.5px;
+    color: var(--ink-heading);
+    letter-spacing: -0.003em;
+    font-style: italic;
+  }
+  .ra-prompt-close {
+    background: none;
+    border: none;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-subtle);
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0;
+  }
+  .ra-prompt-close:hover { color: var(--ink); }
+
+  .ra-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .ra-chip {
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--ink);
+    padding: 5px 10px;
+    font-size: 12px;
+    letter-spacing: -0.003em;
+    border-radius: 14px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all var(--dur) var(--ease);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .ra-chip:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-hover);
+    color: var(--ink-heading);
+  }
+  .ra-chip[data-selected='true'] {
+    border-color: var(--ink-heading);
+    background: var(--ink-heading);
+    color: var(--bg-card);
+  }
+  .ra-chip.add { color: var(--ink-muted); font-style: italic; }
+  .ra-chip.add::before { content: '+'; color: var(--ink-subtle); font-style: normal; margin-right: 1px; }
+
+  /* ── Status block changes when role state moves ── */
+  .ra-status-v.skipped { color: var(--ink-muted); font-style: italic; }
+  .ra-status-v.closed { color: var(--ink-muted); font-style: italic; }
+  .ra-pulse-dot[data-state='process'] { background: var(--up); box-shadow: 0 0 0 3px oklch(50% 0.08 150 / 0.12); }
+  .ra-pulse-dot[data-state='skipped'],
+  .ra-pulse-dot[data-state='closed'] { background: var(--ink-subtle); box-shadow: none; }
+  .ra-pulse-dot[data-state='applied'] { background: var(--down); box-shadow: 0 0 0 3px oklch(55% 0.06 50 / 0.12); }
+
+  /* Interp block hides when state is no longer "stalled" */
+  .ra-interp { transition: opacity var(--dur) var(--ease); }
+
+  /* ── Slide-in panel for Add interview ── */
+  .ra-overlay {
+    position: fixed; inset: 0;
+    background: oklch(20% 0.01 80 / 0.08);
+    z-index: 50;
+    animation: ra-overlay-in 200ms var(--ease);
+  }
+  @keyframes ra-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+  .ra-slidein {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: 400px;
+    background: var(--bg-card);
+    border-left: 1px solid var(--border);
+    box-shadow: -16px 0 40px oklch(20% 0.01 80 / 0.06);
+    z-index: 51;
+    padding: 32px 32px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    animation: ra-slide-in 240ms var(--ease);
+  }
+  @keyframes ra-slide-in {
+    from { transform: translateX(16px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  .ra-slidein-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .ra-slidein-t {
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--ink-heading);
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .ra-slidein-s {
+    font-size: 12px;
+    color: var(--ink-subtle);
+    font-family: 'Geist Mono', monospace;
+    letter-spacing: 0.03em;
+  }
+  .ra-slidein-close {
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: var(--ink-subtle);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+  }
+  .ra-slidein-close:hover { color: var(--ink-heading); }
+
+  .ra-field {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .ra-field-label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10.5px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .ra-field-label .optional {
+    color: var(--ink-subtle);
+    opacity: 0.6;
+    margin-left: 6px;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+    font-style: italic;
+  }
+  .ra-date-input {
+    appearance: none;
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    letter-spacing: 0.01em;
+    width: 100%;
+  }
+  .ra-date-input:focus { outline: none; border-color: var(--ink-heading); }
+
+  .ra-slidein-hint {
+    margin-top: auto;
+    font-size: 12px;
+    color: var(--ink-subtle);
+    font-style: italic;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border);
+    letter-spacing: -0.003em;
+  }
+
+  /* ── Toast ── */
+  .ra-toast-host {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%);
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    pointer-events: none;
+  }
+  .ra-toast {
+    pointer-events: auto;
+    background: var(--ink-heading);
+    color: var(--bg);
+    padding: 10px 14px 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    letter-spacing: -0.003em;
+    box-shadow: 0 10px 28px oklch(20% 0.01 80 / 0.18);
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    animation: ra-toast-in 220ms var(--ease);
+    min-width: 240px;
+  }
+  .ra-toast[data-leaving='true'] {
+    animation: ra-toast-out 200ms var(--ease) forwards;
+  }
+  @keyframes ra-toast-in {
+    from { transform: translateY(10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes ra-toast-out {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(10px); opacity: 0; }
+  }
+  .ra-toast-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: oklch(70% 0.08 150);
+  }
+  .ra-toast-msg { flex: 1; }
+  .ra-toast-undo {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: none;
+    border: none;
+    color: var(--bg);
+    opacity: 0.75;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+  .ra-toast-undo:hover { opacity: 1; background: oklch(30% 0.01 80 / 0.5); }
+
+  /* Responsive */
+  @media (max-width: 1180px) {
+    .ra-layout { grid-template-columns: 1fr; gap: 48px; }
+    .ra-side { position: static; }
+  }
+  @media (max-width: 520px) {
+    .ra-slidein { width: 100%; }
+  }
+  @media (max-width: 720px) {
+    .main { padding: 32px 24px 64px; }
+    .ra-title { font-size: 28px; }
+    .ra-lede { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="./data.jsx"></script>
+<script type="text/babel">
+const { useEffect, useState, useRef, useCallback } = React;
+
+/* ── Toast host ── */
+function useToasts() {
+  const [toasts, setToasts] = useState([]);
+  const idRef = useRef(0);
+  const push = useCallback(({ msg, undo }) => {
+    const id = ++idRef.current;
+    setToasts(t => [...t, { id, msg, undo, leaving: false }]);
+    // Auto-dismiss
+    setTimeout(() => setToasts(t => t.map(x => x.id === id ? { ...x, leaving: true } : x)), 3800);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4100);
+    return id;
+  }, []);
+  const dismiss = useCallback((id) => {
+    setToasts(t => t.map(x => x.id === id ? { ...x, leaving: true } : x));
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 220);
+  }, []);
+  return { toasts, push, dismiss };
+}
+
+function ToastHost({ toasts, onUndo, onDismiss }) {
+  return (
+    <div className="ra-toast-host">
+      {toasts.map(t => (
+        <div key={t.id} className="ra-toast" data-leaving={t.leaving || undefined}>
+          <span className="ra-toast-dot" />
+          <span className="ra-toast-msg">{t.msg}</span>
+          {t.undo && (
+            <button className="ra-toast-undo" onClick={() => { onUndo(t); onDismiss(t.id); }}>Undo</button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Add interview slide-in ── */
+const INTERVIEW_STAGES = ['Recruiter screen', 'Hiring manager', 'Panel', 'Final'];
+
+function AddInterviewPanel({ onSave, onClose }) {
+  const [stage, setStage] = useState(null);
+  const [date, setDate] = useState('');
+
+  // Save instantly as soon as stage is picked; date is optional and can be set before or after.
+  const commit = (nextStage, nextDate) => {
+    onSave({ stage: nextStage, date: nextDate });
+  };
+
+  // Close on Esc
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <>
+      <div className="ra-overlay" onClick={onClose} />
+      <aside className="ra-slidein" role="dialog" aria-label="Add interview">
+        <div className="ra-slidein-head">
+          <div>
+            <h3 className="ra-slidein-t">Add interview</h3>
+            <div className="ra-slidein-s" style={{ marginTop: 4 }}>Linear · Senior Product Designer</div>
+          </div>
+          <button className="ra-slidein-close" onClick={onClose} aria-label="Close">×</button>
+        </div>
+
+        <div className="ra-field">
+          <div className="ra-field-label">Stage</div>
+          <div className="ra-chips">
+            {INTERVIEW_STAGES.map(s => (
+              <button
+                key={s}
+                className="ra-chip"
+                data-selected={stage === s || undefined}
+                onClick={() => { setStage(s); commit(s, date); }}
+              >{s}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="ra-field">
+          <div className="ra-field-label">Date <span className="optional">optional</span></div>
+          <input
+            className="ra-date-input"
+            type="date"
+            value={date}
+            onChange={e => { setDate(e.target.value); if (stage) commit(stage, e.target.value); }}
+          />
+        </div>
+
+        <div className="ra-slidein-hint">
+          {stage
+            ? 'Saved. Close when done.'
+            : 'Pick a stage to save instantly. Nothing else required.'}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ── Main status block ── */
+const SKIP_REASONS = ['Salary not stated', 'Too many on-site days', 'Scope unclear', 'Not a good fit'];
+const CLOSE_AS = ['Rejected', 'Withdrew', 'Offer declined'];
+const UPDATE_STAGES = ['Recruiter screen', 'Hiring manager', 'Panel', 'Offer'];
+
+function StatusBlock({ role, setRole, prompt, setPrompt, pushToast, undoRef, setInterviewOpen }) {
+  // Inline prompt body
+  const renderPrompt = () => {
+    if (prompt?.kind === 'skip') {
+      return (
+        <div className="ra-prompt">
+          <div className="ra-prompt-head">
+            <span className="ra-prompt-t">Why did you skip this?</span>
+            <button className="ra-prompt-close" onClick={() => setPrompt(null)}>dismiss</button>
+          </div>
+          <div className="ra-chips">
+            {SKIP_REASONS.map(r => (
+              <button
+                key={r}
+                className="ra-chip"
+                data-selected={role.skipReason === r || undefined}
+                onClick={() => {
+                  setRole(prev => ({ ...prev, skipReason: r }));
+                  setPrompt(null);
+                }}
+              >{r}</button>
+            ))}
+            <button className="ra-chip add" onClick={() => setPrompt(null)}>Add note</button>
+          </div>
+        </div>
+      );
+    }
+    if (prompt?.kind === 'close') {
+      return (
+        <div className="ra-prompt">
+          <div className="ra-prompt-head">
+            <span className="ra-prompt-t">Close role as…</span>
+            <button className="ra-prompt-close" onClick={() => setPrompt(null)}>dismiss</button>
+          </div>
+          <div className="ra-chips">
+            {CLOSE_AS.map(r => (
+              <button
+                key={r}
+                className="ra-chip"
+                onClick={() => {
+                  const before = { ...role };
+                  undoRef.current = () => setRole(before);
+                  setRole(prev => ({
+                    ...prev,
+                    status: 'Closed',
+                    state: 'closed',
+                    currentState: r,
+                    stage: r,
+                    stageUpdatedAt: Date.now(),
+                  }));
+                  setPrompt(null);
+                  pushToast({ msg: `Role closed · ${r}`, undo: true });
+                }}
+              >{r}</button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (prompt?.kind === 'stage') {
+      return (
+        <div className="ra-prompt">
+          <div className="ra-prompt-head">
+            <span className="ra-prompt-t">Move to stage…</span>
+            <button className="ra-prompt-close" onClick={() => setPrompt(null)}>dismiss</button>
+          </div>
+          <div className="ra-chips">
+            {UPDATE_STAGES.map(s => (
+              <button
+                key={s}
+                className="ra-chip"
+                data-selected={role.stage === s || undefined}
+                onClick={() => {
+                  const before = { ...role };
+                  undoRef.current = () => setRole(before);
+                  setRole(prev => ({
+                    ...prev,
+                    status: 'In process',
+                    state: 'process',
+                    stage: s,
+                    currentState: s,
+                    stageUpdatedAt: Date.now(),
+                  }));
+                  setPrompt(null);
+                  pushToast({ msg: `Stage updated · ${s}`, undo: true });
+                }}
+              >{s}</button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const sinceStageUpdate = () => {
+    if (!role.stageUpdatedAt) return null;
+    const now = Date.now();
+    const days = Math.max(0, Math.round((now - role.stageUpdatedAt) / 86400000));
+    if (days === 0) return 'just now';
+    if (days === 1) return '1 day since last update';
+    return `${days} days since last update`;
+  };
+
+  // Action buttons — click-again to toggle the prompt closed.
+  const togglePrompt = (kind) => setPrompt(p => p?.kind === kind ? null : { kind });
+
+  return (
+    <section className="ra-block">
+      <div className="ra-block-label">Status &amp; stage</div>
+
+      <div className="ra-status-row">
+        <span className="ra-status-k">Status</span>
+        <span className={`ra-status-v ${role.state}`}>{role.status}</span>
+      </div>
+      <div className="ra-status-row">
+        <span className="ra-status-k">{role.state === 'closed' ? 'Closed on' : 'Applied'}</span>
+        <span className="ra-status-v mono">{role.appliedDate}</span>
+      </div>
+      <div className="ra-status-row">
+        <span className="ra-status-k">Current state</span>
+        <span className="ra-status-v pulse">
+          <span className="ra-pulse-dot" data-state={role.state} />
+          {role.currentState}
+        </span>
+      </div>
+      <div className="ra-status-row">
+        <span className="ra-status-k">
+          {role.state === 'process' ? 'Since last update' : role.state === 'closed' || role.state === 'skipped' ? 'Last touched' : 'Since applied'}
+        </span>
+        <span className="ra-status-v mono">
+          {role.state === 'process' ? sinceStageUpdate() || '—' : role.sinceApplied}
+        </span>
+      </div>
+
+      {role.state === 'applied' && (
+        <div className="ra-interp">
+          <span className="ra-interp-glyph">inference</span>
+          <span className="ra-interp-t">This is likely stalled.</span>
+        </div>
+      )}
+      {role.state === 'skipped' && role.skipReason && (
+        <div className="ra-interp">
+          <span className="ra-interp-glyph">reason</span>
+          <span className="ra-interp-t">{role.skipReason}</span>
+        </div>
+      )}
+
+      <div className="ra-actions-wrap">
+        <div className="ra-actions">
+          <button
+            className="ra-btn"
+            data-active={role.state === 'skipped' || prompt?.kind === 'skip' || undefined}
+            onClick={() => {
+              if (role.state !== 'skipped') {
+                const before = { ...role };
+                undoRef.current = () => setRole(before);
+                setRole(prev => ({
+                  ...prev,
+                  status: 'Skipped',
+                  state: 'skipped',
+                  currentState: 'No longer active',
+                }));
+                pushToast({ msg: 'Marked as skipped', undo: true });
+              }
+              togglePrompt('skip');
+            }}
+          >
+            Mark as skipped
+            <span className="glyph">↘</span>
+          </button>
+          <button
+            className="ra-btn"
+            onClick={() => setInterviewOpen(true)}
+          >
+            Add interview
+            <span className="glyph">+</span>
+          </button>
+          <button
+            className="ra-btn"
+            data-active={prompt?.kind === 'close' || undefined}
+            onClick={() => togglePrompt('close')}
+          >
+            Close role
+            <span className="glyph">×</span>
+          </button>
+          <button
+            className="ra-btn"
+            data-active={prompt?.kind === 'stage' || undefined}
+            onClick={() => togglePrompt('stage')}
+          >
+            Update stage
+            <span className="glyph">↻</span>
+          </button>
+        </div>
+
+        {renderPrompt()}
+
+        <div className="ra-patterns-note">This contributes to your decision patterns</div>
+      </div>
+    </section>
+  );
+}
+
+function Analysis() {
+  const [role, setRole] = useState({
+    status: 'Applied',
+    state: 'applied',              // applied | process | skipped | closed
+    appliedDate: '12 Apr 2026',
+    currentState: 'No response',
+    sinceApplied: '17 days',
+    stage: null,
+    stageUpdatedAt: null,
+    skipReason: null,
+  });
+  const [prompt, setPrompt] = useState(null);
+  const [interviewOpen, setInterviewOpen] = useState(false);
+  const { toasts, push, dismiss } = useToasts();
+  const undoRef = useRef(null);
+
+  const handleUndo = () => {
+    if (undoRef.current) {
+      undoRef.current();
+      undoRef.current = null;
+    }
+  };
+
+  const handleInterviewSave = ({ stage, date }) => {
+    const before = { ...role };
+    undoRef.current = () => setRole(before);
+    setRole(prev => ({
+      ...prev,
+      status: 'In process',
+      state: 'process',
+      stage,
+      currentState: date ? `${stage} · ${formatDate(date)}` : stage,
+      stageUpdatedAt: Date.now(),
+    }));
+    push({ msg: date ? `Interview added · ${stage}` : `Interview stage set · ${stage}`, undo: true });
+  };
+
+  return (
+    <div className="app">
+      {renderSidebar({ current: 'analysis', counts: { roles: 48, applications: 11, recruiters: 7 } })}
+
+      <main className="main" data-screen-label="Analysis">
+        <div className="content">
+
+          {/* TOP BAR */}
+          <div className="ra-topbar">
+            <a href="Roles.html" className="ra-back">
+              <span className="ra-back-arrow">←</span>
+              Back to roles
+            </a>
+            <div className="ra-top-utils">
+              <a className="ra-util" href="#">
+                <span className="ra-util-tick" />
+                Saved
+              </a>
+              <a className="ra-util" href="#">
+                <span className="ra-util-tick" />
+                Share
+              </a>
+              <a className="ra-util" href="#">
+                <span className="ra-util-tick" />
+                Re-analyse
+              </a>
+            </div>
+          </div>
+
+          <div className="ra-layout">
+            {/* LEFT COLUMN */}
+            <article>
+              <header className="ra-header">
+                <div className="ra-eyebrow">
+                  <span className="ra-eyebrow-tick" />
+                  Role analysis
+                  <span style={{opacity: 0.5}}>·</span>
+                  <span>RW-2047</span>
+                </div>
+                <h1 className="ra-title">
+                  Senior Product Designer
+                  <span className="dot">·</span>
+                  <span className="co">Linear</span>
+                </h1>
+                <p className="ra-meta">
+                  <span>Remote (EU)</span>
+                  <span className="sep" />
+                  <span>Full-time</span>
+                  <span className="sep" />
+                  <span>£95k–£120k</span>
+                </p>
+              </header>
+
+              <section className="ra-section">
+                <div className="ra-sec-label">
+                  <span className="ra-sec-num">01</span>
+                  <h2 className="ra-sec-title">What this role really is</h2>
+                </div>
+                <p className="ra-lede">
+                  You’ll be improving internal tooling and workflows <em>rather than shaping product direction.</em>
+                </p>
+              </section>
+
+              <section className="ra-section">
+                <div className="ra-sec-label">
+                  <span className="ra-sec-num">02</span>
+                  <h2 className="ra-sec-title">Why this role exists</h2>
+                </div>
+                <p className="ra-p">
+                  Linear is scaling fast. This role exists to improve the craft and efficiency of existing experiences so the team can ship faster with fewer bottlenecks.
+                </p>
+                <p className="ra-note">
+                  Inference based on team size and roadmap language.
+                </p>
+              </section>
+
+              <section className="ra-section">
+                <div className="ra-sec-label">
+                  <span className="ra-sec-num">03</span>
+                  <h2 className="ra-sec-title">What you’d actually do</h2>
+                </div>
+                <ul className="ra-list">
+                  <li>Work on optimisation and iteration, not 0→1</li>
+                  <li>Collaborate heavily with engineering and data</li>
+                  <li>Focus on usability and consistency</li>
+                  <li>Improve existing flows and systems</li>
+                </ul>
+              </section>
+
+              <section className="ra-section">
+                <div className="ra-sec-label">
+                  <span className="ra-sec-num">04</span>
+                  <h2 className="ra-sec-title">What they’re really looking for</h2>
+                </div>
+                <ul className="ra-list">
+                  <li>Strong systems thinking</li>
+                  <li>Comfort with ambiguity, within constraints</li>
+                  <li>Someone who can execute, not redefine</li>
+                  <li>High craft and attention to detail</li>
+                </ul>
+              </section>
+
+              <section className="ra-section">
+                <div className="ra-sec-label">
+                  <span className="ra-sec-num">05</span>
+                  <h2 className="ra-sec-title">Risks &amp; unknowns</h2>
+                </div>
+                <ul className="ra-list">
+                  <li>Scope of ownership is unclear</li>
+                  <li>Decision-making authority is not defined</li>
+                  <li>Salary band suggests mid-level expectations</li>
+                  <li>Growth path is not clearly stated</li>
+                </ul>
+              </section>
+
+              <section className="ra-section">
+                <div className="ra-sec-label">
+                  <span className="ra-sec-num">06</span>
+                  <h2 className="ra-sec-title">Questions worth asking</h2>
+                </div>
+                <ul className="ra-list questions">
+                  <li>Who owns product direction here?</li>
+                  <li>What decisions would I actually control?</li>
+                  <li>What does success look like in six months?</li>
+                  <li>How is design impact measured?</li>
+                </ul>
+              </section>
+
+              <section className="ra-section">
+                <div className="ra-sec-label">
+                  <span className="ra-sec-num">07</span>
+                  <h2 className="ra-sec-title">Suggested actions</h2>
+                </div>
+                <ul className="ra-actions-list">
+                  <li>
+                    <span className="idx">a.</span>
+                    <span>
+                      <span className="do">Apply now</span>
+                      <span className="qualifier">if aligned with your priorities</span>
+                    </span>
+                    <span className="mark">mark done ↗</span>
+                  </li>
+                  <li>
+                    <span className="idx">b.</span>
+                    <span>
+                      <span className="do">Clarify ownership scope</span>
+                      <span className="qualifier">before proceeding</span>
+                    </span>
+                    <span className="mark">mark done ↗</span>
+                  </li>
+                  <li>
+                    <span className="idx">c.</span>
+                    <span>
+                      <span className="do">Ask about decision-making authority</span>
+                      <span className="qualifier">in the recruiter screen</span>
+                    </span>
+                    <span className="mark">mark done ↗</span>
+                  </li>
+                </ul>
+              </section>
+
+              <div className="ra-close">
+                <div className="ra-close-l">
+                  Generated by Rolewise from the original job listing, role patterns across your history, and public signals about Linear’s roadmap.
+                </div>
+                <div className="ra-close-r">
+                  v 1.2 · 12 Apr 2026
+                </div>
+              </div>
+            </article>
+
+            {/* RIGHT PANEL */}
+            <aside className="ra-side">
+              <StatusBlock
+                role={role}
+                setRole={setRole}
+                prompt={prompt}
+                setPrompt={setPrompt}
+                pushToast={push}
+                undoRef={undoRef}
+                setInterviewOpen={setInterviewOpen}
+              />
+
+              <section className="ra-block">
+                <div className="ra-block-label">At a glance</div>
+                <div className="ra-facts">
+                  <div className="ra-fact">
+                    <div className="ra-fact-k">Location</div>
+                    <div className="ra-fact-v">Remote (EU)</div>
+                  </div>
+                  <div className="ra-fact">
+                    <div className="ra-fact-k">Type</div>
+                    <div className="ra-fact-v">Full-time</div>
+                  </div>
+                  <div className="ra-fact">
+                    <div className="ra-fact-k">Salary</div>
+                    <div className="ra-fact-v">
+                      £95k–£120k
+                      <span className="sub">~£7.9k–£10k / month</span>
+                    </div>
+                  </div>
+                  <div className="ra-fact">
+                    <div className="ra-fact-k">Company</div>
+                    <div className="ra-fact-v">
+                      Linear
+                      <span className="sub">Scale-up</span>
+                    </div>
+                  </div>
+                  <div className="ra-fact">
+                    <div className="ra-fact-k">Industry</div>
+                    <div className="ra-fact-v">
+                      AI SaaS
+                      <span className="sub">Developer tools</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="ra-block">
+                <div className="ra-block-label">Key signals</div>
+                <div className="ra-signals">
+                  <div className="ra-signal" data-dir="up">
+                    <span className="ra-signal-glyph">↑</span>
+                    <span>
+                      Strong systems &amp; tooling focus
+                      <span className="ra-signal-sub">Matches 8 of your saved roles</span>
+                    </span>
+                  </div>
+                  <div className="ra-signal" data-dir="up">
+                    <span className="ra-signal-glyph">↑</span>
+                    <span>
+                      AI workflows increasing in demand
+                      <span className="ra-signal-sub">+28% in your market this quarter</span>
+                    </span>
+                  </div>
+                  <div className="ra-signal" data-dir="flat">
+                    <span className="ra-signal-glyph">•</span>
+                    <span>
+                      Hybrid roles dominate (2–3 days)
+                      <span className="ra-signal-sub">This role is an outlier — fully remote</span>
+                    </span>
+                  </div>
+                  <div className="ra-signal" data-dir="down">
+                    <span className="ra-signal-glyph">↓</span>
+                    <span>
+                      Salary transparency inconsistent
+                      <span className="ra-signal-sub">This listing is transparent</span>
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              <section className="ra-block">
+                <div className="ra-block-label">Notes</div>
+                <p className="ra-notes">
+                  Strong alignment with my background in complex systems. Ownership level is the main unknown.
+                </p>
+                <a className="ra-notes-edit" href="#">Edit note ↗</a>
+              </section>
+            </aside>
+          </div>
+        </div>
+      </main>
+
+      {interviewOpen && (
+        <AddInterviewPanel
+          onSave={handleInterviewSave}
+          onClose={() => setInterviewOpen(false)}
+        />
+      )}
+
+      <ToastHost toasts={toasts} onUndo={handleUndo} onDismiss={dismiss} />
+    </div>
+  );
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Analysis />);
+</script>
+
+</body>
+</html>
