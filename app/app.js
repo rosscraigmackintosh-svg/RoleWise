@@ -26151,7 +26151,6 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     // live pages yet. They render a calm placeholder rather than inventing
     // page content. Each entry has a title and a one-line description.
     const PLACEHOLDER_PAGES = {
-      insights:      { title: 'Insights',          description: 'This area will collect patterns and observations from your search once available.' },
       patterns:      { title: 'Patterns',          description: 'This area will collect recurring patterns surfaced from your decisions once available.' },
       career_memory: { title: 'Career Memory',     description: 'This area will collect long-term context from your search once available.' },
       snapshots:     { title: 'Snapshots',         description: 'This area will collect saved snapshots of roles and decisions once available.' },
@@ -32198,6 +32197,501 @@ If a field cannot be determined from the message, return null for that field.`,
       });
     }
 
+    // ────────────────────────────────────────────────────────────────────────────
+    // Insights v2 — patterns from your job search.
+    //
+    // Reflective intelligence layer, not analytics. Each observation is computed
+    // from real role/application data, leads with an interpretation, supports it
+    // with quiet prose evidence, and carries an expandable "Why this appeared"
+    // trail so the reader can audit what the observation rests on.
+    //
+    // Sections (in display order, only render when they have content):
+    //   01 current signals    — what's happening right now in the active pipeline
+    //   02 process patterns   — how applications move through the funnel
+    //   03 role-shape         — which kinds of roles hold attention
+    //   04 friction & blockers — what most often stops progress
+    //   05 market direction   — external trends in the user's feed
+    //   06 emerging themes    — observations forming but not yet confident
+    // ────────────────────────────────────────────────────────────────────────────
+
+    const _RWI_SECTION_ORDER = [
+      'current signals',
+      'process patterns',
+      'role-shape patterns',
+      'friction & blockers',
+      'market direction',
+      'emerging themes',
+    ];
+
+    // Small helpers — date windows, age, percent.
+    function _rwiDaysAgo(iso)   { return iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null; }
+    function _rwiInLast(iso, d) { const a = _rwiDaysAgo(iso); return a !== null && a <= d; }
+    function _rwiInPriorWindow(iso, dStart, dEnd) {
+      const a = _rwiDaysAgo(iso); return a !== null && a > dStart && a <= dEnd;
+    }
+    function _rwiCompactList(arr, max) {
+      if (!arr || !arr.length) return [];
+      return arr.slice(0, max);
+    }
+
+    // Compute every insight from real role data. Returns a section→[insights] map.
+    // Each insight obeys evidence thresholds — sparse data → no insight.
+    function _computeInsights(allRolesIn) {
+      const roles = (allRolesIn || []).filter(r => !isArchivedRole(r));
+      const sections = {};
+      _RWI_SECTION_ORDER.forEach(s => { sections[s] = []; });
+
+      const FLOOR = 5;  // minimum sample size for a "Clear pattern"
+
+      // ── Reusable selectors ──────────────────────────────────────────────────
+      const applied = roles.filter(r => !!r._appliedDate);
+      const responded = applied.filter(r => !!r._firstResponseDate);
+      const inProcess = roles.filter(r => _IN_PROGRESS_STAGES.has(currentStageLabel(r)));
+      const skipped = roles.filter(r => r.outcome_state === 'skipped' || r.user_decision === 'skip');
+      const saved   = roles.filter(r => r.user_decision === 'save');
+
+      // ── 01 · Current signals ────────────────────────────────────────────────
+      // Response timing distribution — only if we have at least 3 responses.
+      if (responded.length >= 3) {
+        const times = responded
+          .map(r => Math.max(0, Math.round((new Date(r._firstResponseDate).getTime() - new Date(r._appliedDate).getTime()) / 86400000)))
+          .filter(d => d >= 0);
+        const within7  = times.filter(d => d <= 7).length;
+        const after14  = times.filter(d => d > 14).length;
+        const within7Ratio = within7 / times.length;
+        if (within7Ratio >= 0.5) {
+          sections['current signals'].push({
+            id: 'cs-resp-window',
+            strength: responded.length >= FLOOR ? 'strong' : 'emerging',
+            statement: 'Most responses arrive within the first week.',
+            evidence: [
+              `Of ${responded.length} response${responded.length === 1 ? '' : 's'} received, ${within7} came back within 7 days${after14 ? `; ${after14} took longer than 14` : ''}.`,
+              after14 === 0 && responded.length >= FLOOR
+                ? 'Roles past 14 days without contact are unlikely to respond at all.'
+                : null,
+            ].filter(Boolean),
+            why: {
+              observedAcross: [
+                { k: 'Applications with response data', v: String(responded.length) },
+                { k: 'Applications still waiting',      v: String(applied.length - responded.length) },
+              ],
+              roles: _rwiCompactList(responded.map(r => r.company_name).filter(Boolean), 4),
+            },
+          });
+        }
+      }
+
+      // ── 02 · Process patterns ───────────────────────────────────────────────
+      // Salary disclosure × progression.
+      if (applied.length >= FLOOR) {
+        const withSalary = applied.filter(r => (r.salary_text_raw || '').trim().length > 0);
+        const noSalary   = applied.filter(r => !((r.salary_text_raw || '').trim().length > 0));
+        if (noSalary.length >= 2 && withSalary.length >= 2) {
+          const noSalaryProgressed = noSalary.filter(r => _IN_PROGRESS_STAGES.has(currentStageLabel(r))).length;
+          const withSalaryProgressed = withSalary.filter(r => _IN_PROGRESS_STAGES.has(currentStageLabel(r))).length;
+          const noSalaryPct   = Math.round((noSalaryProgressed / noSalary.length) * 100);
+          const withSalaryPct = Math.round((withSalaryProgressed / withSalary.length) * 100);
+          if (withSalaryPct > noSalaryPct + 10) {
+            sections['process patterns'].push({
+              id: 'pp-salary-progress',
+              strength: applied.length >= 10 ? 'strong' : 'emerging',
+              statement: 'Roles with listed salaries appear more likely to progress.',
+              evidence: [
+                `Across ${noSalary.length} applied role${noSalary.length === 1 ? '' : 's'} without a listed salary, ${noSalaryProgressed === 0 ? 'none have' : `only ${noSalaryProgressed} have`} reached recruiter screen or beyond.`,
+                `Salary-disclosed roles reached screen in roughly ${withSalaryPct}% of cases.`,
+              ],
+              visual: { kind: 'split', left: { label: 'Salary disclosed', pct: withSalaryPct }, right: { label: 'No salary', pct: noSalaryPct } },
+              why: {
+                observedAcross: [
+                  { k: 'Applied — no salary',              v: String(noSalary.length) },
+                  { k: 'No-salary reached recruiter screen', v: String(noSalaryProgressed) },
+                  { k: 'Salary-disclosed comparison',       v: String(withSalary.length) },
+                ],
+                roles: _rwiCompactList(noSalary.map(r => r.company_name).filter(Boolean), 4),
+              },
+            });
+          }
+        }
+      }
+
+      // Recruiter presence × response speed.
+      if (responded.length >= FLOOR) {
+        const viaRec  = responded.filter(r => Array.isArray(r.role_recruiters) && r.role_recruiters.length > 0);
+        const direct  = responded.filter(r => !(Array.isArray(r.role_recruiters) && r.role_recruiters.length > 0));
+        if (viaRec.length >= 2 && direct.length >= 2) {
+          const avg = (rs) => Math.round(rs.reduce((a, r) => a + Math.max(0, (new Date(r._firstResponseDate).getTime() - new Date(r._appliedDate).getTime()) / 86400000), 0) / rs.length);
+          const viaAvg = avg(viaRec), dirAvg = avg(direct);
+          if (dirAvg - viaAvg >= 2) {
+            sections['process patterns'].push({
+              id: 'pp-recruiter-speed',
+              strength: 'emerging',
+              statement: 'Recruiter-led applications tend to respond faster than direct ones.',
+              evidence: [
+                `Recruiter-led roles respond in about ${viaAvg} day${viaAvg === 1 ? '' : 's'} on average; direct applications take around ${dirAvg}.`,
+                'The pattern holds across the small response sample so far.',
+              ],
+              why: {
+                observedAcross: [
+                  { k: 'Recruiter-led applications', v: String(viaRec.length) },
+                  { k: 'Direct applications',         v: String(direct.length) },
+                ],
+                roles: _rwiCompactList(viaRec.map(r => r.company_name).filter(Boolean), 4),
+              },
+            });
+          }
+        }
+      }
+
+      // Saved-roles aging.
+      if (saved.length >= FLOOR) {
+        const stale = saved.filter(r => _rwiDaysAgo(r.created_at) > 5 && !r._appliedDate);
+        const eventuallyApplied = saved.filter(r => !!r._appliedDate);
+        if (stale.length >= 3 && eventuallyApplied.length / saved.length < 0.4) {
+          sections['process patterns'].push({
+            id: 'pp-stale-saves',
+            strength: 'emerging',
+            statement: 'Saved roles older than 5 days rarely move forward.',
+            evidence: [
+              `${saved.length} role${saved.length === 1 ? ' has' : 's have'} been saved; ${eventuallyApplied.length} ${eventuallyApplied.length === 1 ? 'was' : 'were'} eventually applied to.`,
+              'Most stale saves drop out of the pipeline without an explicit decision.',
+            ],
+            why: {
+              observedAcross: [
+                { k: 'Saved >5 days',     v: String(stale.length) },
+                { k: 'Eventually applied', v: String(eventuallyApplied.length) },
+              ],
+              roles: _rwiCompactList(stale.map(r => r.company_name).filter(Boolean), 4),
+            },
+          });
+        }
+      }
+
+      // ── 04 · Friction & blockers ────────────────────────────────────────────
+      // Skip-reason breakdown.
+      if (skipped.length >= FLOOR) {
+        const noSalary = skipped.filter(r => !((r.salary_text_raw || '').trim().length > 0)).length;
+        const onSiteHeavy = skipped.filter(r => /on.?site|onsite|in.{0,3}office|3.{0,2}day|4.{0,2}day|5.{0,2}day/i.test(r.work_model || '')).length;
+        const codingFlag = skipped.filter(r => {
+          const fo = r.latest_match_output || {};
+          const sigs = fo.hard_no?.signals || fo.hard_no_signals || [];
+          return Array.isArray(sigs) && sigs.some(s => /production.{0,3}coding|live.{0,3}coding/i.test(typeof s === 'string' ? s : s?.label || ''));
+        }).length;
+
+        if (noSalary >= 3 && noSalary >= onSiteHeavy && noSalary >= codingFlag) {
+          sections['friction & blockers'].push({
+            id: 'fb-skip-salary',
+            strength: skipped.length >= 10 ? 'strong' : 'emerging',
+            statement: 'Missing salary is the most common reason for skipping a role.',
+            evidence: [
+              `${noSalary} of ${skipped.length} skipped role${skipped.length === 1 ? '' : 's'} had no salary listed.`,
+              [
+                onSiteHeavy >= 2 ? `${onSiteHeavy} were skipped over heavy on-site days` : null,
+                codingFlag >= 2 ? `${codingFlag} over production-coding requirements` : null,
+              ].filter(Boolean).join('; ') + (onSiteHeavy >= 2 || codingFlag >= 2 ? '.' : ''),
+            ].filter(s => s.trim() !== '.'),
+            why: {
+              observedAcross: [
+                { k: 'Skipped — salary missing',     v: String(noSalary) },
+                { k: 'Skipped — heavy on-site',      v: String(onSiteHeavy) },
+                { k: 'Skipped — production coding', v: String(codingFlag) },
+              ],
+              roles: _rwiCompactList(skipped.filter(r => !((r.salary_text_raw || '').trim().length > 0)).map(r => r.company_name).filter(Boolean), 4),
+            },
+          });
+        }
+      }
+
+      // ── 05 · Market direction ───────────────────────────────────────────────
+      // Work-model trend across last 14 days vs prior 14 days.
+      const seenLast14  = roles.filter(r => _rwiInLast(r.created_at, 14));
+      const seenPrior14 = roles.filter(r => _rwiInPriorWindow(r.created_at, 14, 28));
+      if (seenLast14.length >= FLOOR && seenPrior14.length >= 3) {
+        const wm = (rs) => {
+          const b = { remote: 0, hybrid: 0, onsite: 0 }; let known = 0;
+          rs.forEach(r => {
+            const w = (r.work_model || '').toLowerCase();
+            if (w.includes('remote'))                               { b.remote++; known++; }
+            else if (w.includes('hybrid'))                          { b.hybrid++; known++; }
+            else if (w.includes('on-site') || w.includes('onsite')) { b.onsite++; known++; }
+          });
+          return { b, known };
+        };
+        const cur = wm(seenLast14), prev = wm(seenPrior14);
+        if (cur.known >= FLOOR && prev.known >= 3) {
+          const curHybrid  = Math.round((cur.b.hybrid  / cur.known) * 100);
+          const prevHybrid = Math.round((prev.b.hybrid / prev.known) * 100);
+          if (curHybrid - prevHybrid >= 8) {
+            sections['market direction'].push({
+              id: 'md-hybrid-up',
+              strength: 'strong',
+              statement: 'Hybrid listings are trending up — remote holding steady.',
+              evidence: [
+                `Hybrid roles made up ${curHybrid}% of new listings in the last 14 days, up from ${prevHybrid}% the prior period.`,
+                'On-site share has continued to drift down over the same window.',
+              ],
+              why: {
+                observedAcross: [
+                  { k: 'New listings, last 14 days',  v: String(seenLast14.length) },
+                  { k: 'New listings, prior 14 days', v: String(seenPrior14.length) },
+                ],
+                roles: _rwiCompactList(seenLast14.filter(r => /hybrid/i.test(r.work_model || '')).map(r => r.company_name).filter(Boolean), 4),
+              },
+            });
+          }
+        }
+      }
+
+      // Industry frequency in the last 30 days.
+      const seenLast30 = roles.filter(r => _rwiInLast(r.created_at, 30));
+      if (seenLast30.length >= 10) {
+        const industryCounts = {};
+        seenLast30.forEach(r => {
+          const ind = r.latest_match_output?.role_archetype?.industry || r.latest_match_output?.practical_details?.industry;
+          if (ind) industryCounts[ind] = (industryCounts[ind] || 0) + 1;
+        });
+        const topInd = Object.entries(industryCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        if (topInd.length >= 2 && topInd[0][1] >= 4) {
+          const [topName, topCount] = topInd[0];
+          sections['market direction'].push({
+            id: 'md-industry',
+            strength: 'emerging',
+            statement: `${topName} roles are appearing most often in your feed.`,
+            evidence: [
+              `${topName} led the feed over the last 30 days${topInd[1] ? `, ahead of ${topInd[1][0]}${topInd[2] ? ` and ${topInd[2][0]}` : ''}` : ''}.`,
+            ],
+            why: {
+              observedAcross: topInd.map(([k, v]) => ({ k, v: String(v) })),
+              roles: _rwiCompactList(seenLast30.filter(r => (r.latest_match_output?.role_archetype?.industry || '') === topName).map(r => r.company_name).filter(Boolean), 4),
+            },
+          });
+        }
+      }
+
+      // ── 06 · Emerging themes ────────────────────────────────────────────────
+      // Title-level shifts (Staff vs Lead etc.) — count term frequency in last 14 days.
+      if (seenLast14.length >= 8) {
+        const term = (re) => seenLast14.filter(r => re.test(r.role_title || '')).length;
+        const staff   = term(/\bStaff\b/i);
+        const lead    = term(/\bLead\b/i);
+        const principal = term(/\bPrincipal\b/i);
+        const senior  = term(/\bSenior\b/i);
+        const pairs = [
+          ['Staff', staff], ['Lead', lead], ['Principal', principal], ['Senior', senior],
+        ].filter(p => p[1] > 0).sort((a, b) => b[1] - a[1]);
+        if (pairs.length >= 2 && pairs[0][1] >= 3 && pairs[0][1] - pairs[1][1] >= 2) {
+          const [topTitle, topCount] = pairs[0];
+          const [secondTitle, secondCount] = pairs[1];
+          sections['emerging themes'].push({
+            id: 'et-title-shift',
+            strength: 'emerging',
+            statement: `${topTitle}-level titles are appearing more often than ${secondTitle}-level titles.`,
+            evidence: [
+              `${topCount} ${topTitle}-titled and ${secondCount} ${secondTitle}-titled role${secondCount === 1 ? '' : 's'} surfaced in the last 14 days.`,
+              'Too early to call a sustained shift; worth watching.',
+            ],
+            why: {
+              observedAcross: pairs.map(([k, v]) => ({ k: `${k} titles`, v: String(v) })),
+              roles: _rwiCompactList(seenLast14.filter(r => new RegExp(`\\b${topTitle}\\b`, 'i').test(r.role_title || '')).map(r => r.company_name).filter(Boolean), 4),
+            },
+          });
+        }
+      }
+
+      // Counts for header summary.
+      const allInsights = _RWI_SECTION_ORDER.flatMap(s => sections[s]);
+      const totals = {
+        total:    allInsights.length,
+        strong:   allInsights.filter(i => i.strength === 'strong').length,
+        emerging: allInsights.filter(i => i.strength === 'emerging').length,
+        early:    allInsights.filter(i => i.strength === 'early').length,
+      };
+      const context = {
+        rolesSeen: roles.length,
+        applied:   applied.length,
+        responses: responded.length,
+        seenLast14: seenLast14.length,
+      };
+
+      return { sections, totals, context };
+    }
+
+    // ── HTML helpers for one insight item and one section ───────────────────────
+    function _rwiStrengthTag(s) {
+      if (s === 'strong')   return '<span class="rwi-tag rwi-tag--strong">Clear pattern</span>';
+      if (s === 'emerging') return '<span class="rwi-tag rwi-tag--emerging">Emerging pattern</span>';
+      if (s === 'early')    return '<span class="rwi-tag rwi-tag--early">Early signal</span>';
+      return '';
+    }
+
+    function _rwiVisualHtml(v) {
+      if (!v) return '';
+      if (v.kind === 'split') {
+        const left  = v.left, right = v.right;
+        return `
+          <div class="rwi-vis-split" aria-hidden="true">
+            <div class="rwi-vis-split-row">
+              <span class="rwi-vis-split-k">${esc(left.label)}</span>
+              <span class="rwi-vis-split-bar"><span class="rwi-vis-split-fill" style="width:${Math.max(2, left.pct)}%"></span></span>
+              <span class="rwi-vis-split-v">${left.pct}%</span>
+            </div>
+            <div class="rwi-vis-split-row">
+              <span class="rwi-vis-split-k">${esc(right.label)}</span>
+              <span class="rwi-vis-split-bar"><span class="rwi-vis-split-fill rwi-vis-split-fill--muted" style="width:${Math.max(2, right.pct)}%"></span></span>
+              <span class="rwi-vis-split-v">${right.pct}%</span>
+            </div>
+          </div>`;
+      }
+      return '';
+    }
+
+    function _rwiWhyHtml(why) {
+      if (!why) return '';
+      const observed = (why.observedAcross && why.observedAcross.length)
+        ? `<div class="rwi-why-block">
+             <div class="rwi-why-label">observed across</div>
+             <ul class="rwi-why-list">
+               ${why.observedAcross.map(row => `<li class="rwi-why-row"><span>${esc(row.k)}</span><span class="rwi-why-v">${esc(row.v)}</span></li>`).join('')}
+             </ul>
+           </div>`
+        : '';
+      const traits = (why.relatedTraits && why.relatedTraits.length)
+        ? `<div class="rwi-why-block">
+             <div class="rwi-why-label">most common related traits</div>
+             <div class="rwi-why-chips">${why.relatedTraits.map(t => `<span class="rwi-why-chip">${esc(t)}</span>`).join('')}</div>
+           </div>`
+        : '';
+      const roles = (why.roles && why.roles.length)
+        ? `<div class="rwi-why-block">
+             <div class="rwi-why-label">supporting roles</div>
+             <div class="rwi-why-chips">${why.roles.map(r => `<span class="rwi-why-chip rwi-why-chip--role">${esc(r)}</span>`).join('')}</div>
+           </div>`
+        : '';
+      if (!observed && !traits && !roles) return '';
+      return `
+        <button type="button" class="rwi-why-toggle" aria-expanded="false">
+          <span>why this appeared</span>
+          <span class="rwi-why-arr" aria-hidden="true">+</span>
+        </button>
+        <div class="rwi-why-body" hidden>
+          ${observed}${traits}${roles}
+        </div>`;
+    }
+
+    function _rwiItemHtml(insight) {
+      return `
+        <article class="rwi-item">
+          ${_rwiStrengthTag(insight.strength)}
+          <h3 class="rwi-stmt">${esc(insight.statement)}</h3>
+          ${_rwiVisualHtml(insight.visual)}
+          ${insight.evidence.map(t => `<p class="rwi-ev">${esc(t)}</p>`).join('')}
+          ${_rwiWhyHtml(insight.why)}
+        </article>`;
+    }
+
+    function _rwiSectionHtml(num, name, items) {
+      return `
+        <section class="rww-section rwi-section" data-sec="${esc(name)}">
+          <div class="rww-sec-label">
+            <span class="rww-sec-num">${esc(num)}</span>${esc(name)}
+          </div>
+          <div class="rww-sec-body">
+            <div class="rwi-list">${items.map(_rwiItemHtml).join('')}</div>
+          </div>
+        </section>`;
+    }
+
+    function renderInsightsView() {
+      const el = document.getElementById('col-overview-cards');
+      if (!el) return;
+      el.classList.remove('col-ov--legacy-doc'); // v2 page scrolls internally
+      _updateNavCounts();
+      const railSec = document.getElementById('col-rail-section');
+      if (railSec) railSec.innerHTML = '';
+      _setRailVisible(false);
+
+      const { sections, totals, context } = _computeInsights(allRoles);
+
+      const headerHtml = `
+        <header class="rwa-header rwi-head">
+          <div class="rwi-head-l">
+            <h1 class="rwa-title">Insights</h1>
+            <p class="rwa-sub rwi-sub">Patterns from your job search.</p>
+          </div>
+        </header>`;
+
+      const framingHtml = `
+        <p class="rwi-framing">
+          Insights appear when repeated patterns emerge across analysed roles,
+          applications, and outcomes. They describe what has happened — not what will.
+        </p>`;
+
+      const contextHtml = `
+        <div class="rwi-context">
+          <span class="rwi-context-part"><span class="rwi-context-v">${context.rolesSeen}</span> <span class="rwi-context-k">roles seen</span></span>
+          <span class="rwi-context-dot"></span>
+          <span class="rwi-context-part"><span class="rwi-context-v">${context.applied}</span> <span class="rwi-context-k">applied</span></span>
+          <span class="rwi-context-dot"></span>
+          <span class="rwi-context-part"><span class="rwi-context-v">${context.responses}</span> <span class="rwi-context-k">responses</span></span>
+        </div>`;
+
+      let bodyHtml;
+      if (totals.total === 0) {
+        bodyHtml = `
+          <div class="rwi-empty">
+            <div class="rwi-empty-mark"></div>
+            <div class="rwi-empty-t">Not enough activity yet to surface patterns.</div>
+            <p class="rwi-empty-s">
+              Insights start to appear after around 10–15 reviewed roles. So far: ${context.rolesSeen}.
+              Keep reviewing — patterns surface as decisions accumulate.
+            </p>
+          </div>`;
+      } else {
+        const summaryBits = [
+          `<span class="rwi-summary-v">${totals.total}</span> observation${totals.total === 1 ? '' : 's'}`,
+          totals.strong   ? `<span class="rwi-summary-v">${totals.strong}</span> ${totals.strong === 1 ? 'shows' : 'show'} a clear pattern` : null,
+          totals.emerging ? `<span class="rwi-summary-v">${totals.emerging}</span> still emerging` : null,
+        ].filter(Boolean).join(' · ');
+        const summaryHtml = `<div class="rwi-summary">${summaryBits}.</div>`;
+
+        const filledOrder = _RWI_SECTION_ORDER.filter(name => sections[name].length > 0);
+        const sectionsHtml = filledOrder.map((name, i) => {
+          const num = String(i + 1).padStart(2, '0');
+          return _rwiSectionHtml(num, name, sections[name]);
+        }).join('');
+
+        const closeHtml = `
+          <div class="rww-close rwi-close">
+            <div class="rww-close-l">Observations are drawn from your own decisions.</div>
+            <div class="rww-close-r">end of insights</div>
+          </div>`;
+
+        bodyHtml = `${summaryHtml}<div class="rww-sections rwi-sections">${sectionsHtml}${closeHtml}</div>`;
+      }
+
+      el.innerHTML = `
+        <div class="rwa-page rwi-page">
+          <div class="rwa-page-inner rwi-page-inner">
+            ${headerHtml}
+            <div class="rwo-divider"></div>
+            ${framingHtml}
+            ${contextHtml}
+            ${bodyHtml}
+          </div>
+        </div>`;
+
+      // Wire Why-this-appeared expand/collapse.
+      el.querySelectorAll('.rwi-why-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const body = btn.nextElementSibling;
+          const open = btn.getAttribute('aria-expanded') === 'true';
+          btn.setAttribute('aria-expanded', String(!open));
+          if (body) body.hidden = open;
+          const arr = btn.querySelector('.rwi-why-arr');
+          if (arr) arr.textContent = open ? '+' : '−';
+        });
+      });
+    }
+
     // ─── Legacy review (kept for compatibility — no longer routed) ────────────
     async function _renderReviewViewLegacy() {
       const el = document.getElementById('col-overview-cards');
@@ -33504,7 +33998,7 @@ If a field cannot be determined from the message, return null for that field.`,
       }
 
       // ── Full interactive views ─────────────────────────────────────────────────
-      const FULL_VIEWS = { 'profile': renderProfileView, 'review': renderReviewView, 'recruiters': renderRecruitersView, 'safeguards': renderSafeguardsView, 'admin': renderAdminView, 'applications_timeline': renderApplicationsView, 'decisions': renderDecisionsView };
+      const FULL_VIEWS = { 'profile': renderProfileView, 'review': renderReviewView, 'recruiters': renderRecruitersView, 'safeguards': renderSafeguardsView, 'admin': renderAdminView, 'applications_timeline': renderApplicationsView, 'decisions': renderDecisionsView, 'insights': renderInsightsView };
       if (FULL_VIEWS[view]) {
         selectedRoleId = null;
         document.querySelectorAll('.inbox-role').forEach(r => r.classList.remove('active'));
