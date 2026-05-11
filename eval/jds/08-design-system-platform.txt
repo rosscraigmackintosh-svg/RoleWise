@@ -1,0 +1,27 @@
+Staff Product Designer, Design Systems — Atlassian
+Remote (UK/EU), Full-time
+£135,000–£165,000 + RSUs
+
+About Atlassian
+Atlassian was founded in 2002 and is a global leader in collaboration software. Our products — Jira, Confluence, Trello, Bitbucket, Loom — are used by over 300,000 customers worldwide including 80% of Fortune 500 companies.
+
+The role
+You will join the Atlassian Design System team and own a horizontal slice of the system used across all of our products. Specifically: tokens, primitives, and the migration tooling that lets 200+ product designers consume the system consistently.
+
+This is not a product feature role. The customers of your work are other designers and engineers inside Atlassian. Your output is API surface, documentation, contribution patterns, and adoption tooling.
+
+What you will work on
+- Token architecture and the multi-product theming model
+- The primitive component layer and its contribution model
+- Migration tooling that helps product teams move off legacy patterns
+- Governance — how a 200+ designer org makes shared decisions on the system
+- Partnership with the design systems engineering team on Figma-to-code parity
+
+What we are looking for
+- 8+ years product design, including at least 3 years on design systems
+- Strong systems thinking and API design instincts
+- Experience operating as an internal platform — your customers are designers
+- Comfort with multi-year horizontal work, not feature shipping
+
+What we offer
+£135k–£165k base + significant RSU package. Fully remote in UK/EU. Health, equity, learning budget.

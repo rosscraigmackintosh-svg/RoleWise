@@ -1,0 +1,27 @@
+Senior Product Designer, Customer Platform — Monzo
+London (Hybrid, 2 days/week in office), Full-time
+£95,000–£115,000 + equity
+
+About Monzo
+Monzo is the UK's largest digital bank, serving over 10 million customers. We were founded in 2015 and now have offices in London, Cardiff, Dublin, and the US.
+
+The role
+You will join the Customer Platform group, which sits at the intersection of nine product squads, the data org, and Customer Operations. Your work will rarely ship as a single feature — it will mostly show up as small changes across other teams' surfaces.
+
+Customer Platform owns the cross-cutting customer record: how we represent a customer across every surface they touch, how product teams read and write to that record, and how Customer Operations sees the same customer when they pick up the phone.
+
+What you will work on
+- Aligning nine product squads around shared customer-record patterns
+- Working with three principal PMs on the platform roadmap
+- Designing internal-tools surfaces for Customer Operations (300+ daily users)
+- Influencing data-model and event-shape decisions alongside engineering
+- Quarterly OKR-setting with the Customer Platform PM and EM trio
+
+What we are looking for
+- 7+ years product design, including significant cross-team coordination work
+- High tolerance for politics and stakeholder load
+- Comfort being one of many voices, not a sole owner
+- Experience designing both customer-facing and internal-tool surfaces
+
+What we offer
+£95k–£115k + equity. Hybrid, 2 days/week in our London office. Healthcare, pension, share scheme.

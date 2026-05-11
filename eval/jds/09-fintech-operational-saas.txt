@@ -1,0 +1,27 @@
+Lead Product Designer, Treasury — Modern Treasury
+London or Remote (EU hours), Full-time
+£130,000–£155,000 + equity
+
+About Modern Treasury
+Modern Treasury powers the payment-ops infrastructure for high-volume businesses. We move tens of billions of dollars annually for customers including Marqeta, Plaid, Plant, and Pipe. We were founded in 2018 by ex-Stripe engineers and have raised $185M to date.
+
+The role
+You will lead design for the Treasury surface — the workspace where operations teams reconcile, investigate, and resolve issues across thousands of daily transactions. This is high-stakes operational software: an undetected reconciliation break can cascade into a real money problem for our customers.
+
+The Treasury surface today is functional but built for early customers. We are entering a phase where mid-market customers are moving thousands of operations per day through it, and the interface needs to grow up. You will lead that work.
+
+What you will work on
+- Redesigning the reconciliation workspace for high-volume operations teams
+- Designing the exception-handling and investigation workflows
+- Working with the platform team on the ledger and event-history surfaces
+- Influencing the data model alongside engineering as the surface evolves
+- Mentoring two mid-level product designers on the Treasury surface
+
+What we are looking for
+- 8+ years product design, ideally including operational or workflow software
+- Strong systems thinking — you can hold a complex data model in your head
+- Comfort with high-stakes, low-margin-for-error design (payments, banking, ops)
+- Experience designing for power users, not end consumers
+
+What we offer
+£130k–£155k base + 0.1–0.2% equity. London office optional. EU-hour remote OK.

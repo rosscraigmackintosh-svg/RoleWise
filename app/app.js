@@ -1171,7 +1171,7 @@
         root.removeAttribute('data-theme');
       }
       try { localStorage.setItem('rw-appearance-mode', mode); } catch (_) {}
-      document.querySelectorAll('.appearance-mode-btn').forEach(el => {
+      document.querySelectorAll('.appearance-mode-btn[data-mode]').forEach(el => {
         el.classList.toggle('active', el.dataset.mode === mode);
       });
     }
@@ -13777,6 +13777,35 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       if (_aiResult) {
         // Merge AI result; preserve the original promise reference
         Object.assign(analysis, _aiResult, { _aiPromise: analysis._aiPromise });
+
+        // ── Maturity precedence ────────────────────────────────────────────────
+        // The local rule-based extractor can mis-classify a mature company as
+        // "Startup" on an innocuous substring match. The AI Pass 1 prompt enforces
+        // COMPANY MATURITY PRIORITY and returns an authoritative company_stage.
+        // When AI says established/enterprise, overwrite any local startup-flavoured
+        // signals so Pass 2 narrative sees a consistent input.
+        const _aiStage = String(_aiResult.company_stage || '').toLowerCase();
+        const _isAiMature = _aiStage === 'established' || _aiStage === 'enterprise';
+        if (_isAiMature) {
+          const _startupRe = /^(?:startup|scaleup|scale[- ]up|early[- ]stage|emerging)$/i;
+          if (analysis.practical_details && typeof analysis.practical_details === 'object') {
+            if (analysis.practical_details.company_type && _startupRe.test(analysis.practical_details.company_type)) {
+              analysis.practical_details.company_type = _aiStage === 'enterprise' ? 'Enterprise' : 'Established';
+            }
+            if (Array.isArray(analysis.practical_details._extraction_notes)) {
+              analysis.practical_details._extraction_notes = analysis.practical_details._extraction_notes
+                .filter(n => !/described as a startup but stage not specified/i.test(String(n)));
+            }
+          }
+          if (analysis.role_shape_signals && typeof analysis.role_shape_signals === 'object') {
+            if (_startupRe.test(String(analysis.role_shape_signals.company_stage || ''))) {
+              analysis.role_shape_signals.company_stage = _aiStage;
+            }
+            if (_startupRe.test(String(analysis.role_shape_signals.company_stage_signal || ''))) {
+              analysis.role_shape_signals.company_stage_signal = _aiStage;
+            }
+          }
+        }
       }
       if (_arAnimator) _arAnimator.setAnalysisAiDone();
 
@@ -13800,9 +13829,18 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         const _enriched = Object.assign({}, analysis);
         delete _enriched._aiPromise;
         delete _enriched._narrativePromise;
+        // Surface provenance at a stable top-level key so the row is queryable
+        // without spelunking the nested narrative object. The individual stamps
+        // (_aiProvider, _analyse_jd_version, _narrative._narrative_version) also
+        // remain in place for backwards compatibility.
+        _enriched._provenance = {
+          provider:           _enriched._aiProvider          || null,
+          analyse_jd_version: _enriched._analyse_jd_version  || null,
+          narrative_version:  _enriched._narrative?._narrative_version || null,
+        };
         try {
           await db.from('jd_matches').update({ output_json: _enriched }).eq('id', _matchId);
-          console.log('[perf] Enriched analysis persisted to jd_matches');
+          console.log('[perf] Enriched analysis persisted to jd_matches', _enriched._provenance);
         } catch (e) {
           console.warn('[ingestion] Failed to persist enriched analysis:', e);
         }
@@ -15886,6 +15924,19 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
                 </div>
               </div>
             </div>
+
+            <div class="doc-section" style="margin-top:28px;padding-top:28px;border-top:1px solid var(--border-light);">
+              <div class="doc-section-heading">AI Mode <span style="font-size:11px;font-weight:500;color:var(--text-tertiary);text-transform:none;letter-spacing:0;vertical-align:middle;margin-left:6px;">Internal / Evaluation only</span></div>
+              <p class="pref-context-note" style="margin-bottom:16px;">Compare analysis engines. Both use the same Rolewise constitution and output format. Switch, paste the same JD, and compare outputs side by side.</p>
+              <div class="field-group" style="margin-top:8px;">
+                <div class="field-label" style="margin-bottom:10px;">Analysis engine</div>
+                <div class="appearance-mode-row" id="ai-provider-mode-row">
+                  <button class="appearance-mode-btn" data-ai-provider="anthropic" onclick="window.setAIProvider('anthropic')">Claude</button>
+                  <button class="appearance-mode-btn" data-ai-provider="openai"    onclick="window.setAIProvider('openai')">ChatGPT</button>
+                </div>
+                <p style="font-size:12px;color:var(--text-tertiary);margin:10px 0 0;line-height:1.5;">Active: <strong id="rw-ai-provider-indicator">${_aiProvider === 'openai' ? 'ChatGPT' : 'Claude'}</strong>. Persists across sessions. A provider badge appears on each analysis card.</p>
+              </div>
+            </div>
           </div>
 
           <!-- LinkedIn session tab removed — managed in Admin only -->
@@ -16035,8 +16086,13 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       loadAndRenderCvs();
       // Reflect current appearance mode in buttons
       const _curMode = localStorage.getItem('rw-appearance-mode') || 'system';
-      document.querySelectorAll('.appearance-mode-btn').forEach(el => {
+      document.querySelectorAll('.appearance-mode-btn[data-mode]').forEach(el => {
         el.classList.toggle('active', el.dataset.mode === _curMode);
+      });
+
+      // Reflect current AI provider in buttons
+      document.querySelectorAll('.appearance-mode-btn[data-ai-provider]').forEach(el => {
+        el.classList.toggle('active', el.dataset.aiProvider === _aiProvider);
       });
 
       // LinkedIn session cookie: managed in Admin only (removed from Profile).
@@ -19685,6 +19741,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
             <p class="rw-doc-prose rw-doc-prose--muted" style="margin-top:16px;font-style:italic;">Use this as context, not a verdict.</p>
 
+            ${output._aiProvider ? `<p style="margin-top:12px;font-size:11px;color:var(--text-tertiary);opacity:0.6;">Analysis engine: ${output._aiProvider === 'openai' ? 'ChatGPT' : 'Claude'}</p>` : ''}
+
           </div>`;
         }
       }
@@ -22249,6 +22307,27 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     // ── Company type ──────────────────────────────────────────────────────────
     // This is a NEW field — no equivalent in legacy practical_details.
     function _jdField_companyType(t, raw) {
+      // ── Mature-company signals (highest priority — pre-empts startup inference) ──
+      // Matches the AI extraction's COMPANY MATURITY PRIORITY rule. If the JD
+      // states a founding year ≥10 years ago, "global leader", "thousands of
+      // customers", "decades of", etc., the company is mature regardless of any
+      // innocuous "startup" mention later in the text.
+      const _matureSignals = [
+        /\bfounded in (?:19\d\d|200\d|201[0-5])\b/,
+        /\bfounded (?:in )?(?:19\d\d|200\d|201[0-5])\b/,
+        /\bsince (?:19\d\d|200\d|201[0-5])\b/,
+        /\bestablished (?:in )?(?:19\d\d|200\d|201[0-5])\b/,
+        /\boperating since (?:19\d\d|200\d|201[0-5])\b/,
+        /\bglobal leader\b/,
+        /\bindustry leader\b/,
+        /\bcategory leader\b/,
+        /\bthousands of (?:customers|organisations|organizations|users|clients|enterprises|companies|businesses)\b/,
+        /\bdecades of\b/,
+        /\b(?:20|25|30|40|50)\+? years\b/,
+      ];
+      const _matureHit = _matureSignals.find(re => re.test(t));
+      const _isMature  = !!_matureHit;
+
       // Agency — check first; highest priority as it overrides other signals
       const agencyTokens = [
         'digital agency', 'design agency', 'creative agency', 'marketing agency',
@@ -22262,6 +22341,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // Standalone "consultancy" or "agency" with some guard (avoid "talent agency")
       if (/\b(?:we are a|we're a|join our)\s+(?:\w+\s+){0,2}(?:agency|consultancy)\b/.test(t)) {
         return { raw: 'agency/consultancy', normalized: 'Agency', confidence: 'medium' };
+      }
+      // Mature short-circuit — runs before startup tokens so a "founding designer"
+      // mention inside a 20-year-old company doesn't flip it to Startup.
+      if (_isMature) {
+        return { raw: String(_matureHit), normalized: 'Enterprise', confidence: 'high' };
       }
       // Startup — pre-product or very early
       const startupTokens = [
@@ -22308,8 +22392,21 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       if (/\b(?:we have|with)\s+(?:over\s+)?(?:1[,.]?000|[2-9][,.]?000|\d0[,.]?000)\s+employees\b/.test(t)) {
         return { raw: '1000+ employees', normalized: 'Enterprise', confidence: 'medium' };
       }
-      // Generic "startup" without stage qualifier — just call it Startup
+      // Generic "startup" — only fires if no mature signal AND not a negated/comparative mention.
+      // Prefer false negative over false positive: a passing reference to "startup" inside
+      // an established-company JD must NOT classify the company as Startup.
       if (t.includes(' startup') || t.includes('a startup')) {
+        // Mature signals already short-circuited above. Belt-and-braces: re-check here.
+        if (_isMature) {
+          return { raw: null, normalized: 'Not stated', confidence: null };
+        }
+        // Negated / comparative context — phrases that mention startup to deny it or contrast with it.
+        const _negatedRe     = /\b(?:not a|isn'?t a|never a|unlike a|more than a|beyond|past the|no longer a|former) startup\b/;
+        const _comparativeRe = /\bstartup[- ](?:like|style|esque|y)\b/;
+        const _hiringFor     = /\b(?:from|at|in|with|join(?:ed|ing)?|leaving|previous|prior|former) (?:a |an )?startup\b/;
+        if (_negatedRe.test(t) || _comparativeRe.test(t) || _hiringFor.test(t)) {
+          return { raw: null, normalized: 'Not stated', confidence: null };
+        }
         return { raw: 'startup', normalized: 'Startup', confidence: 'medium' };
       }
       return { raw: null, normalized: 'Not stated', confidence: null };
@@ -22403,9 +22500,16 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         vn.push('work_model');
         notes.push('Location based requirement detected but work model unclear.');
       }
-      // Company type: generic startup signal, might be earlier or later stage
+      // Company type: generic startup signal, might be earlier or later stage.
+      // Suppress this note when the JD contains mature-company signals (founding
+      // year ≥10 yrs ago, "global leader", "thousands of customers", "decades of").
+      // The local rule extractor can still mis-classify on innocuous mentions; the
+      // validation layer must not amplify a false positive.
       if (result.company_type.normalized === 'Startup' && result.company_type.confidence === 'medium') {
-        notes.push('Company described as a startup but stage not specified.');
+        const _matureSignalRe = /\bfounded (?:in )?(?:19\d\d|200\d|201[0-5])\b|\bsince (?:19\d\d|200\d|201[0-5])\b|\bestablished (?:in )?(?:19\d\d|200\d|201[0-5])\b|\bglobal leader\b|\bindustry leader\b|\bcategory leader\b|\bthousands of (?:customers|organisations|organizations|users|clients|enterprises|companies|businesses)\b|\bdecades of\b|\b(?:20|25|30|40|50)\+? years\b/;
+        if (!_matureSignalRe.test(t)) {
+          notes.push('Company described as a startup but stage not specified.');
+        }
       }
       // Role seniority: low confidence
       if (result.role_seniority.confidence === 'low') {
@@ -25396,6 +25500,34 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       });
     }
 
+    // ─── AI provider selection ────────────────────────────────────────────────
+    // 'anthropic' = Claude (default). 'openai' = ChatGPT (parallel evaluation).
+    // Toggle via window.setAIProvider('openai') / window.setAIProvider('anthropic')
+    // or the in-app AI Mode control. Both providers use the same Rolewise constitution.
+    let _aiProvider = (typeof localStorage !== 'undefined' && localStorage.getItem('rw_ai_provider')) || 'anthropic';
+
+    window.setAIProvider = function(provider) {
+      if (provider !== 'anthropic' && provider !== 'openai') {
+        console.warn('[AI provider] invalid value:', provider, '— must be "anthropic" or "openai"');
+        return;
+      }
+      _aiProvider = provider;
+      if (typeof localStorage !== 'undefined') localStorage.setItem('rw_ai_provider', provider);
+      console.log('[AI provider] switched to:', provider);
+      _renderAIProviderIndicator();
+    };
+
+    function _renderAIProviderIndicator() {
+      var el = document.getElementById('rw-ai-provider-indicator');
+      if (el) {
+        el.textContent = _aiProvider === 'openai' ? 'ChatGPT' : 'Claude';
+        el.dataset.provider = _aiProvider;
+      }
+      document.querySelectorAll('.appearance-mode-btn[data-ai-provider]').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.aiProvider === _aiProvider);
+      });
+    }
+
     // ─── AI analysis call ─────────────────────────────────────────────────────
     // Tries the Supabase Edge Function (AI). If it fails for any reason, falls back
     // to localRuleBasedAnalysis() which always produces a useful 9-section output.
@@ -25448,7 +25580,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const _baseLog     = {
         event_type:   'ai_analysis',
         feature_key:  'jd_analysis',
-        provider:     'anthropic',
+        provider:     _aiProvider,
         route:        'analyse-jd',
         request_type: 'edge_function',
         input_chars:  _inputChars,
@@ -25462,6 +25594,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             body: {
               jd_text: jdText,
               candidate_context: _candidateCtx,
+              provider: _aiProvider,
             },
           });
           if (error) {
@@ -25484,9 +25617,13 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             });
             return null;
           }
-          const aiResult     = normaliseAnalysis(data.analysis, jdText);
-          aiResult._source   = 'ai';
-          const _outputChars = JSON.stringify(aiResult).length;
+          const aiResult        = normaliseAnalysis(data.analysis, jdText);
+          aiResult._source      = 'ai';
+          aiResult._aiProvider  = _aiProvider;
+          // Provenance: stamp the deployed analyse-jd prompt version so jd_matches.output_json
+          // records which extraction prompt produced this result.
+          aiResult._analyse_jd_version = data.usage?.analyse_jd_version || null;
+          const _outputChars    = JSON.stringify(aiResult).length;
 
           // ── Token extraction ────────────────────────────────────────────
           const _usage        = data.usage || {};
@@ -25499,6 +25636,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             'claude-haiku':   { input: 0.80,  output: 4.00  },
             'claude-sonnet':  { input: 3.00,  output: 15.00 },
             'claude-opus':    { input: 15.00, output: 75.00 },
+            'gpt-4o-mini':    { input: 0.15,  output: 0.60  },
+            'gpt-4o':         { input: 2.50,  output: 10.00 },
           };
           const _modelFamily = Object.keys(_PRICING).find(k => (_model || '').startsWith(k)) || null;
           const _rates        = _modelFamily ? _PRICING[_modelFamily] : null;
@@ -25922,6 +26061,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           body: {
             extraction_json: extractionJson,
             candidate_context: _candidateCtx,
+            provider: _aiProvider,
           },
         });
         if (error) {
@@ -25993,7 +26133,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         _logUsageEvent({
           event_type:     'ai_analysis',
           feature_key:    'narrative_generation',
-          provider:       'anthropic',
+          provider:       _usage.provider || _aiProvider,
           route:          'generate-narrative',
           request_type:   'edge_function',
           status:         'success',
@@ -26001,19 +26141,26 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           model:          _usage.model || null,
           input_tokens:   _usage.input_tokens || null,
           output_tokens:  _usage.output_tokens || null,
+          metadata: {
+            schema_failures: _usage.schema_failures || null,
+            retry_count:     0,
+          },
         });
 
         console.log('[generate-narrative] success', {
           sections: Object.keys(narrative).length,
           latency:  Math.round(performance.now() - _t0) + 'ms',
         });
+        // Provenance: stamp the deployed narrative prompt version so the
+        // persisted analysis records which narrative prompt produced this output.
+        narrative._narrative_version = _usage.narrative_version || null;
         return narrative;
       } catch (err) {
         console.warn('[generate-narrative] failed', err);
         _logUsageEvent({
           event_type:     'ai_analysis',
           feature_key:    'narrative_generation',
-          provider:       'anthropic',
+          provider:       _aiProvider,
           route:          'generate-narrative',
           request_type:   'edge_function',
           status:         'error',
