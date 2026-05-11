@@ -1,0 +1,26 @@
+Lead Product Designer — Medius
+London, Hybrid (1 day/week in office) · Full-time
+
+About Medius
+Medius was founded in 2001 and is a global leader in cloud-based spend management. Our software is used by thousands of organisations across finance, procurement, and accounts payable. We have offices across Europe, North America, and APAC, and serve enterprise customers in over 100 countries.
+
+The role
+We are entering the largest UI and UX overhaul in the company's history. This is a multi-year programme to modernise our spend-management platform, unify product surfaces that have evolved separately, and simplify the operational reality of running an AP-automation workflow at enterprise scale.
+
+You will own the end-to-end design of two product surfaces inside this transformation. You will work directly with GPMs and engineering leads across three squads, mentor designers across the wider product group, and shape platform-wide design system patterns.
+
+What you will work on
+- Redesigning core accounts payable workflows across the desktop and mobile surfaces
+- Unifying interaction patterns across squads that previously shipped independently
+- Influencing the roadmap with PMs and EMs across the platform
+- Defining design system governance across the modernised product
+- Mentoring senior and mid designers in adjacent squads
+
+What we are looking for
+- 8+ years in enterprise SaaS design, ideally with operational software complexity
+- Strong systems thinking — you have shipped platform-wide pattern work before
+- Comfort with cross-squad influence rather than top-down direction
+- Experience working with AI-augmented automation workflows is a plus
+
+What we offer
+Salary £95,000–£120,000 + equity. UK contract. Private healthcare. Five weeks holiday.

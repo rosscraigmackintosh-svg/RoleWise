@@ -1,0 +1,27 @@
+Staff Product Designer, AI Copilot — Loom
+Remote (US/EU), Full-time
+$220,000–$280,000 + equity
+
+About Loom
+Loom helps 25 million people communicate at work through async video. We are integrating an AI copilot across our entire product surface: automatic summarisation, action-item extraction, and an agent layer that can take action on the user's behalf inside connected tools (Linear, Notion, Slack, Salesforce).
+
+The role
+We are looking for a Staff Product Designer to lead the AI Copilot surface. You will own the interaction model for how users invoke, trust, and steer the copilot. This is the most product-defining surface we will ship this year.
+
+You will report into the VP of Design and work alongside two PMs and a research lead. You'll partner with the ML team on model behaviour design — what the copilot can and can't do, how it expresses uncertainty, how it asks for permission.
+
+What you will work on
+- The copilot invocation surface across desktop, mobile, and embeds
+- The trust and steering model — disclosure, undo, permission, escalation
+- Designing the interaction patterns for agent-on-behalf-of-user actions
+- The model behaviour spec alongside ML researchers
+- The activation flow for first-time copilot users
+
+What we are looking for
+- 10+ years in product design, with at least 2 years on AI-native surfaces
+- Strong systems thinking for ambiguous, probabilistic product behaviours
+- Experience designing for trust, uncertainty, and steerability in AI products
+- Comfort with model behaviour design as a design surface
+
+What we offer
+$220k–$280k base + 0.05% equity. Fully remote. US benefits.

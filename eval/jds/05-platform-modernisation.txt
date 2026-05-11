@@ -1,0 +1,27 @@
+Principal Product Designer, Platform — Sage
+Newcastle / London Hybrid (2 days/week in office), Full-time
+£110,000–£135,000
+
+About Sage
+Sage was founded in 1981 and is the global leader in cloud-based accounting and payroll for small and mid-market businesses. We serve over six million customers worldwide.
+
+The role
+Our core accounting product was built over twenty years and now spans multiple acquired platforms. We are running a multi-year platform unification effort to bring the experience under a single product surface, a single design system, and a single information architecture.
+
+You will be a Principal Designer inside this programme. You will not own a feature area — you will own a horizontal slice of the modernisation: the navigation model, the cross-product information architecture, and the migration path from the old surfaces to the new one.
+
+What you will work on
+- Defining the navigation model across the unified platform
+- Designing the cross-product information architecture
+- Migration patterns from legacy product surfaces to the modernised one
+- Working with three platform PMs and the principal engineer on the foundation team
+- Aligning seven product-area designers around a shared system
+
+What we are looking for
+- 12+ years in product design, ideally inside a large platform business
+- Strong information architecture and systems thinking
+- Experience leading horizontal design work across multiple product teams
+- Comfort with a multi-year transformation timeline, not a quick win
+
+What we offer
+£110k–£135k + bonus. Hybrid, 2 days/week in either Newcastle or London. Healthcare, pension, share scheme.

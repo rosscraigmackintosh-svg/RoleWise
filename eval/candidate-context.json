@@ -1,0 +1,53 @@
+{
+  "identity": {
+    "name": "Ross MacKintosh",
+    "seniority": "Senior / Principal / Founding Product Designer",
+    "years_experience": "15+",
+    "location": "London, UK"
+  },
+  "core_strengths": [
+    "Zero-to-one product design inside complex SaaS domains",
+    "Systems-level thinking and platform-wide pattern work",
+    "Cross-functional influence with engineering and product leadership",
+    "Operational software complexity — finance, ops, workflow tooling",
+    "AI-augmented product surfaces and agentic UX",
+    "Founding and first-designer roles inside small senior teams"
+  ],
+  "preferred_environments": [
+    "Senior team, low political overhead",
+    "Direct collaboration with product and engineering leadership",
+    "Complex operational SaaS or AI-native surfaces",
+    "Mid-stage scale-up or focused enterprise transformation work"
+  ],
+  "work_model_preference": {
+    "ideal": "Remote, with optional in-person time",
+    "hard_limit": "No more than 2 days on-site per week",
+    "commute_tolerance": "Central London only",
+    "location_base": "London, UK"
+  },
+  "hard_blockers": [
+    "Production-level coding required (React/TypeScript day-to-day)",
+    "3+ days on-site per week",
+    "Salary below £100,000",
+    "Recruiter-fronted roles where the employer is not named"
+  ],
+  "known_frictions": [
+    "Heavy stakeholder management with low operational ownership",
+    "Matrix reporting without clear design leadership",
+    "Working inside a SAFe / quarterly-OKR delivery cadence",
+    "Generic 'design improvements' scope without a defining operational signal"
+  ],
+  "cv_variants": [
+    { "id": "founding-product-designer", "label": "Founding Product Designer", "best_for": "Series A / Seed roles where you are the first designer" },
+    { "id": "principal-product-designer", "label": "Principal Product Designer", "best_for": "Enterprise IC roles inside complex operational SaaS" },
+    { "id": "lead-product-designer", "label": "Lead Product Designer", "best_for": "Mid-market scale-ups with established design teams" },
+    { "id": "staff-product-designer", "label": "Staff Product Designer", "best_for": "Platform or systems work inside larger orgs" }
+  ],
+  "decision_lens": [
+    "Does this role have a defining operational signal that justifies the move?",
+    "Is the company maturity stated, or am I being asked to infer it?",
+    "How much of the work is direct design vs stakeholder coordination?",
+    "Is the work transformation, modernisation, or feature delivery?",
+    "What is the actual ownership shape — sole owner, peer, or one of many?"
+  ]
+}
