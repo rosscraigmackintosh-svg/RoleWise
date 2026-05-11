@@ -73,6 +73,26 @@ const HEDGING_WORDS = [
   'arguably', 'potentially',
 ]
 
+// Factual-discipline failure patterns. Counts in this category indicate
+// hallucination risk — invented ambiguity, invented dysfunction, mature-company
+// misclassification, or unsupported startup framing.
+const FACTUAL_LEAKS = {
+  invented_ambiguity: [
+    'scope is ambiguous', 'details are limited',
+    'the exact nature of the role remains unclear', 'it is hard to tell',
+  ],
+  invented_dysfunction: [
+    'product clarity challenges', 'strategic ambiguity', 'unclear product direction',
+    'product confusion', 'strategic dysfunction', 'leadership instability',
+    'ambiguity in product direction', 'lack of structure',
+  ],
+  startup_misclassification: [
+    'within a startup', 'startup context', 'startup-style', 'startup-like',
+    'startup feel', 'in a scale-up environment', 'early-stage feel',
+    'company labelled as a startup',
+  ],
+}
+
 // Operational nouns we consider "concrete". A bullet/sentence counts as grounded
 // if it contains ANY of these (case-insensitive substring match).
 const CONCRETE_NOUNS = [
@@ -232,6 +252,66 @@ console.log('| Phrase | Anthropic | OpenAI |')
 console.log('|---|---|---|')
 for (const [phrase, counts] of ranked) {
   console.log(`| \`${phrase}\` | ${counts.anthropic} | ${counts.openai} |`)
+}
+
+// ─── Metrics by category (Factual discipline vs Editorial quality) ──────────
+console.log()
+console.log('## Metrics by category')
+console.log()
+console.log('Two categories — *Factual discipline* tracks hallucination risk; *Editorial quality* tracks writing density.')
+console.log()
+console.log('### A. Factual discipline (lower = better)')
+console.log()
+console.log('| Metric | Anthropic | OpenAI |')
+console.log('|---|---|---|')
+
+const factualSums: Record<string, Record<Provider, number>> = {}
+for (const cat of Object.keys(FACTUAL_LEAKS) as (keyof typeof FACTUAL_LEAKS)[]) {
+  factualSums[cat] = { anthropic: 0, openai: 0 }
+  for (const jdId of sortedJdIds) {
+    const jdMap = byJd.get(jdId)!
+    for (const provider of ['anthropic', 'openai'] as Provider[]) {
+      const r = jdMap.get(provider)
+      if (!r?.narrative) continue
+      const text = allText(r.narrative).toLowerCase()
+      factualSums[cat][provider] += countPhrases(text, FACTUAL_LEAKS[cat])
+    }
+  }
+}
+const factualLabels: Record<string, string> = {
+  invented_ambiguity:        'Invented ambiguity (banned hedge phrases)',
+  invented_dysfunction:      'Invented dysfunction (banned dysfunction phrases)',
+  startup_misclassification: 'Startup misclassification (mature company mislabelled)',
+}
+for (const cat of Object.keys(FACTUAL_LEAKS) as (keyof typeof FACTUAL_LEAKS)[]) {
+  console.log(`| ${factualLabels[cat]} | ${factualSums[cat].anthropic} | ${factualSums[cat].openai} |`)
+}
+const hedgingA = mean(aggregate.anthropic.map(x => x.hedgingCount))
+const hedgingO = mean(aggregate.openai.map(x    => x.hedgingCount))
+console.log(`| Hedging words (avg per JD) | ${hedgingA.toFixed(2)} | ${hedgingO.toFixed(2)} |`)
+
+console.log()
+console.log('### B. Editorial quality')
+console.log()
+console.log('| Metric | Anthropic | OpenAI | Direction |')
+console.log('|---|---|---|---|')
+const editorial = [
+  { key: 'fillerCount',        label: 'Filler phrases',       lowerBetter: true  },
+  { key: 'weakVerbCount',      label: 'Weak verbs',           lowerBetter: true  },
+  { key: 'abstractNounCount',  label: 'Abstract nouns',       lowerBetter: true  },
+  { key: 'avgSentenceLen',     label: 'Avg sentence length',  lowerBetter: false }, // not lower/higher — context-dependent
+  { key: 'bulletsGroundedPct', label: '% bullets grounded',   lowerBetter: false },
+  { key: 'nounDensity',        label: 'Concrete nouns / 100w', lowerBetter: false },
+] as const
+for (const m of editorial) {
+  const a = mean(aggregate.anthropic.map(x => x[m.key as keyof Metrics] as number))
+  const o = mean(aggregate.openai.map(x    => x[m.key as keyof Metrics] as number))
+  const arrow = m.lowerBetter
+    ? (o < a ? '↓ openai better' : o > a ? '↑ openai worse' : '=')
+    : (m.key === 'avgSentenceLen'
+        ? (o === a ? '=' : `delta ${(o - a).toFixed(1)}`)
+        : (o > a ? '↑ openai better' : o < a ? '↓ openai worse' : '='))
+  console.log(`| ${m.label} | ${a.toFixed(2)} | ${o.toFixed(2)} | ${arrow} |`)
 }
 
 // ─── Per-section noun density ────────────────────────────────────────────────
