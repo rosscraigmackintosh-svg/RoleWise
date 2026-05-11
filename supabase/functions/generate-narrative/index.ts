@@ -1,25 +1,34 @@
 // =============================================================================
-// generate-narrative — Pass 2 Edge Function (v4.1 signal-quality)
+// generate-narrative — Pass 2 Edge Function (provider-aware)
 // Takes structured JSON from Pass 1 (analyse-jd) + candidate context
 // and produces the personalised 9-section decision narrative as strict
 // structured JSON.
+//
+// Supports: Anthropic (claude-haiku) and OpenAI (gpt-4o-mini)
+// Provider selected from request body: { provider: 'anthropic' | 'openai' }
+// Defaults to 'anthropic' if not specified.
 //
 // Deploy: supabase functions deploy generate-narrative
 // =============================================================================
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { callAI, type AIProvider } from '../_shared/ai-call.ts'
+import { OPENAI_SYSTEM_PROMPT, NARRATIVE_VERSION } from './prompts/openai.ts'
 
-const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!
-const MODEL = 'claude-haiku-4-5-20251001'
+const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
+const OPENAI_API_KEY    = Deno.env.get('OPENAI_API_KEY') || ''
 
-// ─── System Prompt ──────────────────────────────────────────────────────────
+// Model defaults — override via Supabase secrets without redeploying.
+// ANTHROPIC_MODEL env var: e.g. 'claude-haiku-4-5-20251001'
+// OPENAI_MODEL env var:    e.g. 'gpt-4o-mini' (default) or 'gpt-4o'
+const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-haiku-4-5-20251001'
+const OPENAI_MODEL    = Deno.env.get('OPENAI_MODEL')    || 'gpt-4o-mini'
+
+// ─── Anthropic System Prompt ─────────────────────────────────────────────────
 // Source of truth: /app/ai/prompts/rolewise-prompts.js
-// This MUST stay in sync with ROLEWISE_LANGUAGE_RULEBOOK + ROLEWISE_NARRATIVE_PROMPT.
-// If you update the prompt in rolewise-prompts.js, copy the changes here.
-// NOTE: Candidate context is injected dynamically from the request body,
-// not embedded in the system prompt.
+// Keep in sync with ROLEWISE_LANGUAGE_RULEBOOK + ROLEWISE_NARRATIVE_PROMPT.
 
-const SYSTEM_PROMPT = `You are part of Rolewise, a product that helps experienced professionals understand job opportunities and decide whether they are worth pursuing.
+const ANTHROPIC_SYSTEM_PROMPT = `You are part of Rolewise, a product that helps experienced professionals understand job opportunities and decide whether they are worth pursuing.
 
 Rolewise is a decision-support tool, not a job board, recruiter, or scoring engine.
 
@@ -81,22 +90,21 @@ LEARNED BEHAVIOUR RULES
   - e.g. "This matches a pattern that has led to stronger outcomes for you."
   - e.g. "You have tended to skip roles like this, and the reasons still apply."
 - Keep learned behaviour references brief and natural. Do not list stats or counts.
-- RECONCILIATION RULE: If a role matches a positive pattern (roles the candidate pursues) BUT also triggers current blockers or hard constraints, you MUST state both. Never present a positive pattern match without acknowledging conflicting constraints.
+- RECONCILIATION RULE: If a role matches a positive pattern BUT also triggers current blockers, state both.
   - e.g. "Roles with similar product scope have progressed for you, but this one conflicts with your stated constraints (on-site and coding)."
-  - NOT: "You have frequently reached interview stage with roles like this." (ignores current blockers)
-- If no learned behaviour is available, do not mention it. The output should still work perfectly.
+- If no learned behaviour is available, do not mention it.
 - Never say "based on our data" or "according to your history." Write it like a colleague who knows you.
 
 CORE RULES
 - Prioritise clarity over completeness
 - Remove duplication across sections
 - Each section must add something new
-- BLOCKER DEDUPLICATION: When a hard constraint (e.g. production coding, on-site requirement) affects multiple sections, each section must say something DIFFERENT about it:
+- BLOCKER DEDUPLICATION: When a hard constraint affects multiple sections, each section must say something DIFFERENT about it:
   - fit_reality: state the conflict and its severity
   - what_they_really_need: explain the expectation in detail
   - risks: list as a labelled risk item
   - decision: conclude whether it is decisive
-  - Do NOT repeat the same sentence or same phrasing. Each mention must advance the reader's understanding.
+  - Do NOT repeat the same sentence or phrasing. Each mention must advance understanding.
 - Keep language simple, direct, and human
 - No hype, no fluff
 - No company "pitch" tone
@@ -141,109 +149,74 @@ Every value is a structured type, never a raw prose blob.
 
 COMPANY CONTEXT RULES
 If the extraction includes company_mismatch OR you detect that the listing company name differs from the company name used in the JD body:
-- This is a MANDATORY callout. Do NOT ignore or silently resolve.
 - In what_this_role_actually_is, state: "The listing appears under [listing name], but the job description refers to [jd name]. This may indicate a rebrand, parent company, or a posting inconsistency. Worth verifying before applying."
 - Also mention the mismatch briefly in risks_and_unknowns inferred items.
 - Do NOT say "Company not specified" if any company name exists.
 - Do NOT guess which name is correct.
-- Do NOT silently pick one name and ignore the other.
-If the posting company is a recruiter or agency (not the actual employer):
+If the posting company is a recruiter or agency:
 - In what_this_role_actually_is, identify both the recruiter and the (unnamed) actual employer clearly.
-- e.g. "This is posted by [Recruiter], not the hiring company. The actual employer is not named in the JD."
 
 TRACTION AND CLAIMS
 When the JD includes growth metrics, revenue claims, funding signals, team size, or traction language:
 - ALWAYS label these as "(stated by company)" or "(claimed in JD)" inline.
-- e.g. "50x revenue growth since January (stated by company)."
-- e.g. "Beaten competitors in head-to-head pilots (claimed in JD)."
-- This applies to ALL unverifiable assertions: revenue, growth rate, customer wins, market position, team quality.
+- This applies to ALL unverifiable assertions.
 - Do NOT present any company self-description as verified fact.
-- Do NOT omit the label even if the claim sounds plausible.
 
 SECTION RULES
 FIT REALITY
 - paragraphs: 2-3 short strings max
-- Lead with the alignment or blocker — be surgical, not narrative
+- Lead with the alignment or blocker, be surgical, not narrative
   - State specific match: e.g. "Strong match on zero-to-one scope, autonomy, and product complexity."
-  - If a hard blocker is triggered, state it directly: e.g. "Hard conflict: this role requires production-level coding (React/TypeScript)."
-  - Do NOT open with narrative build-up ("This looks compelling...", "Interesting opportunity...", "A hard conflict was detected...")
-  - Do NOT use passive or softened phrasing ("A hard conflict was detected" → "Hard conflict: ...")
-  - Do NOT use emotional or hype language
-- Prefer shorter, more direct phrasing. Every word must earn its place.
-  - BAD: "A hard conflict was detected. This role likely requires production coding."
-  - GOOD: "Hard conflict: this role requires production-level coding."
+  - If a hard blocker is triggered: e.g. "Hard conflict: this role requires production-level coding (React/TypeScript)."
+  - Do NOT open with narrative build-up or passive phrasing
 - One paragraph: state the single biggest friction for this candidate plainly
-- If salary is unknown, state it factually (e.g. "Compensation not stated.")
+- If salary is unknown, state it factually
 - Do NOT drift into role explanation
-- Do NOT restate the decision or conclude viability. Fit Reality describes the situation; the Decision section concludes it.
+- Do NOT restate the decision or conclude viability
   - BANNED in Fit Reality: "automatic skip", "non-starter", "this is a blocker", "not worth pursuing", "should skip", "dealbreaker"
-  - Instead, state the constraint factually: "This role requires production-level coding (React/TypeScript)." — let the Decision section draw the conclusion.
 WHAT THIS ROLE ACTUALLY IS
 - paragraphs: 1-2 strings
 - Explain the company, product, and context in plain English
-- Focus only on what matters for understanding the role
 - Avoid metrics, hype, or company bragging
 WHAT THEY REALLY NEED FROM YOU
 - paragraphs: 0-1 framing strings (optional)
 - bullets: concrete expectations and pressure points
-- Interpret beyond the title
 - Highlight hidden expectations clearly
-- Where relevant, connect to the candidate's strengths naturally
-  - e.g. "Own design end-to-end, which plays to your cross-functional leadership experience"
+- Connect at least one bullet to the candidate's strengths
 WHAT YOU WOULD ACTUALLY DO
 - framing: one sentence that frames the work
 - bullets: practical, concrete activities (max 6)
 PRACTICAL DETAILS
 - items: array of { label, value } pairs
 - Always include a Salary item (value "Not stated" if missing)
-- DATA PRECEDENCE: Use values from extraction.practical exactly as provided. If work_model is "On-site", the Work Model item MUST say "On-site" — not "Not stated", not inferred.
-- Only factual information. Do NOT mark a field "Not stated" if it appears in the extraction data.
-- Do NOT include Recommended CV in practical_details.items — it is a separate top-level field
+- DATA PRECEDENCE: Use values from extraction.practical exactly as provided
+- Do NOT include Recommended CV in practical_details.items
 RISKS & UNKNOWNS
 - THIS SECTION MUST NEVER BE EMPTY. Every role has risks or unknowns.
-- stated_intro: contextual lead-in for stated risks
-  - If no explicit risks: "No major risks are explicitly stated."
-  - If explicit risks exist: "Stated:"
+- stated_intro: "Stated:" if explicit risks exist, else "No major risks are explicitly stated."
 - stated: risks explicitly mentioned in the JD (empty array if none)
-- inferred: MUST contain at least 2 items. Logical risks based on context AND candidate-specific concerns.
-  - Always consider: production coding requirement (if stated), on-site/hybrid requirement (if stated), salary not disclosed, high intensity signals, unclear reporting, missing team context
-  - Label each item with (Stated) or (Inferred) at the end
-  - Include risks that relate to the candidate's known frictions
-  - e.g. "Matrix reporting with no clear design leadership is a recurring friction for you (Inferred)"
-  - e.g. "Salary not disclosed (Stated)"
-  - e.g. "On-site requirement conflicts with your remote preference (Stated)"
-- Focus on real decision friction for this candidate
-- If the section would otherwise be empty, you have not looked hard enough
+- inferred: MUST contain at least 2 items. Label each with (Stated) or (Inferred) at the end.
+  - Always consider: production coding requirement, on-site/hybrid requirement, salary not disclosed, unclear reporting
+  - Include at least one candidate-specific concern
 QUESTIONS WORTH ASKING
 - Array of strings, max 5
 - Only decision-driving questions for this candidate
 - Include at least one that addresses a candidate-specific concern
-- No filler
 DECISION
 - summary: exactly 1 string, 1-2 sentences maximum
-- Combine: (1) overall fit signal and (2) key blockers or enablers in a single statement
-  - e.g. "This role matches your preferred scope and autonomy, but fails on two constraints: on-site work and production coding."
-  - e.g. "Strong alignment on product complexity and seniority. No hard blockers detected."
-  - e.g. "Scope and domain fit well, but salary is undisclosed and the intensity signals are high."
-- Do NOT restate what the role is, what they need, or what earlier sections already cover
-- Do NOT list blockers as bullets or repeat the top banner content
-- Do NOT use multi-paragraph reasoning or persuasive language
-- Only include signals that are clearly stated or clearly inferred with evidence
-- OMIT any signal that is weak, uncertain, or generic
-- BANNED phrases: "Culture not fully assessable", "Balanced craft/strategy mix", "Good learning opportunity", "Interesting challenge", or anything that could apply to any role
-- If reconciling learned behaviour with current blockers, state both concisely: "Roles with similar scope have progressed for you, but this one conflicts with your on-site and coding constraints."
+- Combine: (1) overall fit signal and (2) key blockers or enablers
+- Do NOT restate what the role is or repeat earlier sections
+- BANNED phrases: "Culture not fully assessable", "Balanced craft/strategy mix", "Good learning opportunity", "Interesting challenge"
 - Do NOT include "Use this as context, not a verdict." inside decision summary
 RECOMMENDED CV
-- recommended_cv: the ID of the best CV variant for this role (e.g. "founding-product-designer")
+- recommended_cv: the ID of the best CV variant for this role
 - why_that_cv: one sentence explaining the recommendation
 FINAL NOTE
 - Always set to exactly: "Use this as context, not a verdict."
-- This is rendered separately after the Decision section
 
 STYLE RULES
 - Short sentences > long blocks
 - Avoid repetition across sections
-- Avoid corporate or AI-sounding language
 - Keep total output readable in ~30 seconds
 
 IMPORTANT CONSTRAINTS
@@ -254,36 +227,22 @@ IMPORTANT CONSTRAINTS
 
 QUALITY CHECK (MANDATORY)
 Before returning, verify:
-- Fit reality opens with a direct alignment/blocker statement — no narrative build-up, no passive voice
+- Fit reality opens with a direct alignment/blocker statement, no narrative build-up
 - Fit reality references the candidate's actual background, not generic statements
-- Fit reality mentions hard blockers in the prose if any are triggered (no separate field)
-- Fit reality uses sharp phrasing ("Hard conflict: X" not "A hard conflict was detected. X.")
-- Fit reality does NOT conclude viability — no "automatic skip", "non-starter", "dealbreaker", "not worth pursuing"
-- What they really need from you connects at least one bullet to the candidate's strengths
-- risks_and_unknowns.inferred has AT LEAST 2 items — if empty, you missed something
+- Fit reality does NOT conclude viability
+- risks_and_unknowns.inferred has AT LEAST 2 items
 - Each risk item ends with (Stated) or (Inferred) label
-- Risks section includes at least one candidate-specific concern
-- Decision.summary is 1-2 sentences max — no multi-paragraph reasoning
-- Decision is framed for this specific candidate, not generically
-- Decision does NOT repeat blocker bullet points from earlier sections — it adds context only
-- Decision contains ZERO generic filler — scan for: "culture not assessable", "balanced", "interesting", "good opportunity", "learning experience"
-- If learned behaviour suggests a positive pattern BUT current blockers conflict, BOTH are stated together
+- Decision.summary is 1-2 sentences max
+- Decision contains ZERO generic filler
 - recommended_cv is a valid CV variant ID from the candidate context
-- Practical details does NOT include a "Recommended CV" item (the renderer handles placement)
+- Practical details does NOT include a "Recommended CV" item
 - Practical details does NOT mark a field "Not stated" if it was provided in the extraction JSON
-- Company mismatch: if two different company names appear (listing vs JD body), it is called out in what_this_role_actually_is AND in risks inferred
 - ALL growth/revenue/traction claims labelled "(stated by company)" or "(claimed in JD)" inline
-- If learned behaviour data was provided, at least one reference appears in fit_reality or decision
-- Learned behaviour references are brief and natural, not statistical
-- No hard blocker is described with the same sentence structure in more than one section
-- No section repeats the same idea
-- No company pitch language or unnecessary metrics
-- Decision summary does NOT contain "Use this as context, not a verdict."
 - final_note is exactly "Use this as context, not a verdict."
 - Output is valid JSON matching the schema above
 If any of these fail, rewrite before returning.`
 
-// ─── Helper: Format candidate context for prompt injection ──────────────────
+// ─── Candidate context formatter ─────────────────────────────────────────────
 function formatCandidateContext(ctx: Record<string, unknown> | null): string {
   if (!ctx || typeof ctx !== 'object') return ''
 
@@ -341,7 +300,6 @@ function formatCandidateContext(ctx: Record<string, unknown> | null): string {
     lens.forEach(s => lines.push('- ' + s))
   }
 
-  // Learned behaviour (populated at runtime from candidate_learning)
   const lb = ctx.learned_behaviour as Record<string, unknown> | undefined
   if (lb && typeof lb === 'object') {
     let hasLearning = false
@@ -405,8 +363,9 @@ function formatCandidateContext(ctx: Record<string, unknown> | null): string {
   return lines.join('\n')
 }
 
+// ─── Request handler ─────────────────────────────────────────────────────────
+
 serve(async (req: Request) => {
-  // CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
       headers: {
@@ -418,7 +377,8 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { extraction_json, candidate_context } = await req.json()
+    const { extraction_json, candidate_context, provider: requestedProvider } = await req.json()
+
     if (!extraction_json || typeof extraction_json !== 'object') {
       return new Response(
         JSON.stringify({ error: 'Missing or invalid extraction_json' }),
@@ -426,50 +386,40 @@ serve(async (req: Request) => {
       )
     }
 
-    // Build user message with extraction JSON + candidate context
-    let userMessage = `Here is the structured JSON from Pass 1 extraction:\n\n${JSON.stringify(extraction_json, null, 2)}`
+    const provider: AIProvider = requestedProvider === 'openai' ? 'openai' : 'anthropic'
+    const apiKey = provider === 'openai' ? OPENAI_API_KEY : ANTHROPIC_API_KEY
+    const model  = provider === 'openai' ? OPENAI_MODEL  : ANTHROPIC_MODEL
+    const systemPrompt = provider === 'openai' ? OPENAI_SYSTEM_PROMPT : ANTHROPIC_SYSTEM_PROMPT
 
-    // Inject candidate context if provided
+    if (!apiKey) {
+      console.error(`[generate-narrative] Missing API key for provider: ${provider}`)
+      return new Response(
+        JSON.stringify({ error: `No API key configured for provider: ${provider}` }),
+        { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
+      )
+    }
+
+    let userMessage = `Here is the structured JSON from Pass 1 extraction:\n\n${JSON.stringify(extraction_json, null, 2)}`
     const candidateBlock = formatCandidateContext(candidate_context || null)
     if (candidateBlock) {
       userMessage += '\n\n---\n\n' + candidateBlock
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
+    const { text: rawText, usage } = await callAI({
+      provider,
+      systemPrompt,
+      userMessage,
+      model,
+      apiKey,
+      maxTokens: 2048,
     })
 
-    if (!response.ok) {
-      const errText = await response.text()
-      console.error('[generate-narrative] Anthropic API error:', response.status, errText)
-      return new Response(
-        JSON.stringify({ error: 'Anthropic API error', status: response.status }),
-        { status: 502, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
-      )
-    }
-
-    const result = await response.json()
-    const rawText = result.content?.[0]?.text || ''
-
-    // Parse the JSON from the response
     let narrative: Record<string, unknown>
     try {
-      // Strip markdown code fences if present
       const cleaned = rawText.replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
       narrative = JSON.parse(cleaned)
     } catch (parseErr) {
-      console.error('[generate-narrative] JSON parse failed:', parseErr, 'raw:', rawText.slice(0, 200))
+      console.error(`[generate-narrative] JSON parse failed (${provider}):`, parseErr, 'raw:', rawText.slice(0, 200))
       return new Response(
         JSON.stringify({ error: 'Failed to parse narrative JSON', raw: rawText.slice(0, 500) }),
         { status: 422, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
@@ -480,20 +430,19 @@ serve(async (req: Request) => {
     const REQUIRED_KEYS = [
       'fit_reality', 'what_this_role_actually_is', 'what_they_really_need_from_you',
       'what_you_would_actually_do', 'practical_details', 'risks_and_unknowns',
-      'questions_worth_asking', 'decision', 'recommended_cv', 'why_that_cv',
+      'questions_worth_asking', 'decision', 'recommended_cv', 'why_that_cv', 'final_note',
     ]
     const missing = REQUIRED_KEYS.filter(k => !(k in narrative))
     if (missing.length) {
-      console.warn('[generate-narrative] Missing keys:', missing)
+      console.warn(`[generate-narrative] Missing keys (${provider}):`, missing)
       narrative._missing_keys = missing
+      // Surface in usage so the client can log it without reading the narrative object
+      usage.schema_failures = missing
     }
 
-    // Usage info for cost tracking
-    const usage = {
-      model: MODEL,
-      input_tokens: result.usage?.input_tokens || null,
-      output_tokens: result.usage?.output_tokens || null,
-    }
+    // Provenance — stamp the deployed prompt version on every response so the
+    // client can persist it alongside the narrative for replay/regression.
+    usage.narrative_version = NARRATIVE_VERSION
 
     return new Response(
       JSON.stringify({ narrative, usage }),

@@ -13829,9 +13829,18 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         const _enriched = Object.assign({}, analysis);
         delete _enriched._aiPromise;
         delete _enriched._narrativePromise;
+        // Surface provenance at a stable top-level key so the row is queryable
+        // without spelunking the nested narrative object. The individual stamps
+        // (_aiProvider, _analyse_jd_version, _narrative._narrative_version) also
+        // remain in place for backwards compatibility.
+        _enriched._provenance = {
+          provider:           _enriched._aiProvider          || null,
+          analyse_jd_version: _enriched._analyse_jd_version  || null,
+          narrative_version:  _enriched._narrative?._narrative_version || null,
+        };
         try {
           await db.from('jd_matches').update({ output_json: _enriched }).eq('id', _matchId);
-          console.log('[perf] Enriched analysis persisted to jd_matches');
+          console.log('[perf] Enriched analysis persisted to jd_matches', _enriched._provenance);
         } catch (e) {
           console.warn('[ingestion] Failed to persist enriched analysis:', e);
         }
@@ -25611,6 +25620,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           const aiResult        = normaliseAnalysis(data.analysis, jdText);
           aiResult._source      = 'ai';
           aiResult._aiProvider  = _aiProvider;
+          // Provenance: stamp the deployed analyse-jd prompt version so jd_matches.output_json
+          // records which extraction prompt produced this result.
+          aiResult._analyse_jd_version = data.usage?.analyse_jd_version || null;
           const _outputChars    = JSON.stringify(aiResult).length;
 
           // ── Token extraction ────────────────────────────────────────────
@@ -26139,6 +26151,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           sections: Object.keys(narrative).length,
           latency:  Math.round(performance.now() - _t0) + 'ms',
         });
+        // Provenance: stamp the deployed narrative prompt version so the
+        // persisted analysis records which narrative prompt produced this output.
+        narrative._narrative_version = _usage.narrative_version || null;
         return narrative;
       } catch (err) {
         console.warn('[generate-narrative] failed', err);
