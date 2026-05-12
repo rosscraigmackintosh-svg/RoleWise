@@ -20216,6 +20216,55 @@ a.rw-rail-contact-name:hover {
   .ra-slidein { width: 100%; }
 }
 
+/* Analysis-mode toggle (Fast / Deep) on the paste-JD screen.
+   Calm Rolewise-native styling: small, neutral, no badges or hype. */
+.rw-ing-mode {
+  margin: 16px 0 4px;
+}
+.rw-ing-mode-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.rw-ing-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 14px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e3e3e0);
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-secondary, #4a4a48);
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+.rw-ing-mode-btn:hover {
+  border-color: var(--border-strong, #d0d0cc);
+}
+.rw-ing-mode-btn[aria-pressed="true"] {
+  border-color: var(--text-primary, #1a1a18);
+  background: var(--surface-emph, #fafaf9);
+  color: var(--text-primary, #1a1a18);
+}
+.rw-ing-mode-btn-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.rw-ing-mode-btn-sub {
+  font-size: 11.5px;
+  color: var(--text-tertiary, #807e7a);
+  line-height: 1.4;
+}
+.rw-ing-mode-btn[aria-pressed="true"] .rw-ing-mode-btn-sub {
+  color: var(--text-secondary, #4a4a48);
+}
+@media (max-width: 560px) {
+  .rw-ing-mode-row { grid-template-columns: 1fr; }
+}
+
 /* Empty analysis state */
 .ra-no-analysis {
   font-size: 13.5px;

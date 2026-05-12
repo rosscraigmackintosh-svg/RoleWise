@@ -13534,6 +13534,29 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const _sourceEl     = document.getElementById('rw-ing-source');
       const _streamWrap   = document.querySelector('.ar-overlay .ar-stream');
       const _oneThingEl   = document.getElementById('rw-ing-onething');
+
+      // \u2500\u2500 Analysis-mode toggle (Fast / Deep) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+      // Wiring only. Both modes currently use the same 3-pass pipeline; the
+      // mode is captured in state and persisted for future Option C routing
+      // (combined reason-and-narrate for Fast, current pipeline for Deep).
+      // Default: fast. Source of truth: _overlay._analysisMode.
+      const _modeEl  = document.getElementById('rw-ing-mode');
+      const _modeBtns = _modeEl ? _modeEl.querySelectorAll('[data-rw-mode-value]') : [];
+      _overlay._analysisMode = (_modeEl && _modeEl.getAttribute('data-rw-mode')) || 'fast';
+      const _setMode = (mode) => {
+        const m = (mode === 'deep') ? 'deep' : 'fast';
+        _overlay._analysisMode = m;
+        if (_modeEl) _modeEl.setAttribute('data-rw-mode', m);
+        _modeBtns.forEach(btn => {
+          const isActive = btn.getAttribute('data-rw-mode-value') === m;
+          btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+      };
+      _modeBtns.forEach(btn => {
+        btn.addEventListener('click', () => _setMode(btn.getAttribute('data-rw-mode-value')));
+      });
+      // Ensure the DOM/state agree on the default (fast) at open time.
+      _setMode(_overlay._analysisMode);
       const _setPasteCount = () => {
         if (!_pasteCountEl) return;
         const n = _textarea.value.trim().length;
@@ -13685,8 +13708,17 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         // Start processing timer (kept alive for telemetry; UI does not show it)
         _ingestionTimerStart(_overlay);
 
-        // Run the analysis flow
-        _runIngestionFlow({ context, role, text, url, overlay: _overlay, linesEl: _linesEl, qEls: [_q1, _q2, _q3] });
+        // Run the analysis flow — analysisMode captured at submit time so
+        // late toggle clicks (which the UI hides post-submit anyway) cannot
+        // change the in-flight pipeline's recorded mode.
+        const _selectedMode = _overlay._analysisMode === 'deep' ? 'deep' : 'fast';
+        _runIngestionFlow({
+          context, role, text, url,
+          overlay: _overlay,
+          linesEl: _linesEl,
+          qEls: [_q1, _q2, _q3],
+          analysisMode: _selectedMode,
+        });
       }
     }
 
@@ -13703,7 +13735,12 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     // pipeline without runaway open promises.
     const NARRATIVE_PIPELINE_TIMEOUT_MS = 150_000;
 
-    async function _runIngestionFlow({ context, role, text, url, overlay, linesEl, qEls }) {
+    async function _runIngestionFlow({ context, role, text, url, overlay, linesEl, qEls, analysisMode }) {
+      // Capture and normalise analysis mode. Default 'fast'. Persisted onto
+      // analysis._analysis_mode, analysis._pipeline.analysis_mode, and
+      // analysis._provenance.analysis_mode for future Option C routing.
+      const _analysisMode = (analysisMode === 'deep') ? 'deep' : 'fast';
+      console.log('[ingestion] ANALYSIS_MODE_SELECTED', _analysisMode);
       // Helper: append a new stacking progress line
       function _addLine(label, state = 'active') {
         if (!linesEl) return;
@@ -14132,8 +14169,13 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // done locally), pass1 (analyse-jd), reasoning (1.5), narrative (2),
       // validation. All persisted on every transition.
       const _nowIso = () => new Date().toISOString();
+      // Stamp the selected analysis mode on the analysis object itself so the
+      // background pipeline can read it without re-querying the DOM, and so
+      // it survives the row-write snapshot.
+      analysis._analysis_mode = _analysisMode;
       analysis._pipeline = {
         status:       'running',
+        analysis_mode: _analysisMode,
         stages: {
           extract:    'complete',
           pass1:      'queued',
@@ -14539,6 +14581,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // ── Validation ────────────────────────────────────────────────────
       analysisRef._provenance = {
         provider:               analysisRef._aiProvider             || null,
+        // analysis_mode: 'fast' | 'deep' — captured at the ingestion overlay
+        // and threaded through _runIngestionFlow -> analysis._analysis_mode.
+        // For v1 both modes use the same pipeline; field is preserved for
+        // future Option C routing.
+        analysis_mode:          analysisRef._analysis_mode          || null,
         analyse_jd_version:     analysisRef._analyse_jd_version     || null,
         analyse_jd_provider:    analysisRef._analyse_jd_provider    || null,
         analyse_jd_model:       analysisRef._analyse_jd_model       || null,
