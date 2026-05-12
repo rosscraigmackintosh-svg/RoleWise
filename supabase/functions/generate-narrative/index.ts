@@ -455,89 +455,338 @@ serve(async (req: Request) => {
       usage.schema_failures = missing
     }
 
-    // ── Deterministic question-shaping post-process ──────────────────────
-    // The model frequently drops or generalises verification-point questions
-    // despite explicit prompt rules. Enforce server-side: every verification
-    // point in reasoning_json.trade_offs.verification_points MUST appear as a
-    // calibration-phrased question. Replaces the most generic existing
-    // question (keyed by lack of domain nouns and presence of vague verbs).
+    // ── Deterministic signal governance ────────────────────────────────────
+    // Post-generation shaping of the narrative output. Five concerns:
+    //   1. Numeric office-day guard — strip false office friction when
+    //      stated office_days is at or below the candidate's hard limit.
+    //   2. Low-signal risk filter — remove risks built from filler phrases
+    //      ("fast-paced", "burnout", "stakeholder management" alone, etc.).
+    //   3. Risk refill from verification_points / watchouts / costs when the
+    //      filter pushes count below 2.
+    //   4. Question domain-noun enforcement — ≥3/5 questions must reference
+    //      a domain noun from reasoning.signal_analysis; weak generics are
+    //      replaced with templated domain questions or verification calibrations.
+    //   5. Verification-point question injection (every VP becomes a question).
+    //
+    // This block treats model output as a draft. The post-process is the
+    // final shape. Failures are non-fatal — log and continue.
     try {
       if (hasReasoning) {
         const r = reasoning_json as Record<string, unknown>
+        const ex = (extraction_json as Record<string, unknown>) || {}
+        const cc = (candidate_context as Record<string, unknown>) || {}
         const vps = (((r.trade_offs as Record<string, unknown>)?.verification_points) as string[] | undefined) || []
         const sigAnalysis = (r.signal_analysis as Record<string, unknown>) || {}
+        const seniorInterp = (r.senior_interpretation as Record<string, unknown>) || {}
+        const tradeOffs   = (r.trade_offs as Record<string, unknown>) || {}
         const highSig = (sigAnalysis.high_signal_phrases as string[] | undefined) || []
         const notable = (sigAnalysis.notable_language as string[] | undefined) || []
+        const standsOut = (seniorInterp.what_stands_out as string[] | undefined) || []
+        const watchouts = (seniorInterp.watchouts as string[] | undefined) || []
+        const costs     = (tradeOffs.costs as string[] | undefined) || []
 
+        // ── 1. Numeric office-day guard ──────────────────────────────────
+        // Parse stated office_days from extraction (multiple schema shapes).
+        const parseOfficeDays = (): number | null => {
+          const candidates: string[] = []
+          const practical  = (ex.practical as Record<string, unknown>) || {}
+          const practicalD = (ex.practical_details as Record<string, unknown>) || {}
+          ;[practical.work_model, practical.remote_model, practicalD.work_model, practicalD.remote_model]
+            .filter(v => typeof v === 'string').forEach(v => candidates.push(v as string))
+          const notes = (practical.notes as string[] | undefined) || []
+          notes.forEach(n => { if (typeof n === 'string') candidates.push(n) })
+          for (const c of candidates) {
+            const m = c.match(/(\d+)\s*(?:\+|or more)?\s*days?\s*(?:a|per)\s*week/i)
+            if (m) return parseInt(m[1], 10)
+            const wm = c.match(/\b(one|two|three|four|five)\b\s*days?/i)
+            if (wm) return ({ one:1, two:2, three:3, four:4, five:5 }[wm[1].toLowerCase()] || null)
+          }
+          return null
+        }
+        const officeDays = parseOfficeDays()
+
+        // Candidate hard limit on office days.
+        const parseCandidateLimit = (): number | null => {
+          const wm = (cc.work_model_preference as Record<string, string> | undefined) || {}
+          const sources: string[] = []
+          ;['hard_limit', 'ideal', 'commute_tolerance'].forEach(k => {
+            if (typeof wm[k] === 'string') sources.push(wm[k])
+          })
+          const blockers = (cc.hard_blockers as string[] | undefined) || []
+          blockers.forEach(b => { if (typeof b === 'string') sources.push(b) })
+          for (const s of sources) {
+            const m = s.match(/more than\s*(\d+)\s*days?/i)
+            if (m) return parseInt(m[1], 10)
+            const m2 = s.match(/(\d+)\s*\+\s*days?/i)
+            if (m2) return parseInt(m2[1], 10)
+            const m3 = s.match(/(\d+)\s*days?\s*(?:on[- ]site|in office|in[- ]office|max(?:imum)?)/i)
+            if (m3) return parseInt(m3[1], 10)
+          }
+          return null
+        }
+        const limitDays = parseCandidateLimit()
+
+        const officeFrictionInvalid = officeDays !== null && limitDays !== null && officeDays <= limitDays
+
+        // Regex matching office-friction prose to strip.
+        const officeFrictionRe = /(?:hard\s+conflict[^.]*?(?:office|on[- ]?site|in[- ]?office)[^.]*\.\s*)|(?:(?:[^.]*?\b(?:office|on[- ]?site|in[- ]?office|two days|2 days|anchor days?)\b[^.]*?(?:may\s+(?:not\s+align|conflict)|conflicts?|hard\s+limit|exceeds?\s+your|exceeds?\s+the\s+candidate)[^.]*\.\s*))|(?:[^.]*?(?:may\s+(?:not\s+align|conflict)|conflicts?|hard\s+limit)[^.]*?\b(?:office|on[- ]?site|in[- ]?office|two days|2 days|anchor days?)\b[^.]*\.\s*)/gi
+
+        if (officeFrictionInvalid) {
+          // Scrub fit_reality paragraphs and decision summary of false office friction.
+          const fit = narrative.fit_reality as Record<string, unknown> | undefined
+          if (fit && Array.isArray(fit.paragraphs)) {
+            fit.paragraphs = (fit.paragraphs as string[]).map(p =>
+              p.replace(officeFrictionRe, '').replace(/\s{2,}/g, ' ').trim()
+            ).filter(p => p.length > 30)  // drop paragraphs that collapsed to fragments
+          }
+          const dec = narrative.decision as Record<string, unknown> | undefined
+          if (dec && typeof dec.summary === 'string') {
+            dec.summary = (dec.summary as string).replace(officeFrictionRe, '').replace(/\s{2,}/g, ' ').trim()
+          }
+          console.log('[generate-narrative] post-process: office-day friction stripped (stated=' + officeDays + ', limit=' + limitDays + ')')
+        }
+
+        // ── 2. Low-signal risk filter + 3. Refill ─────────────────────────
+        const LOW_SIGNAL_RISK = /\b(fast[- ]?paced|high[- ]?pressure|burnout|stakeholder management|cross[- ]?functional|ownership mindset|collaboration|fast paced)\b/i
+        const risks = narrative.risks_and_unknowns as Record<string, unknown> | undefined
+        if (risks && Array.isArray(risks.inferred)) {
+          const before = (risks.inferred as string[]).slice()
+          let filtered = (risks.inferred as string[]).filter(item => {
+            const ql = String(item).toLowerCase()
+            // Keep verification calibrations (they start with Clarify/Confirm) even if they contain a low-signal substring.
+            if (/^(clarify|confirm)\b/.test(ql)) return true
+            return !LOW_SIGNAL_RISK.test(ql)
+          })
+
+          // Strip false office friction from risks too (numeric guard).
+          if (officeFrictionInvalid) {
+            filtered = filtered.filter(item => !officeFrictionRe.test(String(item)))
+          }
+
+          // Refill from verification_points → watchouts → costs if dropped under 2.
+          const present = new Set(filtered.map(s => String(s).toLowerCase()))
+          const tag = (s: string) => s.match(/\(Inferred\)\s*$/) ? s : `${s} (Inferred)`
+          const tryAdd = (src: string[]) => {
+            for (const item of src) {
+              if (filtered.length >= 4) return
+              const txt = String(item).trim()
+              if (!txt) continue
+              if (LOW_SIGNAL_RISK.test(txt.toLowerCase())) continue
+              if (present.has(txt.toLowerCase())) continue
+              filtered.push(tag(txt))
+              present.add(txt.toLowerCase())
+            }
+          }
+          if (filtered.length < 2) {
+            tryAdd(vps)
+            if (filtered.length < 2) tryAdd(watchouts)
+            if (filtered.length < 2) tryAdd(costs)
+          }
+          risks.inferred = filtered
+          if (before.length !== filtered.length) {
+            console.log('[generate-narrative] post-process: risks filtered ' + before.length + ' → ' + filtered.length)
+          }
+        }
+
+        // ── 4. Question governance ────────────────────────────────────────
         let questions: string[] = Array.isArray(narrative.questions_worth_asking)
           ? (narrative.questions_worth_asking as string[]).slice()
           : []
 
-        // Canonical phrasings for each verification topic.
+        // Clean stray (Inferred) tags from questions (they belong on risks only).
+        questions = questions.map(q => q.replace(/\s*\((?:Inferred|Stated)\)\s*$/i, '').trim())
+
+        // Generic-question patterns (default LLM filler).
+        const GENERIC_Q_PATTERNS: RegExp[] = [
+          /how is success measured/i,
+          /how does the team collaborate/i,
+          /what support systems? (?:are|is) in place/i,
+          /how are decisions made/i,
+          /what does ownership look like/i,
+          /how do stakeholders work together/i,
+          /level of (?:design )?autonomy/i,
+          /balance.*stakeholder/i,
+          /how does the team handle/i,
+          /culture like/i,
+          /team dynamics/i,
+          /(?:operational|design) signals?/i,
+          /how often.*engage/i,
+          /design ownership/i,
+          /cross[- ]?functional/i,
+          /frameworks?\s+(?:are\s+in\s+place|exist|support)/i,
+          /manag(?:ing|e)\s+(?:heavy\s+)?stakeholder/i,
+          /support designers? in/i,
+          /design innovation versus/i,
+          /prioritize design (?:innovation|work)/i,
+          /design (?:work|delivery) versus/i,
+        ]
+        const isGenericQ = (q: string): boolean => GENERIC_Q_PATTERNS.some(re => re.test(q))
+
+        // Build domain-noun set from reasoning signals.
+        // Phrase-level matching for multi-word signals + curated allowlist of
+        // specific operational nouns. Trivial words ("design", "product",
+        // "team", "role", "company", "research" alone) are EXCLUDED — they
+        // appear in every JD and would falsely qualify generic questions.
+        const TRIVIAL_WORDS = new Set([
+          'design', 'designer', 'designers', 'designs', 'designing',
+          'product', 'products', 'company', 'companies', 'role', 'roles',
+          'team', 'teams', 'people', 'person', 'work', 'working', 'works',
+          'experience', 'experiences', 'business', 'process', 'processes',
+          'project', 'projects', 'feature', 'features', 'system', 'systems',
+        ])
+        const OPERATIONAL_ALLOWLIST = [
+          'vincent', 'copilot', 'operate', 'piplanning',
+          'synthesis', 'explainability', 'discovery', 'orchestration',
+          'taxonomy', 'ontology', 'canvas', 'whiteboard',
+          'object model', 'editing state', 'spatial navigation',
+          'legal research', 'legal professional', 'knowledge management',
+          'knowledge workflow', 'research workflow', 'information architecture',
+          'information density', 'information dense', 'cognitive load',
+          'structured content', 'source transparency', 'trust model',
+          'ai-generated', 'ai-driven', 'ai-assisted', 'ai-native',
+          'model behaviour', 'model behavior', 'agent surface',
+          'reconciliation', 'ledger', 'ap automation', 'workflow correctness',
+          'data-dense', 'operational correctness', 'operational tooling',
+        ]
+        const phrases = [...highSig, ...notable, ...standsOut]
+          .filter((s): s is string => typeof s === 'string')
+        const domainPhrases = new Set<string>()
+        for (const p of phrases) {
+          const cleaned = p.toLowerCase().replace(/['"]/g, '').trim()
+          // Only multi-word phrases (must contain a space) or specific
+          // long single-word operational nouns (length >= 8 and not trivial).
+          if (cleaned.includes(' ') && cleaned.length >= 10) {
+            domainPhrases.add(cleaned)
+          } else if (cleaned.length >= 8 && !TRIVIAL_WORDS.has(cleaned)) {
+            domainPhrases.add(cleaned)
+          }
+        }
+        // Allowlist tokens appear if echoed anywhere in reasoning text.
+        const allReasoningText = phrases.join(' ').toLowerCase()
+        for (const tok of OPERATIONAL_ALLOWLIST) {
+          if (allReasoningText.includes(tok)) domainPhrases.add(tok)
+        }
+        const hasDomainNoun = (q: string): boolean => {
+          const ql = q.toLowerCase()
+          for (const n of domainPhrases) {
+            if (ql.includes(n)) return true
+          }
+          return false
+        }
+
+        // Domain class detection — picks a template family.
+        const allSignalText = phrases.join(' ').toLowerCase()
+        let domainClass: 'legal-research' | 'canvas' | 'ai-native' | 'fintech-ops' | 'generic' = 'generic'
+        if (/legal|law|attorney|legal research|knowledge management/.test(allSignalText)) domainClass = 'legal-research'
+        else if (/canvas|whiteboard|object model|spatial navigation/.test(allSignalText)) domainClass = 'canvas'
+        else if (/copilot|ai[- ]?native|agent surface|model behaviour|model behavior/.test(allSignalText)) domainClass = 'ai-native'
+        else if (/reconciliation|ledger|ap automation|spend management|finance/.test(allSignalText)) domainClass = 'fintech-ops'
+
+        const productNoun: Record<string, string> = {
+          'legal-research': 'Vincent',
+          'canvas': 'the canvas',
+          'ai-native': 'the AI surface',
+          'fintech-ops': 'the platform',
+          'generic': 'the product',
+        }
+        const domainTemplates: Record<string, string[]> = {
+          'legal-research': [
+            `How do legal professionals validate and trust AI-assisted research outputs inside ${productNoun['legal-research']}?`,
+            `What level of explainability or source transparency exists in ${productNoun['legal-research']}'s AI-assisted research workflows?`,
+            `How are complex legal knowledge structures currently represented in the product?`,
+            `What are the hardest information-density or research workflow problems the team is trying to solve right now?`,
+            `How much of the role is net-new interaction design for research and synthesis workflows versus refinement of existing patterns?`,
+          ],
+          'canvas': [
+            `How central are the whiteboard/canvas systems to the day-to-day work?`,
+            `How are object models and editing states currently represented to users?`,
+            `What are the hardest spatial-navigation or canvas interaction problems the team is trying to solve right now?`,
+            `How much of the role is net-new interaction architecture for the canvas versus refinement of existing patterns?`,
+          ],
+          'ai-native': [
+            `How do users build trust in AI-generated outputs in this product?`,
+            `What level of explainability or steering exists in the AI surface today?`,
+            `What are the hardest model-behaviour or AI interaction problems the team is trying to solve right now?`,
+          ],
+          'fintech-ops': [
+            `How are operational correctness and data-density currently handled in the interface?`,
+            `What are the hardest reconciliation or workflow-orchestration problems the team is trying to solve right now?`,
+            `How are complex transaction structures currently represented to power users?`,
+          ],
+          'generic': [
+            `What are the hardest workflow or information-density problems the team is trying to solve right now?`,
+            `How much of the role is net-new interaction design versus refinement of existing patterns?`,
+            `How are complex domain structures currently represented in the product?`,
+          ],
+        }
+
+        // Verification-question topics (canonical phrasings).
         const canonical = (vp: string): { topic: string; question: string } | null => {
           const v = vp.toLowerCase()
-          if (/coding|prototyp|production code|frontend/.test(v))
-            return { topic: 'coding', question: 'Are designers expected to prototype interactions only, or contribute production frontend code?' }
-          if (/compensation|salary|day[- ]?rate|pay\b/.test(v))
-            return { topic: 'salary',  question: 'Can you clarify the compensation structure for this engagement?' }
-          if (/in[- ]?office|anchor|on[- ]?site|hybrid|days per week/.test(v))
-            return { topic: 'office',  question: 'How does the in-office expectation apply day-to-day, and what changes if the candidate is not local to a named hub?' }
-          if (/reporting line|decision authority/.test(v))
-            return { topic: 'reporting', question: 'Who does this role report to, and where does design decision authority sit?' }
+          if (/coding|prototyp|production code|frontend/.test(v))                return { topic: 'coding',    question: 'Are designers expected to prototype interactions only, or contribute production frontend code?' }
+          if (/compensation|salary|day[- ]?rate|pay\b/.test(v))                  return { topic: 'salary',   question: 'Can you clarify the compensation structure for this engagement?' }
+          if (/in[- ]?office|anchor|on[- ]?site|hybrid|days per week/.test(v))   return { topic: 'office',   question: 'How does the in-office expectation apply day-to-day, and what changes if the candidate is not local to a named hub?' }
+          if (/reporting line|decision authority/.test(v))                       return { topic: 'reporting', question: 'Who does this role report to, and where does design decision authority sit?' }
           return null
         }
-
         const topicSignature = (q: string): string | null => {
           const ql = q.toLowerCase()
-          if (/(?:coding|production code|prototyp|frontend|react|typescript)/.test(ql)) return 'coding'
-          if (/(?:compensation|salary|day[- ]?rate|pay\b)/.test(ql))                    return 'salary'
-          if (/(?:in[- ]?office|anchor|on[- ]?site|days per week|hub|hybrid)/.test(ql)) return 'office'
-          if (/(?:report(?:ing)? to|reporting line|decision authority)/.test(ql))      return 'reporting'
+          if (/(?:coding|production code|prototyp|frontend)/.test(ql)) return 'coding'
+          if (/(?:compensation|salary|day[- ]?rate|pay\b)/.test(ql))   return 'salary'
+          if (/(?:in[- ]?office|anchor|on[- ]?site|days per week|hub)/.test(ql)) return 'office'
+          if (/(?:report(?:ing)? to|reporting line|decision authority)/.test(ql)) return 'reporting'
           return null
         }
 
-        // Build needed verification questions.
-        const present = new Set(questions.map(topicSignature).filter(Boolean) as string[])
-        const needed: { topic: string; question: string }[] = []
+        // Suppress numeric-invalid office question (e.g. if officeFrictionInvalid, drop any "exceeds your limit" wording).
+        if (officeFrictionInvalid) {
+          questions = questions.filter(q => !/(?:exceed|conflict).*?(?:office|on[- ]?site|days)/i.test(q))
+        }
+
+        // Inject missing verification questions.
+        const presentTopics = new Set(questions.map(topicSignature).filter(Boolean) as string[])
+        const neededVerif: { topic: string; question: string }[] = []
         for (const vp of vps) {
           const c = canonical(vp)
-          if (c && !present.has(c.topic)) needed.push(c)
+          if (!c) continue
+          // Skip office verification injection when JD already states office_days clearly AND it's not friction.
+          if (c.topic === 'office' && officeDays !== null && officeFrictionInvalid) continue
+          if (!presentTopics.has(c.topic)) neededVerif.push(c)
         }
 
-        // Replace the most-generic questions with needed verification questions.
-        // Score: lower = more generic. A question is generic if it contains no
-        // domain-noun from high_signal_phrases/notable_language and contains
-        // template phrases ("design ownership", "stakeholder", "team dynamics",
-        // "feedback", "operational signals", "autonomy").
-        const domainNouns = [...highSig, ...notable]
-          .filter((s): s is string => typeof s === 'string')
-          .flatMap(s => s.toLowerCase().split(/[\s,]+/).filter(w => w.length > 4))
-        const isGeneric = (q: string): boolean => {
-          const ql = q.toLowerCase()
-          const hasDomainNoun = domainNouns.some(n => ql.includes(n))
-          const hasGenericTemplate = /(stakeholder|ownership|autonomy|team dynamics|feedback|operational signals|culture|cross.?functional|process)/.test(ql)
-          return !hasDomainNoun && hasGenericTemplate
-        }
-
-        if (needed.length) {
-          const ranked = questions
-            .map((q, idx) => ({ q, idx, generic: isGeneric(q), hasTopic: topicSignature(q) !== null }))
-            .sort((a, b) => (Number(b.generic) - Number(a.generic)) || (Number(a.hasTopic) - Number(b.hasTopic)))
-
-          for (const inj of needed) {
-            const victim = ranked.find(r => !r.hasTopic && r.generic) || ranked.find(r => !r.hasTopic)
-            if (victim) {
-              questions[victim.idx] = inj.question
-              victim.hasTopic = true
-              victim.q = inj.question
-              victim.generic = false
-            } else if (questions.length < 6) {
-              questions.push(inj.question)
-            }
+        const replaceWeakest = (replacement: string) => {
+          // Find weakest = generic + no domain noun + no verification topic.
+          const weakestIdx = questions
+            .map((q, idx) => ({ idx, score: (isGenericQ(q) ? 2 : 0) + (hasDomainNoun(q) ? 0 : 1) + (topicSignature(q) ? -3 : 0) }))
+            .sort((a, b) => b.score - a.score)[0]?.idx
+          if (typeof weakestIdx === 'number' && questions.length > 0) {
+            questions[weakestIdx] = replacement
+          } else {
+            questions.push(replacement)
           }
-          narrative.questions_worth_asking = questions
-          console.log('[generate-narrative] post-process: injected verification questions for topics:', needed.map(n => n.topic))
         }
+
+        for (const inj of neededVerif) replaceWeakest(inj.question)
+
+        // Enforce ≥3/5 domain-noun questions.
+        const targetTotal = Math.min(5, Math.max(questions.length, 4))
+        const countDomain = () => questions.filter(hasDomainNoun).length
+        const templatePool = (domainTemplates[domainClass] || domainTemplates.generic).slice()
+        // Remove templates already represented.
+        const filteredPool = templatePool.filter(t => !questions.some(q => q.toLowerCase().includes(t.slice(0, 30).toLowerCase())))
+
+        let safety = 0
+        while (countDomain() < 3 && filteredPool.length && safety < 5) {
+          const tpl = filteredPool.shift()!
+          replaceWeakest(tpl)
+          safety++
+        }
+
+        // Cap to 5.
+        if (questions.length > 5) questions = questions.slice(0, 5)
+
+        narrative.questions_worth_asking = questions
+        console.log('[generate-narrative] post-process: questions shaped — domain=' + domainClass + ' domainCount=' + countDomain() + ' total=' + questions.length)
       }
     } catch (postErr) {
       console.warn('[generate-narrative] post-process error (non-fatal):', String(postErr))
