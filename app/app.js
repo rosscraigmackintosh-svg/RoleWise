@@ -1351,6 +1351,8 @@
       // 3. Clean up punctuation artefacts
       t = t.replace(/\s+\./g, '.');             // remove whitespace before period
       t = t.replace(/\s+,/g, ',');              // remove whitespace before comma
+      t = t.replace(/\s+;/g, ';');              // remove whitespace before semicolon
+      t = t.replace(/\s+:/g, ':');              // remove whitespace before colon
       t = t.replace(/\.\s*\./g, '.');           // collapse double periods
       t = t.replace(/,\s*\./g, '.');            // comma then period → period
       t = t.replace(/\.\s*,/g, '.');            // period then comma → period
@@ -1359,6 +1361,16 @@
       // dotted acronyms like GOV.UK, NHS.UK, U.S., and version numbers
       // like v1.0 whose periods are preceded by uppercase or digits.
       t = t.replace(/([a-z])\.(\S)/g, '$1. $2');
+      // Acronym restoration: model output sometimes renders compound dotted
+      // acronyms with a stray space ("GOV. UK", "NHS. UK", "U. K."). Collapse
+      // the space back so they render correctly. Curated list — never
+      // collapses arbitrary uppercase pairs, which would break real sentences
+      // like "OK. NEXT WEEK".
+      t = t.replace(/\bGOV\.\s+(UK|SCOT|WALES)\b/g, (_m, p) => 'GOV.' + p);
+      t = t.replace(/\bNHS\.\s+UK\b/g, 'NHS.UK');
+      t = t.replace(/\bU\.\s+([SK])\.\b/g, (_m, p) => 'U.' + p + '.');
+      t = t.replace(/\bE\.\s+U\.\b/g, 'E.U.');
+      t = t.replace(/\bU\.\s+N\.\b/g, 'U.N.');
       t = t.replace(/\s{2,}/g, ' ');            // collapse multiple spaces
       return t.trim();
     }
