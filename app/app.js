@@ -10919,6 +10919,19 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const pd    = fo.practical_details || {};
       const narr  = fo._narrative || null;
 
+      // ── Incomplete-state detection (post-3-pass-pipeline rows only) ─────
+      // A row is "incomplete" when Pass 1 ran (we have a provider/version
+      // stamp) but Pass 1.5 and Pass 2 never persisted. We must NOT show
+      // Pass 1 placeholder strings ("No summary available", "Not stated")
+      // as if they were the final analysis. Legacy rows that pre-date the
+      // 3-pass pipeline have no _provenance block; they keep their fallback.
+      const _prov          = fo._provenance || null;
+      const _hasProvenance = _prov && typeof _prov === 'object';
+      const _pass1Ran      = _hasProvenance && !!_prov.analyse_jd_version;
+      const _reasoningMissing = _hasProvenance && !_prov.role_reasoning_version;
+      const _narrativeMissing = !narr || !_prov?.narrative_version;
+      const _isIncomplete  = _pass1Ran && (_reasoningMissing || _narrativeMissing);
+
       // ── Helpers ──────────────────────────────────────────────────────────────
       const _str = v => (v && typeof v === 'string' && v !== 'Not stated' && v !== 'Unknown') ? v : null;
 
@@ -10965,7 +10978,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         if (Array.isArray(_paras) && _paras.length) {
           _s01 = `<p class="ra-lede">${esc(_sanitizeUiText(_paras[0]))}</p>` +
             _paras.slice(1).map(p => `<p class="ra-p">${esc(_sanitizeUiText(p))}</p>`).join('');
-        } else {
+        } else if (!_isIncomplete) {
+          // Pass 1 placeholder fallback — only for legacy rows that pre-date the 3-pass pipeline.
           const _fb = Array.isArray(fo.fit_reality_summary)
             ? fo.fit_reality_summary.filter(Boolean).join(' ')
             : _str(fo.fit_reality_summary);
@@ -10991,7 +11005,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         const _bHtml = Array.isArray(_w3.bullets) && _w3.bullets.length ? _arList(_w3.bullets) : '';
         if (_fHtml || _bHtml) _s03 = _fHtml + _bHtml;
       }
-      if (!_s03 && Array.isArray(fo.what_you_would_actually_do) && fo.what_you_would_actually_do.length) {
+      if (!_s03 && !_isIncomplete && Array.isArray(fo.what_you_would_actually_do) && fo.what_you_would_actually_do.length) {
         _s03 = _arList(fo.what_you_would_actually_do);
       }
 
@@ -11005,7 +11019,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         const _bHtml = Array.isArray(_w4.bullets) && _w4.bullets.length ? _arList(_w4.bullets) : '';
         if (_pHtml || _bHtml) _s04 = _pHtml + _bHtml;
       }
-      if (!_s04) {
+      if (!_s04 && !_isIncomplete) {
         const _s04arr = (Array.isArray(fo.what_they_really_need_from_you) && fo.what_they_really_need_from_you.length)
           ? fo.what_they_really_need_from_you
           : (Array.isArray(fo.signal_markers) && fo.signal_markers.length)
@@ -11029,14 +11043,14 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           _s05 = _introHtml + _arList(_combined);
         }
       }
-      if (!_s05 && Array.isArray(fo.risks_and_unknowns) && fo.risks_and_unknowns.length) {
+      if (!_s05 && !_isIncomplete && Array.isArray(fo.risks_and_unknowns) && fo.risks_and_unknowns.length) {
         _s05 = _arList(fo.risks_and_unknowns);
       }
 
       // ── Section 06: Questions worth asking ───────────────────────────────────
       const _s06arr = (narr && Array.isArray(narr.questions_worth_asking) && narr.questions_worth_asking.length)
         ? narr.questions_worth_asking
-        : (Array.isArray(fo.questions_worth_asking) && fo.questions_worth_asking.length)
+        : (!_isIncomplete && Array.isArray(fo.questions_worth_asking) && fo.questions_worth_asking.length)
           ? fo.questions_worth_asking
           : null;
       const _s06 = _s06arr ? _arList(_s06arr, 'ra-list--questions') : null;
@@ -11059,9 +11073,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
       // If no analysis exists at all, show a calm placeholder
       const _hasSections = _s01 || _s02 || _s03 || _s04 || _s05 || _s06 || _s07;
-      const _noAnalysisHtml = !_hasSections
-        ? '<p class="ra-no-analysis">No analysis available for this role yet. Paste the job description to generate one.</p>'
-        : '';
+      const _noAnalysisHtml = _isIncomplete
+        ? '<div class="ra-no-analysis"><p><strong>Analysis is still being prepared.</strong></p><p>Rolewise has extracted the basics, but the deeper role analysis has not finished yet.</p></div>'
+        : !_hasSections
+          ? '<p class="ra-no-analysis">No analysis available for this role yet. Paste the job description to generate one.</p>'
+          : '';
 
       // ── Monthly salary equivalent ─────────────────────────────────────────────
       let _salaryMonthStr = null;
@@ -13376,6 +13392,16 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     }
 
     // ── Processing flow ─────────────────────────────────────────────────────
+    // ── Ingestion pipeline budgets ──────────────────────────────────────────
+    // Pass 1 (analyse-jd):           ~6 s typical
+    // Pass 1.5 (generate-role-reasoning): ~17 s typical
+    // Pass 2 (generate-narrative):   ~20–36 s typical
+    // The 1.5 + 2 chain runs sequentially inside _narrativePromise, so the
+    // post-Pass-1 timeout must cover both. Measured worst-case on the Clio JD
+    // was 59 s end-to-end; 75 s gives realistic headroom without indefinite
+    // blocking.
+    const NARRATIVE_PIPELINE_TIMEOUT_MS = 75_000;
+
     async function _runIngestionFlow({ context, role, text, url, overlay, linesEl, qEls }) {
       // Helper: append a new stacking progress line
       function _addLine(label, state = 'active') {
@@ -13809,12 +13835,14 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
       if (_arAnimator) _arAnimator.setAnalysisAiDone();
 
-      // Await Pass 2 — narrative enrichment (20 s timeout)
+      // Await Pass 1.5 + Pass 2 — reasoning + narrative chain.
+      // The promise covers both passes sequentially; the 75 s budget reflects
+      // measured pipeline duration (~37–59 s on representative JDs).
       if (_aiResult?._narrativePromise) {
         try {
           const _narr = await Promise.race([
             _aiResult._narrativePromise,
-            new Promise((_, rej) => setTimeout(() => rej(new Error('Pass 2 timeout')), 20_000)),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('Pass 2 timeout')), NARRATIVE_PIPELINE_TIMEOUT_MS)),
           ]);
           if (_narr) analysis._narrative = _narr;
         } catch (e) {
