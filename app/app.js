@@ -14151,9 +14151,25 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // even after the user navigates away from this code path.
       if (_matchId) {
         console.log('[ingestion] BACKGROUND_PIPELINE_STARTED', { match_id: _matchId });
-        const _bgPromise = _runBackgroundPipeline(_matchId, analysis, savedRole, jd, jdText, _pipelineT0);
-        _bgPromise.catch(err => console.error('[bg-pipeline] unhandled error:', err));
-        console.log('[ingestion] BACKGROUND_PIPELINE_NOT_AWAITED', { match_id: _matchId, promise_pending: true });
+        if (!jd_raw && !jd) {
+          console.error('[ingest] JD text missing — cannot start background pipeline');
+          analysis._pipeline = analysis._pipeline || {};
+          analysis._pipeline.status = 'failed';
+          analysis._pipeline.errors = [
+            ...(analysis._pipeline.errors || []),
+            {
+              stage: 'background-start',
+              code: 'JD_TEXT_MISSING_FOR_BACKGROUND_PIPELINE',
+              message: 'No raw or cleaned JD text was available when starting background analysis.',
+              ts: new Date().toISOString()
+            }
+          ];
+          // Do not throw — overlay must still close and role page must still open.
+        } else {
+          const _bgPromise = _runBackgroundPipeline(_matchId, analysis, savedRole, jd_raw, jd, _pipelineT0);
+          _bgPromise.catch(err => console.error('[bg-pipeline] unhandled error:', err));
+          console.log('[ingestion] BACKGROUND_PIPELINE_NOT_AWAITED', { match_id: _matchId, promise_pending: true });
+        }
       }
 
       // Navigate immediately to the role analysis view.
