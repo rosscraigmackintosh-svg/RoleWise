@@ -387,7 +387,13 @@ serve(async (req: Request) => {
       candidate_context,
       reasoning_json,
       provider: requestedProvider,
+      verbosity_mode: requestedVerbosity,
     } = await req.json()
+
+    // Normalise verbosity mode. Falls back to 'standard' for unknown values.
+    const verbosityMode: 'compact' | 'standard' | 'deep' =
+      requestedVerbosity === 'compact' ? 'compact' :
+      requestedVerbosity === 'deep'    ? 'deep'    : 'standard'
 
     if (!extraction_json || typeof extraction_json !== 'object') {
       return new Response(
@@ -428,6 +434,11 @@ serve(async (req: Request) => {
       userMessage += `REASONING (from Pass 1.5 — interpreted observations to prioritise):\n\n${JSON.stringify(reasoning_json, null, 2)}\n\n---\n\n`
     }
     userMessage += `EXTRACTION JSON (from Pass 1 — for practical-detail grounding):\n\n${JSON.stringify(extraction_json, null, 2)}`
+
+    // Verbosity directive — read by the VERBOSITY MODES block in the system
+    // prompt to constrain output length. Appended at the end so caching
+    // prefixes (system prompt + candidate_context) remain intact.
+    userMessage += `\n\n---\n\nVERBOSITY: ${verbosityMode}`
 
     const { text: rawText, usage } = await callAI({
       provider,

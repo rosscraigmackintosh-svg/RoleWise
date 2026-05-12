@@ -1350,10 +1350,15 @@
       t = t.replace(/([a-zA-Z])-([a-zA-Z])/g, '$1 $2');
       // 3. Clean up punctuation artefacts
       t = t.replace(/\s+\./g, '.');             // remove whitespace before period
+      t = t.replace(/\s+,/g, ',');              // remove whitespace before comma
       t = t.replace(/\.\s*\./g, '.');           // collapse double periods
       t = t.replace(/,\s*\./g, '.');            // comma then period → period
       t = t.replace(/\.\s*,/g, '.');            // period then comma → period
-      t = t.replace(/\.(\S)/g, '. $1');          // ensure space after period
+      // Ensure space after period — but ONLY when the period follows a
+      // lowercase letter (a real end-of-word boundary). This preserves
+      // dotted acronyms like GOV.UK, NHS.UK, U.S., and version numbers
+      // like v1.0 whose periods are preceded by uppercase or digits.
+      t = t.replace(/([a-z])\.(\S)/g, '$1. $2');
       t = t.replace(/\s{2,}/g, ' ');            // collapse multiple spaces
       return t.trim();
     }
@@ -14337,6 +14342,50 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       };
     }
 
+    // ─── Verbosity-mode heuristic ────────────────────────────────────────
+    // Returns 'compact' | 'standard' | 'deep' based on JD length and reasoning
+    // signals about ownership level, product complexity, stakeholder density,
+    // and ambiguity. Drives the narrative pass's output length without
+    // changing the section structure or pipeline.
+    //
+    // Score weights:
+    //   - JD length is the strongest signal
+    //   - Senior ownership / strategic ambiguity push toward 'deep'
+    //   - Short JDs + IC roles + low ambiguity push toward 'compact'
+    function _computeVerbosityMode(jdText, reasoning) {
+      let score = 0;
+      const len = (jdText || '').length;
+
+      // JD length: dominant signal
+      if (len < 1500)      score -= 3;
+      else if (len < 2500) score -= 1;
+      else if (len > 7000) score += 3;
+      else if (len > 5000) score += 2;
+
+      // Reasoning-derived signals (one step of inference)
+      const shape = (reasoning && reasoning.role_shape) || {};
+      const ownership   = String(shape.ownership_level    || '').toLowerCase();
+      const complexity  = String(shape.product_complexity || '').toLowerCase();
+      const stakeholders= String(shape.stakeholder_density|| '').toLowerCase();
+      const ambiguity   = String(shape.ambiguity_level    || '').toLowerCase();
+
+      if (/principal|head|director|staff/.test(ownership)) score += 2;
+      else if (/lead/.test(ownership))                     score += 1;
+      else if (/senior\s*ic|individual\s*contributor/.test(ownership)) score -= 1;
+
+      if (/highly|systems-level/.test(complexity))         score += 2;
+      else if (/simple/.test(complexity))                  score -= 2;
+
+      if (/high/.test(stakeholders))                       score += 1;
+
+      if (/high|define\s+your\s+own/.test(ambiguity))      score += 2;
+
+      // Buckets
+      if (score <= -2) return 'compact';
+      if (score >= 3)  return 'deep';
+      return 'standard';
+    }
+
     // ─── Background analysis pipeline ────────────────────────────────────
     // Runs after the user has been navigated to the role page. Each stage
     // persists its state to jd_matches.output_json._pipeline so the role
@@ -14434,11 +14483,25 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       await persistOnce();
 
       // ── Pass 2 (narrative) ────────────────────────────────────────────
+      // Compute verbosity mode from JD length + reasoning role_shape signals.
+      // Drives output length only; section structure unchanged.
+      const _verbosityMode = _computeVerbosityMode(jdText || jdRaw, reasoning);
+      analysisRef._verbosity_mode = _verbosityMode;
+      console.log('[bg-pipeline] verbosity_mode resolved', {
+        mode: _verbosityMode,
+        jd_len: (jdText || jdRaw || '').length,
+        ownership: reasoning?.role_shape?.ownership_level || null,
+        complexity: reasoning?.role_shape?.product_complexity || null,
+      });
+
       const nT0 = performance.now();
       let narrative = null;
       try {
         if (typeof callNarrativeAPI === 'function') {
-          narrative = await callNarrativeAPI(analysisRef, reasoning, { providerOverride: 'openai' });
+          narrative = await callNarrativeAPI(analysisRef, reasoning, {
+            providerOverride: 'openai',
+            verbosityMode: _verbosityMode,
+          });
         }
       } catch (e) {
         analysisRef._narrative_error = {
@@ -27195,8 +27258,10 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
     }
 
-    async function callNarrativeAPI(extractionJson, reasoningJson, { providerOverride } = {}) {
+    async function callNarrativeAPI(extractionJson, reasoningJson, { providerOverride, verbosityMode } = {}) {
       const _p  = providerOverride || _aiProvider;
+      // Validate mode to one of the three known values; default to standard.
+      const _vm = (verbosityMode === 'compact' || verbosityMode === 'deep') ? verbosityMode : 'standard';
       const _t0 = performance.now();
       try {
         const _candidateCtx = _getCandidateContext();
@@ -27206,6 +27271,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             candidate_context: _candidateCtx,
             reasoning_json:    reasoningJson || null,
             provider:          _p,
+            verbosity_mode:    _vm,
           },
         });
         if (error) {
