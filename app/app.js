@@ -14465,8 +14465,14 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       analysisRef._provenance = {
         provider:               analysisRef._aiProvider             || null,
         analyse_jd_version:     analysisRef._analyse_jd_version     || null,
+        analyse_jd_provider:    analysisRef._analyse_jd_provider    || null,
+        analyse_jd_model:       analysisRef._analyse_jd_model       || null,
         role_reasoning_version: analysisRef._role_reasoning_version || null,
-        narrative_version:      analysisRef._narrative?._narrative_version || null,
+        reasoning_provider:     reasoning?._role_reasoning_provider || null,
+        reasoning_model:        reasoning?._role_reasoning_model    || null,
+        narrative_version:      analysisRef._narrative?._narrative_version  || null,
+        narrative_provider:     analysisRef._narrative?._narrative_provider || null,
+        narrative_model:        analysisRef._narrative?._narrative_model    || null,
       };
       const completion = _runCompletionCheck(analysisRef);
       analysisRef._completion_check = completion;
@@ -26425,7 +26431,10 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           aiResult._aiProvider  = _p; // reflect resolved provider (respects providerOverride)
           // Provenance: stamp the deployed analyse-jd prompt version so jd_matches.output_json
           // records which extraction prompt produced this result.
-          aiResult._analyse_jd_version = data.usage?.analyse_jd_version || null;
+          aiResult._analyse_jd_version  = data.usage?.analyse_jd_version || null;
+          aiResult._analyse_jd_provider = data.usage?.provider || _p;
+          aiResult._analyse_jd_model    = data.usage?.model    || null;
+          console.log('[AI] analyse-jd → ' + (aiResult._analyse_jd_provider || 'unknown') + ':' + (aiResult._analyse_jd_model || 'unknown'));
           const _outputChars    = JSON.stringify(aiResult).length;
 
           // ── Token extraction ────────────────────────────────────────────
@@ -26937,8 +26946,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         }
         const reasoning = data.reasoning;
         const _usage = data.usage || {};
-        // Stamp version so the caller can persist it.
-        reasoning._role_reasoning_version = _usage.role_reasoning_version || null;
+        // Stamp version + provider + model so the caller can persist them.
+        reasoning._role_reasoning_version  = _usage.role_reasoning_version || null;
+        reasoning._role_reasoning_provider = _usage.provider || _p;
+        reasoning._role_reasoning_model    = _usage.model    || null;
+        console.log('[AI] generate-role-reasoning → ' + (reasoning._role_reasoning_provider || 'unknown') + ':' + (reasoning._role_reasoning_model || 'unknown'));
         _logUsageEvent({
           event_type:     'ai_analysis',
           feature_key:    'role_reasoning',
@@ -27082,9 +27094,13 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           sections: Object.keys(narrative).length,
           latency:  Math.round(performance.now() - _t0) + 'ms',
         });
-        // Provenance: stamp the deployed narrative prompt version so the
-        // persisted analysis records which narrative prompt produced this output.
-        narrative._narrative_version = _usage.narrative_version || null;
+        // Provenance: stamp the deployed narrative prompt version, provider,
+        // and exact model so the persisted analysis records which prompt
+        // + which engine produced this output.
+        narrative._narrative_version  = _usage.narrative_version || null;
+        narrative._narrative_provider = _usage.provider          || _p;
+        narrative._narrative_model    = _usage.model             || null;
+        console.log('[AI] generate-narrative → ' + (narrative._narrative_provider || 'unknown') + ':' + (narrative._narrative_model || 'unknown'));
         return narrative;
       } catch (err) {
         console.warn('[generate-narrative] failed', err);
