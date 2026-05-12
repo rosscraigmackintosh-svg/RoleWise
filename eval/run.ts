@@ -20,11 +20,14 @@ interface RunResult {
   provider:        Provider
   extraction:      unknown
   extraction_usage: unknown
+  reasoning:       unknown
+  reasoning_usage: unknown
   narrative:       unknown
   narrative_usage: unknown
   errors:          string[]
   latency_ms: {
     extraction:    number
+    reasoning:     number
     narrative:     number
     total:         number
   }
@@ -82,10 +85,12 @@ async function runOne(jdId: string, jdText: string, provider: Provider): Promise
     provider,
     extraction:        null,
     extraction_usage:  null,
+    reasoning:         null,
+    reasoning_usage:   null,
     narrative:         null,
     narrative_usage:   null,
     errors:            [],
-    latency_ms:        { extraction: 0, narrative: 0, total: 0 },
+    latency_ms:        { extraction: 0, reasoning: 0, narrative: 0, total: 0 },
   }
   const t0 = performance.now()
 
@@ -107,11 +112,31 @@ async function runOne(jdId: string, jdText: string, provider: Provider): Promise
   result.extraction       = extractRes.data?.analysis ?? null
   result.extraction_usage = extractRes.data?.usage    ?? null
 
+  // ── Pass 1.5: generate-role-reasoning ──
+  const t15 = performance.now()
+  const reasoningRes = await invokeFunction('generate-role-reasoning', {
+    extraction_json:    result.extraction,
+    candidate_context:  candidateContext,
+    raw_jd_excerpt:     jdText.slice(0, 4000),
+    cleaned_jd_excerpt: jdText.slice(0, 4000),
+    provider,
+  })
+  result.latency_ms.reasoning = Math.round(performance.now() - t15)
+
+  if (reasoningRes.error) {
+    // Reasoning failure is non-fatal — narrative still runs with extraction only.
+    result.errors.push(`generate-role-reasoning: ${reasoningRes.error}`)
+  } else {
+    result.reasoning       = reasoningRes.data?.reasoning ?? null
+    result.reasoning_usage = reasoningRes.data?.usage     ?? null
+  }
+
   // ── Pass 2: generate-narrative ──
   const t2 = performance.now()
   const narrRes = await invokeFunction('generate-narrative', {
     extraction_json:   result.extraction,
     candidate_context: candidateContext,
+    reasoning_json:    result.reasoning,
     provider,
   })
   result.latency_ms.narrative = Math.round(performance.now() - t2)

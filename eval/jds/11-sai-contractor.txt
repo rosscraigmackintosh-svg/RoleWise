@@ -1,0 +1,94 @@
+Company logo for, SAFe by Scaled Agile, Inc..
+SAFe by Scaled Agile, Inc.
+
+UI/UX Designer Contractor
+
+London, England, United Kingdom · 5 hours ago · 41 applicants
+
+No response insights available yet
+
+Remote
+Contract
+Easy Apply
+
+Save
+Job match is high, we can help you stand out
+
+Your profile and resume match the required qualifications well.
+
+Show match details
+
+Tailor my resume
+
+Help me stand out
+
+Create cover letter
+
+BETA • Is this information helpful?
+
+About the job
+Scaled Agile, Inc., (SAI) is a global training and enablement platform equipping enterprises with the capabilities needed to compete in an era defined by rapid change, digital complexity, and AI-driven work. Through SAFe®—the world's most trusted system for enterprise agility—and a growing portfolio of enterprise AI education and enablement programs, we help organizations make better decisions, accelerate value delivery, and build adaptable, high-performing teams.
+
+Supported by a global partner network of more than 400 companies and a vibrant community of more than 2 million trained professionals, SAI equips leaders and teams with the skills, mental models, and operating systems they need to accelerate transformation, improve flow, and unlock value with confidence. Our newest AI-focused offerings are expanding quickly as leaders seek structured, pragmatic guidance on how to become AI-Native and realize ROI where most AI initiatives stall.
+
+SAI is headquartered in Boulder, Colorado. There is no requirement that this person live in Colorado, as we have a virtual team with regular in-person meetings. SAI is a Pledge 1% corporate philanthropy movement member. Through this program, SAI contributes to the local community and seeks to inspire and encourage other companies to do the same.
+
+Overview
+
+Job Description
+
+piplanning.io is a purpose-built SaaS web application that helps organizations plan and execute at scale, supporting PI Planning and ongoing execution with visual, collaborative workflows with dedicated whiteboard/canvas experiences.
+
+We're a small, highly accountable product team with end-to-end responsibility for piplanning.io's success inside Scaled Agile, Inc. (SAI), from discovery and delivery to supporting sales motions and helping customers succeed in the real world. Our work is used in complex, high-stakes enterprise environments, so we care deeply about clarity, reliability, and craftsmanship.
+
+(piplanning.io is part of SAI, the company behind SAFe®, supporting a global community and enterprise customers.)
+
+About The Role
+
+We're looking for a UI/UX Designer with strong B2B SaaS web-app experience who can own meaningful product areas end-to-end. You'll work closely with our customers, product, engineering, and go-to-market partners to simplify complex workflows, raise design quality, and ship improvements that customers feel immediately.
+
+What You'll Be Doing
+
+Own design from discovery to delivery: frame problems, map flows, prototype, design high-fidelity UI, partner with engineers through implementation, and iterate after release.
+Design complex B2B workflows and make them feel intuitive, fast, and "obviously correct" for enterprise users.
+Push interaction design for our purpose-built whiteboards/canvases: object models, editing states, affordances, spatial navigation, consistency, edge cases, and scalability.
+Create strong prototypes in Figma (and beyond when needed) to validate ideas early and align stakeholders.
+Contribute to (and evolve) our design system: patterns, components, interaction standards, and documentation that help us ship faster without sacrificing quality.
+Collaborate cross-functionally: Product, Engineering, Customer Success, Sales, because in our team, design is part of the full loop (value discovery → delivery → adoption → customer success → value discovery).
+Use qualitative + quantitative signals to guide decisions (customer calls, support data, product usage, feedback loops) and make tradeoffs explicit.
+
+And yes, you'll also use AI not just to work faster, but to create AI-driven capabilities for our users (e.g., smart suggestions, insight generation, automation) that measurably improve planning and execution outcomes.
+
+Qualifications
+
+A successful candidate will have:
+
+Proven product design experience for B2B SaaS web apps, with a portfolio that shows decision-making and outcomes.
+Advanced Figma skills and experience contributing to design systems and reusable patterns.
+Strong UX fundamentals: Information architecture, interaction design, visual hierarchy, accessibility, and systems thinking.
+Confidence in collaborating with engineers, comfortable discussing constraints, tradeoffs, and implementation details to protect design intent through launch.
+High ownership in small teams and the ability to drive from ambiguity to shipped outcomes.
+
+Nice to have (big plus):
+
+Experience designing whiteboard/canvas tools or other complex interaction products.
+Experience with enterprise admin concepts (roles/permissions/workspace management) and/or onboarding/activation flows.
+Familiarity with AI-assisted prototyping workflows (Lovable, Figma Make, or similar) to turn insights into prototypes for rapid user validation.
+
+Why Join Us
+
+Real ownership: you'll shape core product experiences, not just "make screens."
+High-leverage design problems: enterprise planning, visual collaboration, and complex workflows where clarity and quality matters.
+Part of Scaled Agile, Inc. with global reach and a large professional ecosystem while still operating in a focused product team.
+
+Additional Information
+
+Where you'll be working: European Country, ideally in Switzerland, Germany, United Kingdom, Ireland. We proudly support a collaborative remote environment for our globally distributed teammates, while also using our Boulder office as a resource.
+
+Terms: We are open to both part-time and full-time contracts.
+
+Wondering if You Should Apply?
+
+If you have strong B2B SaaS web-app design experience and you're excited to own problems end-to-end, especially in a product where collaboration and "canvas" interactions matter, we'd love to hear from you. You don't need to match every bullet to apply.
+
+All your information will be kept confidential according to EEO guidelines.

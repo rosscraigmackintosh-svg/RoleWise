@@ -13834,9 +13834,10 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         // (_aiProvider, _analyse_jd_version, _narrative._narrative_version) also
         // remain in place for backwards compatibility.
         _enriched._provenance = {
-          provider:           _enriched._aiProvider          || null,
-          analyse_jd_version: _enriched._analyse_jd_version  || null,
-          narrative_version:  _enriched._narrative?._narrative_version || null,
+          provider:               _enriched._aiProvider              || null,
+          analyse_jd_version:     _enriched._analyse_jd_version      || null,
+          role_reasoning_version: _enriched._role_reasoning_version  || null,
+          narrative_version:      _enriched._narrative?._narrative_version || null,
         };
         try {
           await db.from('jd_matches').update({ output_json: _enriched }).eq('id', _matchId);
@@ -25666,17 +25667,36 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           console.log('[perf] Pass 1 (analyse-jd) completed in', Math.round(performance.now() - _t0) + 'ms');
           _logUsageEvent(_logPayload);
 
-          // Fire narrative in background (non-blocking within the non-blocking AI call)
-          aiResult._narrativePromise = callNarrativeAPI(aiResult).then(narrative => {
-            if (narrative) {
-              aiResult._narrative = narrative;
-              console.log('[perf] Pass 2 (narrative) attached (background)', Object.keys(narrative));
+          // Fire reasoning (Pass 1.5) → narrative (Pass 2) sequentially in the
+          // background. If reasoning fails, narrative still runs with extraction
+          // only — the writer prompt falls back to its legacy path.
+          aiResult._narrativePromise = (async () => {
+            let reasoning = null;
+            try {
+              const _reasoningT0 = performance.now();
+              reasoning = await callRoleReasoningAPI(aiResult, jdText);
+              if (reasoning) {
+                aiResult._reasoning = reasoning;
+                aiResult._role_reasoning_version = reasoning._role_reasoning_version || null;
+                console.log('[perf] Pass 1.5 (role-reasoning) attached',
+                  Math.round(performance.now() - _reasoningT0) + 'ms',
+                  Object.keys(reasoning).filter(k => !k.startsWith('_')));
+              }
+            } catch (_p15Err) {
+              console.warn('[Pass 1.5] role-reasoning failed, falling back to extraction-only narrative', _p15Err);
             }
-            return narrative;
-          }).catch(_p2Err => {
-            console.warn('[Pass 2] narrative generation failed, using template rendering', _p2Err);
-            return null;
-          });
+            try {
+              const narrative = await callNarrativeAPI(aiResult, reasoning);
+              if (narrative) {
+                aiResult._narrative = narrative;
+                console.log('[perf] Pass 2 (narrative) attached (background)', Object.keys(narrative));
+              }
+              return narrative;
+            } catch (_p2Err) {
+              console.warn('[Pass 2] narrative generation failed, using template rendering', _p2Err);
+              return null;
+            }
+          })();
 
           return aiResult;
         } catch (err) {
@@ -26053,15 +26073,88 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     // decision narrative from Pass 1 structured JSON.
     // Returns the narrative object on success, or null on failure.
     // This is the FINAL output step. No refinement pass follows.
-    async function callNarrativeAPI(extractionJson) {
+    // ─── Role reasoning call (Pass 1.5) ────────────────────────────────────
+    // Reads the Pass 1 extraction + candidate context + JD excerpt and returns
+    // structured interpretive observations. The narrative pass then writes from
+    // those observations rather than rediscovering them under writing pressure.
+    // Fails open: returns null on any error so the narrative pass can fall
+    // back to the legacy extraction-only path.
+    async function callRoleReasoningAPI(extractionJson, jdText) {
+      const _t0 = performance.now();
+      try {
+        const _candidateCtx = _getCandidateContext();
+        // Cap excerpts at ~4000 chars. Most JDs fit within this window, and the
+        // highest-signal operational vocabulary (object models, editing states,
+        // canvas/whiteboard, workflow orchestration) is often mid-document — a
+        // 1000-char cap was truncating before the most distinctive content.
+        const _raw = typeof jdText === 'string' ? jdText.slice(0, 4000) : '';
+        const _cleaned = (typeof cleanJobDescription === 'function' && _raw)
+          ? cleanJobDescription(_raw).slice(0, 4000)
+          : '';
+        const { data, error } = await db.functions.invoke('generate-role-reasoning', {
+          body: {
+            extraction_json:    extractionJson,
+            candidate_context:  _candidateCtx,
+            raw_jd_excerpt:     _raw,
+            cleaned_jd_excerpt: _cleaned,
+            provider:           _aiProvider,
+          },
+        });
+        if (error) {
+          console.error('[generate-role-reasoning invoke error]', error);
+          _logUsageEvent({
+            event_type:   'ai_analysis',
+            feature_key:  'role_reasoning',
+            provider:     _aiProvider,
+            route:        'generate-role-reasoning',
+            request_type: 'edge_function',
+            status:       'error',
+            latency_ms:   Math.round(performance.now() - _t0),
+            metadata:     { error_message: error.message || String(error) },
+          });
+          return null;
+        }
+        if (!data?.reasoning) {
+          console.warn('[generate-role-reasoning] no reasoning in response', data);
+          return null;
+        }
+        const reasoning = data.reasoning;
+        const _usage = data.usage || {};
+        // Stamp version so the caller can persist it.
+        reasoning._role_reasoning_version = _usage.role_reasoning_version || null;
+        _logUsageEvent({
+          event_type:     'ai_analysis',
+          feature_key:    'role_reasoning',
+          provider:       _usage.provider || _aiProvider,
+          route:          'generate-role-reasoning',
+          request_type:   'edge_function',
+          status:         'success',
+          latency_ms:     Math.round(performance.now() - _t0),
+          model:          _usage.model || null,
+          input_tokens:   _usage.input_tokens || null,
+          output_tokens:  _usage.output_tokens || null,
+          metadata: {
+            schema_failures:        _usage.schema_failures || null,
+            role_reasoning_version: _usage.role_reasoning_version || null,
+          },
+        });
+        return reasoning;
+      } catch (err) {
+        console.warn('[generate-role-reasoning] failed', err);
+        return null;
+      }
+    }
+
+    async function callNarrativeAPI(extractionJson, reasoningJson) {
       const _t0 = performance.now();
       try {
         const _candidateCtx = _getCandidateContext();
         const { data, error } = await db.functions.invoke('generate-narrative', {
           body: {
-            extraction_json: extractionJson,
+            extraction_json:   extractionJson,
             candidate_context: _candidateCtx,
-            provider: _aiProvider,
+            reasoning_json:    reasoningJson || null,
+            provider:          _aiProvider,
           },
         });
         if (error) {

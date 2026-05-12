@@ -377,7 +377,12 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { extraction_json, candidate_context, provider: requestedProvider } = await req.json()
+    const {
+      extraction_json,
+      candidate_context,
+      reasoning_json,
+      provider: requestedProvider,
+    } = await req.json()
 
     if (!extraction_json || typeof extraction_json !== 'object') {
       return new Response(
@@ -385,6 +390,8 @@ serve(async (req: Request) => {
         { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
       )
     }
+
+    const hasReasoning = !!(reasoning_json && typeof reasoning_json === 'object')
 
     const provider: AIProvider = requestedProvider === 'openai' ? 'openai' : 'anthropic'
     const apiKey = provider === 'openai' ? OPENAI_API_KEY : ANTHROPIC_API_KEY
@@ -399,7 +406,15 @@ serve(async (req: Request) => {
       )
     }
 
-    let userMessage = `Here is the structured JSON from Pass 1 extraction:\n\n${JSON.stringify(extraction_json, null, 2)}`
+    // Build user message. When reasoning_json is present, lead with it so the
+    // writer prioritises interpreted observations over raw extraction.
+    // Extraction is still included for grounding and practical-detail accuracy.
+    let userMessage = ''
+    if (hasReasoning) {
+      userMessage += `REASONING (from Pass 1.5 — interpreted observations to prioritise):\n\n${JSON.stringify(reasoning_json, null, 2)}\n\n---\n\n`
+    }
+    userMessage += `EXTRACTION JSON (from Pass 1 — for practical-detail grounding):\n\n${JSON.stringify(extraction_json, null, 2)}`
+
     const candidateBlock = formatCandidateContext(candidate_context || null)
     if (candidateBlock) {
       userMessage += '\n\n---\n\n' + candidateBlock
@@ -443,6 +458,12 @@ serve(async (req: Request) => {
     // Provenance — stamp the deployed prompt version on every response so the
     // client can persist it alongside the narrative for replay/regression.
     usage.narrative_version = NARRATIVE_VERSION
+
+    // Diagnostic: confirm whether reasoning input was received and consumed.
+    console.log('[generate-narrative] OK (' + provider + ')', JSON.stringify({
+      reasoning_received: hasReasoning,
+      reasoning_keys:     hasReasoning ? Object.keys(reasoning_json as Record<string, unknown>) : [],
+    }))
 
     return new Response(
       JSON.stringify({ narrative, usage }),
