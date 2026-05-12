@@ -14156,6 +14156,13 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // even after the user navigates away from this code path.
       if (_matchId) {
         console.log('[ingestion] BACKGROUND_PIPELINE_STARTED', { match_id: _matchId });
+        // Scope check — verifies hoisted JD vars are reachable here (outside try block).
+        console.log('[ingestion] JD_TEXT_SCOPE_CHECK', {
+          rawType:  typeof jd_raw,
+          rawLen:   jd_raw?.length  || 0,
+          cleanType: typeof jd,
+          cleanLen: jd?.length || 0,
+        });
         if (!jd_raw && !jd) {
           console.error('[ingest] JD text missing — cannot start background pipeline');
           analysis._pipeline = analysis._pipeline || {};
@@ -14171,7 +14178,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           ];
           // Do not throw — overlay must still close and role page must still open.
         } else {
-          const _bgPromise = _runBackgroundPipeline(_matchId, analysis, savedRole, jd_raw, jd, _pipelineT0);
+          // _pipeT0 is the outer-scope pipeline start time (line ~13768), in scope here.
+          // _pipelineT0 was a const inside the try block — not accessible here.
+          const _bgPromise = _runBackgroundPipeline(_matchId, analysis, savedRole, jd_raw, jd, _pipeT0);
           _bgPromise.catch(err => console.error('[bg-pipeline] unhandled error:', err));
           console.log('[ingestion] BACKGROUND_PIPELINE_NOT_AWAITED', { match_id: _matchId, promise_pending: true });
         }
