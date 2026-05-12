@@ -18194,6 +18194,182 @@ a.rw-rail-contact-name:hover {
   color: var(--text-light);
 }
 
+/* ── Patterns v2 ───────────────────────────────────────────────────────────
+   Calm pattern surface — four cards in a 2x2 grid + one editorial "What this
+   suggests" panel + short Recent signals list. Reuses the rwa-page shell and
+   the rwi-context strip from Insights so the chrome rhymes across the
+   Intelligence group. No charts, no scoring, no gamification. */
+
+.rwp-page-inner { padding-bottom: 80px; }
+
+.rwp-head { align-items: flex-start; }
+.rwp-sub  { margin-top: 6px; }
+
+.rwp-context { padding-top: 8px; }
+
+/* Cards grid — 2 columns desktop, 1 column under 900px */
+.rwp-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 28px;
+}
+@media (max-width: 900px) {
+  .rwp-cards { grid-template-columns: 1fr; }
+}
+
+.rwp-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 20px 22px 18px;
+}
+.rwp-card--empty { background: var(--bg); }
+
+.rwp-card-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-light);
+  margin-bottom: 8px;
+}
+
+.rwp-card-title {
+  font-size: 15.5px;
+  font-weight: 500;
+  color: var(--text);
+  margin: 0 0 6px;
+  letter-spacing: -0.005em;
+}
+
+.rwp-card-sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+.rwp-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rwp-item {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  padding: 9px 0;
+  border-top: 1px dashed var(--border-light);
+}
+.rwp-item:first-child { border-top: none; padding-top: 0; }
+
+.rwp-card-empty {
+  font-size: 12.5px;
+  color: var(--text-light);
+  font-style: italic;
+  padding: 6px 0 2px;
+}
+
+/* "What this suggests" editorial panel */
+.rwp-suggests {
+  margin-top: 32px;
+  padding: 22px 24px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-2);
+  border-radius: 8px;
+}
+.rwp-suggests-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.rwp-suggests-body {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.6;
+  max-width: 62ch;
+}
+
+/* Recent signals list */
+.rwp-recent {
+  margin-top: 32px;
+}
+.rwp-recent-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-light);
+  margin-bottom: 10px;
+}
+.rwp-recent-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rwp-signal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-light);
+  font-size: 13px;
+}
+.rwp-signal-row:first-child { border-top: none; }
+.rwp-signal-co { color: var(--text); }
+.rwp-signal-state {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* Empty state (under-threshold) */
+.rwp-empty {
+  margin-top: 32px;
+  max-width: 56ch;
+}
+.rwp-empty-mark {
+  width: 24px;
+  height: 2px;
+  background: var(--border);
+  margin-bottom: 14px;
+}
+.rwp-empty-t {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.rwp-empty-s {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+.rwp-empty-track {
+  height: 4px;
+  background: var(--border-light);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.rwp-empty-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+
 /* ── Filter segment (sits in header right slot) ────────────────────────── */
 .rwd-filter {
   display: inline-flex;

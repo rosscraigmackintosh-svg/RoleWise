@@ -26300,7 +26300,6 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     // live pages yet. They render a calm placeholder rather than inventing
     // page content. Each entry has a title and a one-line description.
     const PLACEHOLDER_PAGES = {
-      patterns:      { title: 'Patterns',          description: 'This area will collect recurring patterns surfaced from your decisions once available.' },
       career_memory: { title: 'Career Memory',     description: 'This area will collect long-term context from your search once available.' },
       snapshots:     { title: 'Snapshots',         description: 'This area will collect saved snapshots of roles and decisions once available.' },
       documents:     { title: 'Documents',         description: 'This area will collect CVs, cover letters, and other documents once available.' },
@@ -33964,6 +33963,171 @@ If a field cannot be determined from the message, return null for that field.`,
       modal.addEventListener('keydown', e => { if (e.key === 'Escape') _close(); });
     }
 
+    // ─── Patterns view ────────────────────────────────────────────────────────
+    // Calm pattern surface over candidate_learning. Four pattern cards in a 2x2
+    // grid, one editorial "What this suggests" panel, and a short Recent signals
+    // list. Empty state when total_roles_analysed is below the threshold.
+    //
+    // Sections map to candidate_learning columns:
+    //   roles_you_pursue          → "Roles you tend to engage with"
+    //   successful_role_patterns  → "Strong-fit signals"
+    //   friction_patterns         → "Common friction points"
+    //   recurring_blockers        → "Repeated blockers"
+    function renderPatternsView() {
+      const el = document.getElementById('col-overview-cards');
+      if (!el) return;
+      el.classList.remove('col-ov--legacy-doc'); // v2 page scrolls internally
+      _updateNavCounts();
+      const railSec = document.getElementById('col-rail-section');
+      if (railSec) railSec.innerHTML = '';
+      _setRailVisible(false);
+
+      const learning = _candidateLearning || {};
+      const totalAnalysed    = Number(learning.total_roles_analysed || 0);
+      const totalApplied     = Number(learning.total_applied        || 0);
+      const totalSkipped     = Number(learning.total_skipped        || 0);
+      const totalInterviewed = Number(learning.total_interviewed    || 0);
+
+      const THRESHOLD = 5; // minimum roles before any patterns are surfaced
+      const enough    = totalAnalysed >= THRESHOLD;
+
+      const pursue           = Array.isArray(learning.roles_you_pursue)         ? learning.roles_you_pursue         : [];
+      const successful       = Array.isArray(learning.successful_role_patterns) ? learning.successful_role_patterns : [];
+      const frictions        = Array.isArray(learning.friction_patterns)        ? learning.friction_patterns        : [];
+      const recurringBlocks  = Array.isArray(learning.recurring_blockers)       ? learning.recurring_blockers       : [];
+
+      const headerHtml = `
+        <header class="rwa-header rwp-head">
+          <div class="rwp-head-l">
+            <h1 class="rwa-title">Patterns</h1>
+            <p class="rwa-sub rwp-sub">Signals emerging from your role decisions over time.</p>
+          </div>
+        </header>`;
+
+      const contextHtml = `
+        <div class="rwi-context rwp-context">
+          <span class="rwi-context-part"><span class="rwi-context-v">${totalAnalysed}</span> <span class="rwi-context-k">roles analysed</span></span>
+          <span class="rwi-context-dot"></span>
+          <span class="rwi-context-part"><span class="rwi-context-v">${totalApplied}</span> <span class="rwi-context-k">applied</span></span>
+          <span class="rwi-context-dot"></span>
+          <span class="rwi-context-part"><span class="rwi-context-v">${totalSkipped}</span> <span class="rwi-context-k">skipped</span></span>
+          <span class="rwi-context-dot"></span>
+          <span class="rwi-context-part"><span class="rwi-context-v">${totalInterviewed}</span> <span class="rwi-context-k">interviewed</span></span>
+        </div>`;
+
+      if (!enough) {
+        const pct = Math.min(100, (totalAnalysed / THRESHOLD) * 100);
+        el.innerHTML = `
+          <div class="rwa-page rwp-page">
+            <div class="rwa-page-inner rwp-page-inner">
+              ${headerHtml}
+              <div class="rwo-divider"></div>
+              ${contextHtml}
+              <div class="rwp-empty">
+                <div class="rwp-empty-mark"></div>
+                <div class="rwp-empty-t">Not enough role history yet.</div>
+                <p class="rwp-empty-s">
+                  Patterns will appear once more roles have been analysed.
+                  So far: ${totalAnalysed} of ~${THRESHOLD} needed to surface early patterns.
+                </p>
+                <div class="rwp-empty-track">
+                  <div class="rwp-empty-fill" style="width: ${pct}%"></div>
+                </div>
+              </div>
+            </div>
+          </div>`;
+        return;
+      }
+
+      // ── Pattern cards ────────────────────────────────────────────────────
+      const cardHtml = (key, title, sub, items) => {
+        if (!items.length) {
+          return `
+            <div class="rwp-card rwp-card--empty">
+              <div class="rwp-card-eyebrow">${esc(key)}</div>
+              <h3 class="rwp-card-title">${esc(title)}</h3>
+              <p class="rwp-card-sub">${esc(sub)}</p>
+              <div class="rwp-card-empty">No clear pattern yet.</div>
+            </div>`;
+        }
+        const itemsHtml = items.slice(0, 5).map(s => `<li class="rwp-item">${esc(String(s))}</li>`).join('');
+        return `
+          <div class="rwp-card">
+            <div class="rwp-card-eyebrow">${esc(key)}</div>
+            <h3 class="rwp-card-title">${esc(title)}</h3>
+            <p class="rwp-card-sub">${esc(sub)}</p>
+            <ul class="rwp-list">${itemsHtml}</ul>
+          </div>`;
+      };
+      const cardsHtml = `
+        <div class="rwp-cards">
+          ${cardHtml('01', 'Roles you tend to engage with', 'Recurring shape of roles you choose to pursue.', pursue)}
+          ${cardHtml('02', 'Strong-fit signals',            'Themes that have shown up in roles you have applied to or progressed in.', successful)}
+          ${cardHtml('03', 'Common friction points',         'Recurring sources of friction surfaced across roles.', frictions)}
+          ${cardHtml('04', 'Repeated blockers',              'Themes that have come up multiple times as reasons to skip.', recurringBlocks)}
+        </div>`;
+
+      // ── What this suggests — calm editorial reading of the pattern data ─
+      const suggests = [];
+      if (pursue.length && successful.length) {
+        suggests.push('The shape of roles you choose to pursue overlaps with the shape of roles that have progressed.');
+      } else if (pursue.length && !successful.length) {
+        suggests.push('A clear shape is emerging in roles you pursue, but outcomes have not accumulated yet.');
+      }
+      if (frictions.length && recurringBlocks.length) {
+        suggests.push('Friction and blocker themes are converging. Recurring concerns are stable enough to name.');
+      } else if (frictions.length) {
+        suggests.push('Friction themes are showing up across roles. Worth scanning what recurs.');
+      } else if (recurringBlocks.length) {
+        suggests.push('A handful of recurring blockers are starting to show up across skipped roles.');
+      }
+      if (!suggests.length) {
+        suggests.push('Patterns are still settling. Each new decision sharpens the picture.');
+      }
+      const suggestsHtml = `
+        <section class="rwp-suggests">
+          <div class="rwp-suggests-eyebrow">What this suggests</div>
+          <p class="rwp-suggests-body">${suggests.map(esc).join(' ')}</p>
+        </section>`;
+
+      // ── Recent signals — last 5 roles with their current state ──────────
+      const recent = (Array.isArray(allRoles) ? allRoles : [])
+        .filter(r => r && r.company_name)
+        .slice()
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, 5);
+      let recentHtml = '';
+      if (recent.length) {
+        const stateLabel = (r) => {
+          if (r.outcome_state) return String(r.outcome_state).replace(/_/g, ' ');
+          if (r.current_stage) return String(r.current_stage);
+          return 'Reviewed';
+        };
+        const rows = recent.map(r => `
+          <li class="rwp-signal-row">
+            <span class="rwp-signal-co">${esc(r.company_name)}${r.role_title ? ' · ' + esc(r.role_title) : ''}</span>
+            <span class="rwp-signal-state">${esc(stateLabel(r))}</span>
+          </li>`).join('');
+        recentHtml = `
+          <section class="rwp-recent">
+            <div class="rwp-recent-eyebrow">Recent signals</div>
+            <ul class="rwp-recent-list">${rows}</ul>
+          </section>`;
+      }
+
+      el.innerHTML = `
+        <div class="rwa-page rwp-page">
+          <div class="rwa-page-inner rwp-page-inner">
+            ${headerHtml}
+            <div class="rwo-divider"></div>
+            ${contextHtml}
+            ${cardsHtml}
+            ${suggestsHtml}
+            ${recentHtml}
+          </div>
+        </div>`;
+    }
+
     function renderPlaceholderView(key) {
       const page = PLACEHOLDER_PAGES[key];
       if (!page) return;
@@ -34171,7 +34335,7 @@ If a field cannot be determined from the message, return null for that field.`,
       }
 
       // ── Full interactive views ─────────────────────────────────────────────────
-      const FULL_VIEWS = { 'profile': renderProfileView, 'review': renderReviewView, 'recruiters': renderRecruitersView, 'safeguards': renderSafeguardsView, 'admin': renderAdminView, 'applications_timeline': renderApplicationsView, 'decisions': renderDecisionsView, 'insights': renderInsightsView };
+      const FULL_VIEWS = { 'profile': renderProfileView, 'review': renderReviewView, 'recruiters': renderRecruitersView, 'safeguards': renderSafeguardsView, 'admin': renderAdminView, 'applications_timeline': renderApplicationsView, 'decisions': renderDecisionsView, 'insights': renderInsightsView, 'patterns': renderPatternsView };
       if (FULL_VIEWS[view]) {
         selectedRoleId = null;
         document.querySelectorAll('.inbox-role').forEach(r => r.classList.remove('active'));
