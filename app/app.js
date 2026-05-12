@@ -24541,6 +24541,40 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const t     = text.toLowerCase();
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
+      // ── Job-board header pre-pass (Welcome to the Jungle / Otta style) ───
+      // First meaningful content line on these boards is "<role title>, <company>".
+      // Parse it deterministically before any label-based regex runs so that
+      // page chrome like "Role\nWho you are" can never poison the extraction.
+      let _hdrTitle = null, _hdrCompany = null;
+      {
+        const _navNoise = /^(home|jobs|companies|inbox|you|menu|search|save|share|apply|follow|message|hide|report|view|insights?|company|role|job|desirable|who you are|what the job involves|salary benchmarks|our take)$/i;
+        const _roleKw   = /(?:designer|engineer|manager|director|lead|analyst|head of|specialist|officer|consultant|developer|architect|product|senior|principal|associate|junior|vp|chief|strategist|writer|researcher|scientist)/i;
+        const _scan = lines.slice(0, 12);
+        for (const ln of _scan) {
+          if (_navNoise.test(ln)) continue;
+          // Must have exactly one comma, both sides non-empty, left side
+          // contains a role keyword, right side looks like a company name
+          // (short, capitalised, no prose connectives).
+          if (!/,/.test(ln)) continue;
+          const _commaIdx = ln.indexOf(',');
+          const _left  = ln.slice(0, _commaIdx).trim();
+          const _right = ln.slice(_commaIdx + 1).trim();
+          if (!_left || !_right) continue;
+          if (_left.length < 6 || _left.length > 80)  continue;
+          if (_right.length < 2 || _right.length > 40) continue;
+          if (!_roleKw.test(_left)) continue;
+          if (/\b(and|the|for|with|that|this|from|is|a|an|or|of)\b/i.test(_right)) continue;
+          if (/[;:!?@]/.test(_right)) continue;
+          // Right side: 1-4 short words, starts with a capital
+          const _rw = _right.split(/\s+/);
+          if (_rw.length > 4) continue;
+          if (!/^[A-Z]/.test(_right)) continue;
+          _hdrTitle   = _left.replace(/[.,:]+$/, '').trim();
+          _hdrCompany = _right.replace(/[.,:]+$/, '').trim();
+          break;
+        }
+      }
+
       // ── LinkedIn header pre-pass ────────────────────────────────────────────
       // When raw text contains "About the job", the lines above it are LinkedIn
       // UI chrome that contains structured metadata: company name, job title,
@@ -24633,7 +24667,15 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const _titleBlacklist = ['about the job', 'overview', 'role overview', 'job description',
         'about you', 'about us', 'description', 'responsibilities', 'requirements',
         'qualifications', 'benefits', 'introduction', 'summary', 'the role',
-        'the position', 'apply now', 'apply here'];
+        'the position', 'apply now', 'apply here',
+        // Job-board section headings and tab labels — these are page chrome,
+        // never role titles. Stops "Role\nWho you are" from being captured as
+        // role_title="Who you are".
+        'who you are', 'role', 'job', 'company', 'desirable',
+        'what the job involves', 'salary benchmarks', 'our take', 'insights',
+        'company benefits', 'company equity', 'share this job', 'hide company',
+        'view more jobs', 'follow company', 'be an early applicant',
+        'home', 'jobs', 'companies', 'inbox', 'you'];
       const _titleLocWords  = ['remote', 'hybrid', 'on-site', 'united kingdom', 'london'];
       const _isValidTitle = (s) => {
         if (!s || s.length < 4) return false;
@@ -24645,12 +24687,23 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         return true;
       };
 
+      // (0) Job-board header pre-pass result (highest priority — deterministic)
+      if (_hdrTitle && _isValidTitle(_hdrTitle)) {
+        role_title = _hdrTitle.replace(/\s+/g, ' ');
+        _titleSource = 'jd_board_header';
+      }
+
       // (1) Explicit label: "Job Title: ...", "Role: ...", "Position: ..."
-      const titleLabelRe = /^(?:job\s+title|role|position|title|vacancy)[:\s]+(.{3,80})/im;
-      const tlMatch = text.match(titleLabelRe);
-      if (tlMatch?.[1]?.trim() && _isValidTitle(tlMatch[1].trim())) {
-        role_title = tlMatch[1].trim().replace(/\s+/g, ' ');
-        _titleSource = 'jd_label';
+      // Separator MUST be ':' or '-' or '—' on the same line — never whitespace
+      // alone, otherwise a standalone "Role" line followed by "Who you are"
+      // captures the next line as the title.
+      if (!role_title) {
+        const titleLabelRe = /^(?:job\s+title|role|position|title|vacancy)\s*[:\-—]\s*([^\n]{3,80})/im;
+        const tlMatch = text.match(titleLabelRe);
+        if (tlMatch?.[1]?.trim() && _isValidTitle(tlMatch[1].trim())) {
+          role_title = tlMatch[1].trim().replace(/\s+/g, ' ');
+          _titleSource = 'jd_label';
+        }
       }
 
       // (2) First short top line that reads like a job title
@@ -24738,11 +24791,20 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         'responsibilities', 'requirements', 'qualifications', 'benefits', 'description',
         'the position', 'the role', 'the team', 'what you', 'who we', 'why join',
       ];
+      // Section headings / tab labels that must never be accepted as company.
+      // Exact-match check so legitimate names containing these substrings pass.
+      const _companyExactReject = new Set([
+        'role', 'job', 'company', 'who you are', 'you', 'desirable',
+        'salary benchmarks', 'our take', 'insights', 'home', 'jobs',
+        'companies', 'inbox', 'what the job involves', 'apply', 'save',
+        'follow', 'follow company', 'hide company', 'share this job',
+      ]);
       const _companyLocWords  = ['remote', 'hybrid', 'united kingdom', 'london'];
       const _isValidCompany = c => {
         if (!c || c.length < 3) return false;
         if (c.endsWith(':')) return false;                        // section label
         const cl = c.toLowerCase();
+        if (_companyExactReject.has(cl)) return false;           // hard reject section headings
         if (_companyBlacklist.some(w => cl.includes(w))) return false;
         if (_companyLocWords.some(w => cl.includes(w)))  return false;
         if (c.split(' ').length > 6) return false;               // too long
@@ -24752,12 +24814,17 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
       let company_name = null;
 
+      // ── Priority -1: Job-board header pre-pass (deterministic, highest) ──
+      if (_hdrCompany && _isValidCompany(_hdrCompany)) {
+        company_name = _hdrCompany;
+      }
+
       // ── Priority 0: Title-anchored detection ──────────────────────────────
       // LinkedIn (and similar) paste structure: the company name sits on the
       // line immediately before the job title. Find the title line in the
       // cleaned text, then walk backward to the preceding non-noise line and
       // validate it strictly as a company name.
-      if (role_title) {
+      if (!company_name && role_title) {
         // Lines that appear between company and title in LinkedIn pastes — skip these
         const _SKIP_LINES = /^(location|employment\s+type|department|overview|application|about(\s+us)?|responsibilities|apply(\s+now)?|privacy\s+policy|job\s+type|seniority(\s+level)?|full.time|part.time|contract|temporary|remote|hybrid|on.site|save|message|connect|follow|promoted|share|easy\s+apply|job\s+function|industries)\s*:?\s*$/i;
         // Find the title line — case-insensitive, stripping trailing punctuation
@@ -24796,8 +24863,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         /\bjoin\s+([A-Z][a-zA-Z0-9\s&.,'-]{1,50?})(?:\s*[,!\n]|$)/im,       // "Join Acme"
         /\bthe\s+([A-Z][a-zA-Z0-9\s&.,'-]{1,50?})\s+team\b/,                // "the Acme team"
         /^(?:about|join)\s+([A-Z][a-zA-Z0-9\s&.,'-]{1,50})\s*$/m,
-        /^client[:\s-]+(.{2,60})/im,
-        /^company[:\s]+(.{2,60})/im,
+        // Separator MUST be ':' or '-' on the same line — never whitespace
+        // alone, otherwise a standalone "Company" line followed by "Role"
+        // captures the next line as the company.
+        /^client\s*[:\-]\s*([^\n]{2,60})/im,
+        /^company\s*[:\-]\s*([^\n]{2,60})/im,
         /([A-Z][a-zA-Z0-9\s&.,'-]{1,50})\s+is\s+(?:a\s+)?(?:leading|global|fast.growing|growing)/,
         /©\s*(?:\d{4}\s+)?([A-Z][a-zA-Z0-9\s&.,'-]{1,50})(?:\s|$)/,
       ];
@@ -24833,27 +24903,52 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // ── Location & remote model ───────────────────────────────────────────────
       let location = null;
       let remote_model = null;
+      let office_days = null;
+      // Partial-office patterns must be tested BEFORE generic "in office".
+      // "2 days a week in office" / "minimum two days per week" / "Anchor Days"
+      // are hybrid signals, not on-site signals.
+      const _partialOfficeRe = /(\d+|one|two|three|four)\s*(?:\+|or\s+more)?\s*days?\s*(?:a|per)\s*week\s*(?:in\s*(?:the\s*)?office|on[-\s]?site|in\s*office)/i;
+      const _anchorDaysRe    = /anchor\s+days?/i;
+      const _minDaysRe       = /minimum\s+(\d+|one|two|three|four)\s+days?\s+per\s+week/i;
+      const _isPartialOffice = _partialOfficeRe.test(text) || _anchorDaysRe.test(text) || _minDaysRe.test(text);
+      const _wordToNum = w => ({ one:1, two:2, three:3, four:4 }[String(w).toLowerCase()] || parseInt(w,10) || null);
+
       if (['fully remote', 'remote-first', 'remote role', 'remote only', '100% remote'].some(p => t.includes(p)))
         remote_model = 'Remote';
-      else if (t.includes('hybrid'))
+      else if (t.includes('hybrid') || _isPartialOffice)
         remote_model = 'Hybrid';
       else if (['on-site', 'onsite', 'in-office', 'in office', 'office-based', 'office based'].some(p => t.includes(p)))
         remote_model = 'On-site';
+
+      // Capture office_days when stated (e.g. "2 days a week in office", "minimum two days per week").
+      const _odMatch = text.match(_partialOfficeRe) || text.match(_minDaysRe);
+      if (_odMatch && _odMatch[1]) office_days = _wordToNum(_odMatch[1]);
       const locPatterns = [
         // Label-anchored: "Location: London Area, United Kingdom"
         /\blocation[:\s]+([A-Z][a-zA-Z ,]{3,60}?)(?:\s*\n|$)/im,
         // "London Area, United Kingdom" — handles multi-word city/area names
         /([A-Z][a-zA-Z ]{2,35}?),\s*(?:United Kingdom|United States|UK|US|Ireland|England|Scotland|Wales|Australia|Canada)\b/,
+        // "This role is based in the UK" / "based in the United Kingdom"
+        /\brole\s+is\s+based\s+in\s+(?:the\s+)?(United Kingdom|UK|United States|US|Ireland|Germany|France|Canada|Australia)\b/i,
+        /\bbased\s+in\s+(?:the\s+)?(United Kingdom|UK|United States|US|Ireland|Germany|France|Canada|Australia)\b/i,
         /\bbased in ([A-Z][a-zA-Z ]{3,30}?)(?:\s*[,\n.]|$)/,
         /\boffice in ([A-Z][a-zA-Z ]{3,30}?)(?:\s*[,\n.]|$)/,
       ];
       for (const re of locPatterns) {
         const m = raw.match(re);
-        if (m?.[1]?.trim().length > 2) { location = m[1].trim().replace(/\s+/g, ' '); break; }
+        if (m?.[1] && m[1].trim().length >= 2) { location = m[1].trim().replace(/\s+/g, ' '); break; }
       }
       // Normalise location — strip intermediate region labels (e.g. "England", "California")
       if (location) location = normaliseLocation(location);
       // Keep location and remote_model separate — do NOT combine them into the location field
+
+      // ── Office hubs (Welcome to the Jungle / similar) ─────────────────────────
+      // "If you are local to one of our hubs (Manchester, London, or Dublin)"
+      let office_hubs = null;
+      const _hubsMatch = raw.match(/hubs?\s*\(([^)]{3,120})\)/i);
+      if (_hubsMatch && _hubsMatch[1]) {
+        office_hubs = _hubsMatch[1].replace(/,?\s+or\s+/i, ', ').replace(/\s{2,}/g, ' ').replace(/,\s*,/g, ',').trim();
+      }
 
       // ── Employment type ────────────────────────────────────────────────────────
       // LinkedIn-exact line detection takes priority — extract verbatim values
@@ -24883,7 +24978,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const hasSalaryCue = /[£€$]/.test(raw) ||
         ['salary', 'compensation', 'per year', 'per annum', '/year', '/yr', 'ote'].some(p => t.includes(p));
       if (hasSalaryCue) {
-        const salFig = raw.match(/[£€$][\d,]+(?:k|K)?(?:\s*(?:[-–]\s*[£€$]?[\d,]+(?:k|K)?))?\s*(?:per\s+annum|p\.?a\.?|\/year|\/yr|per year|annually)?/i);
+        // Allow decimal-k shorthand on both sides of the range:
+        //   £73.1-99.1k   £73.1k-£99.1k   £70k - £90k   £73,100-£99,100   £90,000
+        const salFig = raw.match(/[£€$][\d,]+(?:\.\d+)?(?:k|K)?(?:\s*(?:[-–]\s*[£€$]?[\d,]+(?:\.\d+)?(?:k|K)?))?\s*(?:per\s+annum|p\.?a\.?|\/year|\/yr|per year|annually)?/i);
         if (salFig) {
           const _salRaw = salFig[0].replace(/\s+/g, ' ').trim();
           // Guard 1: reject garbage values like £0, $0, £0 - £0, £1, $1
@@ -24906,13 +25003,31 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           const _isMagnitudeMeta = /^\s*(?:million|billion|trillion|m\b|bn?\b|tn?\b)/i.test(_afterFigMeta);
 
           if (_salFirstNum > 1 && !_isNonSalaryCue && !_isMagnitudeMeta && _salPassesMin) {
-            salary_annual = _salRaw;
-            const numStr = _salRaw.match(/[\d,]+/)?.[0]?.replace(/,/g, '');
-            if (numStr && _salRaw[0] === '£') {
-              let num = parseInt(numStr, 10);
-              if (/k/i.test(_salRaw)) num *= 1000;
-              if (num >= 10000 && num <= 1000000) {
-                salary_monthly = `~£${Math.round(num / 12).toLocaleString()} / month`;
+            // Normalise display: "£73.1-99.1k" → "£73.1k–£99.1k", "£70k-£90k" → "£70k–£90k"
+            const _hasK = /k/i.test(_salRaw);
+            const _numPair = _salRaw.match(/[\d,]+(?:\.\d+)?/g) || [];
+            const _ccy = _salRaw[0];
+            let _norm = _salRaw;
+            if (_numPair.length === 2 && _hasK) {
+              _norm = `${_ccy}${_numPair[0]}k–${_ccy}${_numPair[1]}k`;
+            } else if (_numPair.length === 2) {
+              _norm = `${_ccy}${_numPair[0]}–${_ccy}${_numPair[1]}`;
+            }
+            salary_annual = _norm;
+            // Monthly equivalent — handle decimal-k via parseFloat.
+            if (_numPair.length && _ccy === '£') {
+              const _toAnnual = (s) => {
+                const f = parseFloat(s.replace(/,/g, ''));
+                return _hasK ? f * 1000 : f;
+              };
+              const _low  = _toAnnual(_numPair[0]);
+              const _high = _numPair.length === 2 ? _toAnnual(_numPair[1]) : _low;
+              if (_low >= 10000 && _high <= 2000000) {
+                const _mLow  = Math.round(_low  / 12);
+                const _mHigh = Math.round(_high / 12);
+                salary_monthly = (_numPair.length === 2 && _mLow !== _mHigh)
+                  ? `≈ £${_mLow.toLocaleString()}–£${_mHigh.toLocaleString()} / month`
+                  : `~£${_mLow.toLocaleString()} / month`;
               }
             }
           }
@@ -24924,7 +25039,23 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       if (!role_title   && _liTitle)   { role_title = _liTitle; _titleSource = 'linkedin_header'; }
       if (!location     && _liLocation) location = _liLocation;
 
-      return { company_name, role_title, job_url, location, remote_model, contract_type, working_pattern, salary_annual, salary_monthly, title_source: _titleSource };
+      // ── Poisoned-metadata guard (final hard reject) ──────────────────────────
+      // Even if a value made it through the earlier validators, refuse to emit
+      // a value that exactly matches a known section heading or tab label.
+      // These are page chrome, never role/company data.
+      const _poisonedTitles    = new Set(['who you are','role','job','company','desirable','what the job involves','about','our take','insights','salary benchmarks']);
+      const _poisonedCompanies = new Set(['role','job','company','who you are','you','desirable','salary benchmarks','our take','insights','home','jobs','companies','inbox']);
+      if (role_title && _poisonedTitles.has(role_title.trim().toLowerCase())) {
+        console.warn('[ingestion] INGESTION_METADATA_POISONED title rejected:', role_title);
+        role_title = null;
+        _titleSource = null;
+      }
+      if (company_name && _poisonedCompanies.has(company_name.trim().toLowerCase())) {
+        console.warn('[ingestion] INGESTION_METADATA_POISONED company rejected:', company_name);
+        company_name = null;
+      }
+
+      return { company_name, role_title, job_url, location, remote_model, office_days, office_hubs, contract_type, working_pattern, salary_annual, salary_monthly, title_source: _titleSource };
     }
 
     // ─── Local rule-based analysis engine ────────────────────────────────────
