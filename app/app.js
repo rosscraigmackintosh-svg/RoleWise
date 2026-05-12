@@ -14183,14 +14183,43 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         if (!_doFadeOut._called) {
           _doFadeOut._called = true;
           _closeIngestionOverlay(overlay);
+          console.log('[ingestion] INGEST_OVERLAY_CLOSED', { match_id: _matchId });
         }
       }
 
-      // Close the overlay directly. The new flow does NOT wait for a user
-      // to click a "Ready" CTA — the role page is already rendered behind
-      // and shows the live pipeline banner. Modal fades out within ~300 ms.
+      // ── Hard auto-navigation (kills the legacy Ready-CTA race) ──────────
+      // The animator runs its own 250 ms tick loop and can call
+      // _showReadyState() (which un-hides the "Open role overview" CTA)
+      // independently of this code path. Even after we call _doFadeOut(),
+      // a pending tick will re-show the CTA mid-fade. Hard stop:
+      //   1. Halt the animator timer so no further ticks run.
+      //   2. Force-hide the Ready CTA element directly.
+      //   3. Fade out the overlay.
+      console.log('[ingestion] INGEST_AUTO_NAV_TRIGGERED', { role_id: savedRole.id, match_id: _matchId });
+      if (_arAnimator && typeof _arAnimator.stop === 'function') {
+        try { _arAnimator.stop(); } catch (_e) { /* non-fatal */ }
+      }
+      const _readyCta = document.getElementById('rw-ing-ready');
+      if (_readyCta) { _readyCta.setAttribute('hidden', ''); _readyCta.style.display = 'none'; }
+      const _onethingCta = document.getElementById('rw-ing-onething');
+      if (_onethingCta) { _onethingCta.setAttribute('hidden', ''); _onethingCta.style.display = 'none'; }
+
       overlay._ingFinalize = _doFadeOut;
       _doFadeOut();
+
+      // Belt-and-braces auto-nav verification. If for any reason the
+      // overlay is still visible 1 s after we triggered close, log a
+      // warning and try again. This becomes the fallback path the spec
+      // asked for ("CTA can remain only as a fallback if auto-nav fails").
+      setTimeout(() => {
+        const stillVisible = overlay && !overlay.hasAttribute('hidden')
+          && getComputedStyle(overlay).display !== 'none';
+        if (stillVisible) {
+          console.warn('[ingestion] INGEST_AUTO_NAV_FALLBACK — overlay still visible 1 s after close trigger; forcing hidden');
+          overlay.setAttribute('hidden', '');
+          overlay.style.display = 'none';
+        }
+      }, 1000);
     }
 
     // ─── Hard completion check (deterministic validator) ─────────────────
