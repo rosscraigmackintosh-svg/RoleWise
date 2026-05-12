@@ -18,7 +18,7 @@
 // here is to think clearly, not to write beautifully.
 // =============================================================================
 
-export const ROLE_REASONING_VERSION = 'v6'
+export const ROLE_REASONING_VERSION = 'v7'
 
 // High-signal phrase families. If the JD contains language in any of these
 // families, the reasoning pass MUST surface a related observation in either
@@ -325,6 +325,56 @@ one_line_read: a single sentence the writer pass can use as the role thesis. Com
 primary_reason_to_consider: 1–2 sentences. Cite a specific signal.
 primary_reason_to_be_careful: 1–2 sentences. Cite a specific signal or candidate friction. Empty string if there is no meaningful concern.
 
+EDITORIAL INTERPRETATION (most important — populate every field)
+
+This is the human-meaning layer of the reasoning. The narrative pass reads this directly and translates it into prose; it does not re-derive interpretation. Each field below is a structured observation in short, dense, senior-operator language. NOT prose. NOT hedged. NOT generic SaaS abstractions. If you cannot fill a field with a meaningful observation from JD evidence, write a short empty string ("") rather than padding with filler.
+
+Each field is one short sentence (under 25 words). Cite JD evidence implicitly through specificity — name the actual signal, don't paraphrase it.
+
+role_core:
+- this_role_is_really: One sentence naming what the role actually is beneath the JD vocabulary. Example: "A workflow and decision-support design role inside a probabilistic marketing platform, not a generic AI feature build."
+- primary_operational_challenge: The actual hard problem the designer will face. Example: "Translating AI/probabilistic system behaviour into trustable UI affordances for marketers used to deterministic tools."
+- what_the_designer_will_spend_their_brainpower_on: The intellectual centre of the job. Example: "Calibrating trust signals between an AI marketing engine and the marketers operating it."
+- product_maturity_shape: Where the product sits in its lifecycle and what that demands. Example: "Mature enterprise platform in a pivotal AI re-architecture year."
+- execution_vs_strategy_balance: How the role splits between shipping and shaping. Example: "Execution-led with embedded strategic judgement, not pure feature delivery."
+
+cultural_signals: ARRAY of 1–4 entries. Each = { signal (the literal JD phrase), evidence (the surrounding context), interpretation (what this tells a senior reader about the org). These are the highest-value observations in the entire output. Pull from restraint, evidence-led culture, anti-hype, probabilistic posture, design partnership, operational judgement. Example entry:
+  { "signal": "knowing when leaving something alone is the right call",
+    "evidence": "What you'll do — assess and build on existing patterns",
+    "interpretation": "Mature product judgement culture with low feature-theatre risk; values scope discipline over change-for-its-own-sake." }
+
+ai_posture (only populate if AI is meaningfully part of the role; otherwise empty strings):
+- ai_philosophy: How the org treats AI. Example: "Selective, restraint-oriented AI adoption — value-led not trend-led."
+- trust_posture: How the team thinks about AI trust/explainability. Example: "Evidence-led and anti-hype; treats AI as one tool among many."
+- restraint_signal: One word/phrase rating Strong / Moderate / Weak / Absent + a why-clause.
+- probabilistic_system_maturity: How much the team understands non-deterministic systems. One word/phrase rating + why.
+
+workflow_complexity:
+- workflow_type: Name the actual workflow class. Example: "Marketing decision-support; campaign planning; consumer-signal interpretation."
+- cognitive_load: High / Medium / Low + one-clause why.
+- operational_complexity: One sentence on the operational moving parts.
+- information_density: High / Medium / Low + one-clause why.
+
+organisation_shape:
+- company_temperament: One sentence on org temperament — mature / chaotic / political / optimising / exploratory / etc. + one-clause evidence.
+- decision_making_style: Evidence-led / opinion-led / hierarchy-led / consensus-led + one-clause evidence.
+- collaboration_pattern: Pairing / solo / heavy stakeholder / cross-functional balanced / siloed + one-clause evidence.
+- likely_design_culture: One sentence on what working as a designer here likely feels like.
+
+candidate_alignment (must reflect actual candidate context, not generic flattery):
+- strongest_alignment: The most meaningful non-trivial alignment between role and candidate. Thinking-style level, not keyword-level. Example: "Candidate's instinct for simplifying operational complexity without flattening the underlying system maps directly onto the JD's restraint and judgement signals."
+- strongest_tension: The most meaningful non-trivial friction. Cite both sides. Empty string if no real friction exists.
+- likely_energy_match: How well the candidate's preferred working conditions match the role's likely day-to-day. One sentence.
+- likely_frustration_point: The thing most likely to grind on the candidate over six months. Empty string if none.
+
+strategic_read (the senior-peer take):
+- why_this_role_is_interesting: One sentence naming the genuine intellectual/strategic draw, if there is one. Empty string if there isn't.
+- why_this_role_might_be_draining: One sentence on the realistic downside vector. Empty string if there isn't.
+- what_makes_this_role_meaningful: One sentence on what's at stake beyond shipping features.
+- overall_character: A senior reader's one-line take. Example: "Thoughtful, systems-heavy enterprise AI role with restraint and operational maturity; high signal-to-hype ratio."
+
+Quality bar for editorial_interpretation: every field must be the kind of observation a senior product/design operator would make on first read, compressed into one sentence. If a field reads like a generic SaaS analysis sentence, it has failed. Re-read the JD evidence and try again.
+
 SENIOR INTERPRETATION
 
 what_stands_out (1–3 items)
@@ -393,6 +443,48 @@ export const OUTPUT_SCHEMA = `OUTPUT SCHEMA (return exactly this shape, no extra
     "one_line_read":                  "string",
     "primary_reason_to_consider":     "string",
     "primary_reason_to_be_careful":   "string"
+  },
+  "editorial_interpretation": {
+    "role_core": {
+      "this_role_is_really":                              "string",
+      "primary_operational_challenge":                    "string",
+      "what_the_designer_will_spend_their_brainpower_on": "string",
+      "product_maturity_shape":                           "string",
+      "execution_vs_strategy_balance":                    "string"
+    },
+    "cultural_signals": [
+      { "signal": "string", "evidence": "string", "interpretation": "string" }
+    ],
+    "ai_posture": {
+      "ai_philosophy":                  "string",
+      "trust_posture":                  "string",
+      "restraint_signal":               "string",
+      "probabilistic_system_maturity":  "string"
+    },
+    "workflow_complexity": {
+      "workflow_type":          "string",
+      "cognitive_load":         "string",
+      "operational_complexity": "string",
+      "information_density":    "string"
+    },
+    "organisation_shape": {
+      "company_temperament":   "string",
+      "decision_making_style": "string",
+      "collaboration_pattern": "string",
+      "likely_design_culture": "string"
+    },
+    "candidate_alignment": {
+      "strongest_alignment":     "string",
+      "strongest_tension":       "string",
+      "likely_energy_match":     "string",
+      "likely_frustration_point":"string"
+    },
+    "strategic_read": {
+      "why_this_role_is_interesting":   "string",
+      "why_this_role_might_be_draining":"string",
+      "what_makes_this_role_meaningful":"string",
+      "overall_character":              "string"
+    }
   }
 }`
 
