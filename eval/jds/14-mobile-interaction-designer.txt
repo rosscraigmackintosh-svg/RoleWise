@@ -1,0 +1,35 @@
+Senior Mobile Interaction Designer
+* Experis
+* London (Hybrid)
+* 12 month contract, Day rate: £600 Inside IR35
+
+About the role
+
+We are looking for a Senior Mobile Interaction Designer to join a high-profile public sector programme. The role focuses on designing intuitive, accessible mobile experiences (iOS and Android) for citizen-facing services aligned with the NHS and GOV.UK design standards.
+
+You'll work as part of a multidisciplinary delivery team alongside service designers, user researchers, content designers, frontend developers, and product managers. The work involves designing complex service flows, validating against WCAG 2.2 AA, and producing high-fidelity prototypes that can be tested with users.
+
+Key experience required
+
+- Strong portfolio of mobile interaction design work across iOS and Android
+- Experience designing for public sector or other regulated environments
+- Experience working to government service standards (GDS, NHS Service Manual)
+- Lightweight code (HTML/CSS) for prototyping is welcome but not essential
+- Experience facilitating workshops and presenting work to senior stakeholders
+- Comfortable working in agile, multidisciplinary teams
+
+What you'll do
+
+- Design and prototype mobile-first interaction flows for citizen services
+- Work alongside service designers, researchers, and developers
+- Validate designs against WCAG 2.2 AA accessibility standards
+- Align outputs with NHS and GOV.UK service standards
+- Participate in user research sessions and iterate based on findings
+
+About you
+
+You are someone who enjoys solving complex problems through clear, accessible design. You have a strong eye for craft and are comfortable working in a structured public sector delivery environment.
+
+Application
+
+To apply, please send your CV and portfolio. Successful candidates will be invited to a portfolio review followed by a technical interview.
