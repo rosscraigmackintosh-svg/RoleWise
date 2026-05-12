@@ -13981,8 +13981,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         };
 
         // ── Call analysis API ────────────────────────────────────────────────
+        // skipNarrativeChain: _runBackgroundPipeline owns Pass 1.5 + Pass 2 —
+        // prevent callAnalysisAPI from also launching that chain (duplicate calls).
+        // providerOverride: force OpenAI for all ingestion AI passes.
         _tPass1Start = performance.now();
-        analysis = await callAnalysisAPI(jd);
+        analysis = await callAnalysisAPI(jd, { skipNarrativeChain: true, providerOverride: 'openai' });
         _tPass1Done = performance.now();
         _pipelineTimings.analyse_jd_ms = Math.round(_tPass1Done - _tPass1Start);
         _pipelineState.pass1 = analysis ? 'success' : 'failed';
@@ -14386,6 +14389,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         }
       }
       pl.stages.pass1 = 'complete';
+      // Ingestion pipeline always forces OpenAI for Pass 1.5 + Pass 2.
+      // Anthropic is deferred (known 422 truncation at maxTokens:3000 for verbose JDs).
+      analysisRef._aiProvider = 'openai';
       pl.stages.reasoning = 'running';
       await persistOnce();
 
@@ -14394,7 +14400,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       let reasoning = null;
       try {
         if (typeof callRoleReasoningAPI === 'function') {
-          reasoning = await callRoleReasoningAPI(analysisRef, jdText || jdRaw);
+          reasoning = await callRoleReasoningAPI(analysisRef, jdText || jdRaw, { providerOverride: 'openai' });
         }
       } catch (e) {
         recordError('reasoning', 'REASONING_THROWN', e?.message || String(e));
@@ -14416,7 +14422,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       let narrative = null;
       try {
         if (typeof callNarrativeAPI === 'function') {
-          narrative = await callNarrativeAPI(analysisRef, reasoning);
+          narrative = await callNarrativeAPI(analysisRef, reasoning, { providerOverride: 'openai' });
         }
       } catch (e) {
         analysisRef._narrative_error = {
@@ -26309,7 +26315,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     // ─── AI analysis call ─────────────────────────────────────────────────────
     // Tries the Supabase Edge Function (AI). If it fails for any reason, falls back
     // to localRuleBasedAnalysis() which always produces a useful 9-section output.
-    async function callAnalysisAPI(jdText) {
+    async function callAnalysisAPI(jdText, { skipNarrativeChain = false, providerOverride } = {}) {
       // ── Prompt layer: JD Analysis Brain ───────────────────────────────────────
       // This path uses the JD Analysis Brain (structured, analytical, signal-driven).
       // Source of truth: /ai/prompts/rolewise-prompts.js → buildRolewiseJDSystemPrompt()
@@ -26355,10 +26361,13 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // ──────────────────────────────────────────────────────────────────────
       const _t0          = performance.now();
       const _inputChars  = (jdText || '').length;
+      // _p: resolved provider for this call. providerOverride (e.g. 'openai') wins;
+      // otherwise falls back to the user's current _aiProvider setting.
+      const _p           = providerOverride || _aiProvider;
       const _baseLog     = {
         event_type:   'ai_analysis',
         feature_key:  'jd_analysis',
-        provider:     _aiProvider,
+        provider:     _p,
         route:        'analyse-jd',
         request_type: 'edge_function',
         input_chars:  _inputChars,
@@ -26372,7 +26381,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             body: {
               jd_text: jdText,
               candidate_context: _candidateCtx,
-              provider: _aiProvider,
+              provider: _p,
             },
           });
           if (error) {
@@ -26397,7 +26406,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           }
           const aiResult        = normaliseAnalysis(data.analysis, jdText);
           aiResult._source      = 'ai';
-          aiResult._aiProvider  = _aiProvider;
+          aiResult._aiProvider  = _p; // reflect resolved provider (respects providerOverride)
           // Provenance: stamp the deployed analyse-jd prompt version so jd_matches.output_json
           // records which extraction prompt produced this result.
           aiResult._analyse_jd_version = data.usage?.analyse_jd_version || null;
@@ -26445,9 +26454,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           _logUsageEvent(_logPayload);
 
           // Fire reasoning (Pass 1.5) → narrative (Pass 2) sequentially in the
-          // background. If reasoning fails, narrative still runs with extraction
-          // only — the writer prompt falls back to its legacy path.
-          aiResult._narrativePromise = (async () => {
+          // background — ONLY when the caller has not taken ownership of those
+          // passes (skipNarrativeChain = true means _runBackgroundPipeline owns them).
+          if (!skipNarrativeChain) aiResult._narrativePromise = (async () => {
             let reasoning = null;
             try {
               const _reasoningT0 = performance.now();
@@ -26487,7 +26496,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
               if (_p2Err?.code === 'NARRATIVE_VALIDATION_FAILED') throw _p2Err;
               return null;
             }
-          })();
+          })(); // end if (!skipNarrativeChain)
 
           return aiResult;
         } catch (err) {
@@ -26870,7 +26879,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     // those observations rather than rediscovering them under writing pressure.
     // Fails open: returns null on any error so the narrative pass can fall
     // back to the legacy extraction-only path.
-    async function callRoleReasoningAPI(extractionJson, jdText) {
+    async function callRoleReasoningAPI(extractionJson, jdText, { providerOverride } = {}) {
+      const _p  = providerOverride || _aiProvider;
       const _t0 = performance.now();
       try {
         const _candidateCtx = _getCandidateContext();
@@ -26888,7 +26898,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             candidate_context:  _candidateCtx,
             raw_jd_excerpt:     _raw,
             cleaned_jd_excerpt: _cleaned,
-            provider:           _aiProvider,
+            provider:           _p,
           },
         });
         if (error) {
@@ -26896,7 +26906,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           _logUsageEvent({
             event_type:   'ai_analysis',
             feature_key:  'role_reasoning',
-            provider:     _aiProvider,
+            provider:     _p,
             route:        'generate-role-reasoning',
             request_type: 'edge_function',
             status:       'error',
@@ -26916,7 +26926,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         _logUsageEvent({
           event_type:     'ai_analysis',
           feature_key:    'role_reasoning',
-          provider:       _usage.provider || _aiProvider,
+          provider:       _usage.provider || _p,
           route:          'generate-role-reasoning',
           request_type:   'edge_function',
           status:         'success',
@@ -26936,7 +26946,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
     }
 
-    async function callNarrativeAPI(extractionJson, reasoningJson) {
+    async function callNarrativeAPI(extractionJson, reasoningJson, { providerOverride } = {}) {
+      const _p  = providerOverride || _aiProvider;
       const _t0 = performance.now();
       try {
         const _candidateCtx = _getCandidateContext();
@@ -26945,7 +26956,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             extraction_json:   extractionJson,
             candidate_context: _candidateCtx,
             reasoning_json:    reasoningJson || null,
-            provider:          _aiProvider,
+            provider:          _p,
           },
         });
         if (error) {
@@ -27015,7 +27026,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           _err.code    = 'NARRATIVE_VALIDATION_FAILED';
           _err.reasons = _valid.reasons;
           _err.context = {
-            provider:           _aiProvider,
+            provider:           _p,
             narrative_version:  data?.usage?.narrative_version || null,
             reasoning_present:  !!reasoningJson,
             narrative_keys:     narrative && typeof narrative === 'object' ? Object.keys(narrative) : [],
@@ -27028,7 +27039,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         _logUsageEvent({
           event_type:     'ai_analysis',
           feature_key:    'narrative_generation',
-          provider:       _usage.provider || _aiProvider,
+          provider:       _usage.provider || _p,
           route:          'generate-narrative',
           request_type:   'edge_function',
           status:         'success',
@@ -27055,7 +27066,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         _logUsageEvent({
           event_type:     'ai_analysis',
           feature_key:    'narrative_generation',
-          provider:       _aiProvider,
+          provider:       _p,
           route:          'generate-narrative',
           request_type:   'edge_function',
           status:         'error',
