@@ -10971,19 +10971,39 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         (i > 0 ? '<span class="ra-meta-sep"></span>' : '') + esc(p)
       ).join('');
 
-      // ── Section 01: What this role really is ─────────────────────────────────
-      let _s01 = null;
+      // ── Section: Fit reality ──────────────────────────────────────────────
+      // The candidate-specific fit read — opens with operational character,
+      // names the strongest alignment, and (in a second paragraph) the
+      // biggest friction. Always its own section, never merged into
+      // "What this role really is".
+      let _sFitReality = null;
       {
-        const _paras = narr?.what_this_role_actually_is?.paragraphs || narr?.fit_reality?.paragraphs;
+        const _paras = narr?.fit_reality?.paragraphs;
         if (Array.isArray(_paras) && _paras.length) {
-          _s01 = `<p class="ra-lede">${esc(_sanitizeUiText(_paras[0]))}</p>` +
-            _paras.slice(1).map(p => `<p class="ra-p">${esc(_sanitizeUiText(p))}</p>`).join('');
+          _sFitReality = _paras
+            .filter(p => typeof p === 'string' && p.trim())
+            .map((p, i) => i === 0
+              ? `<p class="ra-lede">${esc(_sanitizeUiText(p))}</p>`
+              : `<p class="ra-p">${esc(_sanitizeUiText(p))}</p>`
+            ).join('');
         } else if (!_isIncomplete) {
-          // Pass 1 placeholder fallback — only for legacy rows that pre-date the 3-pass pipeline.
           const _fb = Array.isArray(fo.fit_reality_summary)
             ? fo.fit_reality_summary.filter(Boolean).join(' ')
             : _str(fo.fit_reality_summary);
-          if (_fb) _s01 = `<p class="ra-lede">${esc(_sanitizeUiText(_fb))}</p>`;
+          if (_fb) _sFitReality = `<p class="ra-lede">${esc(_sanitizeUiText(_fb))}</p>`;
+        }
+      }
+
+      // ── Section: What this role really is ────────────────────────────────
+      // The operational identity of the role — what the designer will spend
+      // their brainpower on. Never falls back to fit_reality — fit_reality
+      // has its own section above.
+      let _s01 = null;
+      {
+        const _paras = narr?.what_this_role_actually_is?.paragraphs;
+        if (Array.isArray(_paras) && _paras.length) {
+          _s01 = `<p class="ra-lede">${esc(_sanitizeUiText(_paras[0]))}</p>` +
+            _paras.slice(1).map(p => `<p class="ra-p">${esc(_sanitizeUiText(p))}</p>`).join('');
         }
       }
 
@@ -11071,15 +11091,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         }).filter(Boolean).join('')}</ul>`;
       }
 
-      // If no analysis exists at all, show a calm placeholder
-      const _hasSections = _s01 || _s02 || _s03 || _s04 || _s05 || _s06 || _s07;
-      const _noAnalysisHtml = _isIncomplete
-        ? '<div class="ra-no-analysis"><p><strong>Analysis is still being prepared.</strong></p><p>Rolewise has extracted the basics, but the deeper role analysis has not finished yet.</p></div>'
-        : !_hasSections
-          ? '<p class="ra-no-analysis">No analysis available for this role yet. Paste the job description to generate one.</p>'
-          : '';
-
-      // ── Monthly salary equivalent ─────────────────────────────────────────────
+      // ── Monthly salary equivalent (moved up — used by Practical details) ─
       let _salaryMonthStr = null;
       if (_salary) {
         const _salRaw  = pd.salary_annual || role.salary_text_raw || null;
@@ -11093,6 +11105,122 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             : `${_fmtM(_moMin)}/mo`;
         }
       }
+
+      // ── Section: Practical details ────────────────────────────────────────
+      // Always render when extraction or narrative carries facts. Prefer
+      // narrative.practical_details.items (already curated); fall back to
+      // extraction.practical / practical_details fields, and to roles-table
+      // columns set by the client-side metadata parser. The user-visible
+      // floor is: any of salary, work model, location, employment type,
+      // office days, hubs, reporting line.
+      let _sPracticalDetails = null;
+      {
+        let _items = [];
+        const _pdItems = narr?.practical_details?.items;
+        if (Array.isArray(_pdItems) && _pdItems.length) {
+          _items = _pdItems
+            .filter(i => i && typeof i.label === 'string' && i.label.trim())
+            .map(i => ({ label: i.label.trim(), value: typeof i.value === 'string' ? i.value.trim() : '' }));
+        } else {
+          // Fallback: build from extraction (handles both schemas) + role row.
+          const _ext      = fo.practical_details || {};
+          const _extLite  = fo.practical || {};
+          const _add = (label, raw) => {
+            const v = (typeof raw === 'string' && raw.trim() && !/^not stated$|^unknown$|^n\/a$/i.test(raw.trim()))
+              ? raw.trim() : null;
+            if (v) _items.push({ label, value: v });
+          };
+          _add('Location',         role.location_text || _ext.location || _extLite.location);
+          _add('Work model',       (role.work_model && role.work_model !== 'unknown' ? role.work_model : null) || _ext.remote_model || _extLite.work_model);
+          _add('Employment type',  role.engagement_type || _ext.employment_type || _extLite.employment_type);
+          _add('Salary',           role.salary_text_raw || _ext.salary_annual || _extLite.salary);
+          if (_salaryMonthStr) _items.push({ label: 'Salary (monthly)', value: _salaryMonthStr });
+          _add('Equity',           _ext.equity || _extLite.equity);
+          _add('Reporting line',   _ext.reporting_line);
+          _add('Commute reality',  _ext.commute_reality);
+          if (Array.isArray(_extLite.notes)) {
+            _extLite.notes.forEach(n => { if (typeof n === 'string' && n.trim()) _items.push({ label: 'Notes', value: n.trim() }); });
+          }
+        }
+        if (_items.length) {
+          _sPracticalDetails = '<dl class="ra-practical">' + _items.map(it =>
+            `<div class="ra-practical-row"><dt class="ra-practical-k">${esc(it.label)}</dt><dd class="ra-practical-v">${
+              it.value ? esc(it.value) : '<span class="ra-fact-v--muted">Not stated</span>'
+            }</dd></div>`
+          ).join('') + '</dl>';
+        }
+      }
+
+      // ── Section: Decision ─────────────────────────────────────────────────
+      // Narrative provides a single-sentence summary (current schema) or
+      // legacy paragraphs[]. Never falls back to suggested_actions filler.
+      let _sDecision = null;
+      {
+        const _summary = _str(narr?.decision?.summary);
+        const _legacyPars = Array.isArray(narr?.decision?.paragraphs)
+          ? narr.decision.paragraphs.filter(p => typeof p === 'string' && p.trim())
+          : [];
+        if (_summary) {
+          _sDecision = `<p class="ra-p">${esc(_sanitizeUiText(_summary))}</p>`;
+        } else if (_legacyPars.length) {
+          _sDecision = _legacyPars.map(p => `<p class="ra-p">${esc(_sanitizeUiText(p))}</p>`).join('');
+        }
+      }
+
+      // ── Section: Recommended CV ───────────────────────────────────────────
+      // Must render whenever ANY layer has a recommendation. Narrative is
+      // primary; reasoning's cv_recommendation is the deterministic fallback
+      // (back-copied from _aiResult by Fix 1); Pass 1 is the last resort.
+      // Governance must never suppress this section.
+      let _sRecommendedCv = null;
+      {
+        const _cvId = _str(narr?.recommended_cv)
+                   || _str(fo._reasoning?.cv_recommendation?.variant)
+                   || _str(fo.suggested_actions?.recommended_cv)
+                   || _str(fo.recommended_cv);
+        if (_cvId) {
+          let _label = _cvId;
+          try {
+            const _ctx = typeof _getCandidateContext === 'function' ? _getCandidateContext() : null;
+            const _variants = _ctx && Array.isArray(_ctx.cv_variants) ? _ctx.cv_variants : null;
+            const _match = _variants ? _variants.find(v => v && v.id === _cvId) : null;
+            if (_match && _match.label) _label = _match.label;
+          } catch (_e) { /* identity fallback */ }
+          // Light formatting: lowercase-hyphen IDs become Title Case if no label match.
+          if (_label === _cvId && /[a-z]-[a-z]/.test(_cvId)) {
+            _label = _cvId.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          }
+          _sRecommendedCv = `<p class="ra-cv-recommendation">${esc(_label)}</p>`;
+        }
+      }
+
+      // ── Section: Why this CV ──────────────────────────────────────────────
+      let _sWhyThisCv = null;
+      {
+        const _why = _str(narr?.why_that_cv)
+                  || _str(fo._reasoning?.cv_recommendation?.reason)
+                  || _str(fo.suggested_actions?.cv_reasoning)
+                  || _str(fo.why_that_cv);
+        if (_why) _sWhyThisCv = `<p class="ra-p">${esc(_sanitizeUiText(_why))}</p>`;
+      }
+
+      // ── Section: Final note ───────────────────────────────────────────────
+      // Always present. Uses narrative's final_note when supplied, otherwise
+      // the canonical string. This is the structural anchor: even an
+      // incomplete row carries the closing context line.
+      let _sFinalNote = null;
+      {
+        const _note = _str(narr?.final_note) || 'Use this as context, not a verdict.';
+        _sFinalNote = `<p class="ra-final-note">${esc(_sanitizeUiText(_note))}</p>`;
+      }
+
+      // If no analysis exists at all, show a calm placeholder
+      const _hasSections = _sFitReality || _s01 || _s02 || _s03 || _s04 || _sPracticalDetails || _s05 || _s06 || _sDecision || _sRecommendedCv || _sWhyThisCv;
+      const _noAnalysisHtml = _isIncomplete
+        ? '<div class="ra-no-analysis"><p><strong>Analysis is still being prepared.</strong></p><p>Rolewise has extracted the basics, but the deeper role analysis has not finished yet.</p></div>'
+        : !_hasSections
+          ? '<p class="ra-no-analysis">No analysis available for this role yet. Paste the job description to generate one.</p>'
+          : '';
 
       // ── At-a-glance facts ─────────────────────────────────────────────────────
       const _factRows = [
@@ -11182,13 +11310,17 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
               ${_noAnalysisHtml}
 
-              ${_section('01', 'What this role really is', _s01)}
-              ${_section('02', 'Why this role exists', _s02)}
-              ${_section('03', "What you'd actually do", _s03)}
+              ${_section('01', 'Fit reality',                    _sFitReality)}
+              ${_section('02', 'What this role really is',       _s01)}
+              ${_section('03', "What you'd actually do",         _s03)}
               ${_section('04', "What they're really looking for", _s04)}
-              ${_section('05', 'Risks & unknowns', _s05)}
-              ${_section('06', 'Questions worth asking', _s06)}
-              ${_section('07', 'Suggested actions', _s07)}
+              ${_section('05', 'Practical details',              _sPracticalDetails)}
+              ${_section('06', 'Risks & unknowns',               _s05)}
+              ${_section('07', 'Questions worth asking',         _s06)}
+              ${_section('08', 'Decision',                       _sDecision)}
+              ${_section('09', 'Recommended CV',                 _sRecommendedCv)}
+              ${_section('10', 'Why this CV',                    _sWhyThisCv)}
+              ${_section('11', 'Final note',                     _sFinalNote)}
 
               <div class="ra-close">
                 <div class="ra-close-l">Generated by Rolewise from the original job listing.</div>
