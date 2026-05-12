@@ -14086,23 +14086,24 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
 
       // ── BACKGROUND-JOB MODEL ─────────────────────────────────────────────
-      // The synchronous-blocking modal is dead. Modal closes after local
-      // extraction + initial persist. The full AI pipeline runs in the
-      // background, persisting after each stage. The role page polls and
-      // progressively renders as stages complete.
-      //
-      // No awaits here. The modal would have to hold the user for 60–120 s
-      // on the current pipeline; that interaction model is broken.
+      // Modal closes immediately after local extraction + initial persist.
+      // The full AI pipeline runs in the background. The role page polls
+      // and progressively renders as stages complete. No awaits hold the
+      // user on a synchronous screen.
+      console.log('[ingestion] INGEST_ROLE_CREATED', { role_id: savedRole.id, match_id: _matchId });
       _lineTimers.forEach(clearTimeout);
       _completeLine();
       _ingestionTimerStop(overlay);
       overlay._ingDone = true;
 
-      // Signal animator briefly so the user sees confirmation, then complete.
+      // Signal animator state flags so its progress lines complete instantly
+      // (the animator polls these gates every 250 ms and walks through the
+      // build/risks/overview/done steps without waiting on real AI passes).
       if (_arAnimator) {
         _arAnimator.setAnalysisAiStarted();
         _arAnimator.setAnalysisAiDone();
         _arAnimator.setNarrativeDone();
+        _arAnimator.completePipeline();
       }
 
       // Initialise the canonical _pipeline object. Stages: extract (already
@@ -14136,35 +14137,45 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         console.warn('[ingestion] Initial pipeline-state persist failed:', e);
       }
 
-      // Kick off the background pipeline. Fire-and-forget. The browser
-      // keeps the JS context alive while the promise is pending, even
-      // after the user navigates to the role page.
+      // Kick off the background pipeline FIRE-AND-FORGET. No await. The
+      // browser keeps the JS context alive while the promise is pending,
+      // even after the user navigates away from this code path.
       if (_matchId) {
-        _runBackgroundPipeline(_matchId, analysis, savedRole, jd, jdText, _pipelineT0)
-          .catch(err => console.error('[bg-pipeline] unhandled error:', err));
+        console.log('[ingestion] BACKGROUND_PIPELINE_STARTED', { match_id: _matchId });
+        const _bgPromise = _runBackgroundPipeline(_matchId, analysis, savedRole, jd, jdText, _pipelineT0);
+        _bgPromise.catch(err => console.error('[bg-pipeline] unhandled error:', err));
+        console.log('[ingestion] BACKGROUND_PIPELINE_NOT_AWAITED', { match_id: _matchId, promise_pending: true });
       }
 
-      // Background pipeline owns all enrichment persistence and the final
-      // completion check. _runIngestionFlow's only remaining job is to
-      // transition the user to the role page so they see live progress.
-
-      // Pre-render the analysis view behind the overlay with the enriched role.
-      // Refresh first so allRoles picks up the updated jd_matches row.
+      // Navigate immediately. selectRole renders the role page underneath
+      // the modal; closing the modal then reveals it with live polling.
+      console.log('[ingestion] INGEST_NAVIGATING_TO_ROLE', { role_id: savedRole.id });
       try {
         selectedRoleId = null;
         _setAppFilter('active');
         switchNav('applications');
-        await refresh();
+        // Inject the freshly-inserted role + match into allRoles in-memory so
+        // selectRole finds it immediately, without awaiting a full refresh.
+        try {
+          if (typeof allRoles !== 'undefined' && Array.isArray(allRoles)) {
+            const _existsIdx = allRoles.findIndex(r => r.id === savedRole.id);
+            const _injected  = Object.assign({}, savedRole, { latest_match_output: analysis });
+            if (_existsIdx >= 0) allRoles[_existsIdx] = _injected;
+            else                 allRoles.unshift(_injected);
+          }
+        } catch (_e) { /* non-fatal: refresh below will rebuild */ }
         const _inboxEl = document.getElementById('role-inbox');
         if (_inboxEl) _inboxEl.scrollTop = 0;
         selectRole(savedRole.id, { scrollIntoView: true });
-      } catch (_) { /* non-fatal — transition anyway */ }
+        // Refresh in the background to sync allRoles with the DB row that
+        // includes the initial _pipeline state. The polling loop will
+        // re-render as further updates land.
+        Promise.resolve(refresh && refresh()).catch(() => {});
+      } catch (_) { /* non-fatal — fade out anyway */ }
 
       const _tFirstRender = performance.now();
       const _totalMs = Math.round(_tFirstRender - _pipeT0);
-      const _p1Ms    = _tPass1Done ? Math.round(_tPass1Done - _tPass1Start) : '?';
-      console.log('[perf] Role ready at', _totalMs + 'ms (total from submit, includes AI enrichment)');
-      console.log('[perf] Breakdown — local analysis:', _p1Ms + 'ms | DB save:', _tDbSaveMs + 'ms');
+      console.log('[perf] Role ready at', _totalMs + 'ms (sync ingest finished — pipeline continues in background)');
 
       _readyToTransition = true;
 
@@ -14175,14 +14186,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         }
       }
 
-      // Hand completion to the animator — unblocks the gated 'done' step
-      // (or detects an ambiguity and routes to the One Thing card instead).
-      if (_arAnimator) {
-        _arAnimator.setRole(savedRole);
-        _arAnimator.setAnalysis(analysis);
-        _arAnimator.completePipeline();
-      }
+      // Close the overlay directly. The new flow does NOT wait for a user
+      // to click a "Ready" CTA — the role page is already rendered behind
+      // and shows the live pipeline banner. Modal fades out within ~300 ms.
       overlay._ingFinalize = _doFadeOut;
+      _doFadeOut();
     }
 
     // ─── Hard completion check (deterministic validator) ─────────────────
