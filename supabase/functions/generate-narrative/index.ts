@@ -411,19 +411,23 @@ serve(async (req: Request) => {
       )
     }
 
-    // Build user message. When reasoning_json is present, lead with it so the
-    // writer prioritises interpreted observations over raw extraction.
-    // Extraction is still included for grounding and practical-detail accuracy.
+    // Build user message in cache-friendly order: stable content first
+    // (candidate_context, same across roles in a session), volatile content
+    // last (reasoning_json + extraction_json, change per role). The writer
+    // still prioritises reasoning over extraction — semantic priority is
+    // expressed via the labels and the prompt rules, not by absolute byte
+    // position in the user message.
     let userMessage = ''
+
+    const candidateBlock = formatCandidateContext(candidate_context || null)
+    if (candidateBlock) {
+      userMessage += candidateBlock + '\n\n---\n\n'
+    }
+
     if (hasReasoning) {
       userMessage += `REASONING (from Pass 1.5 — interpreted observations to prioritise):\n\n${JSON.stringify(reasoning_json, null, 2)}\n\n---\n\n`
     }
     userMessage += `EXTRACTION JSON (from Pass 1 — for practical-detail grounding):\n\n${JSON.stringify(extraction_json, null, 2)}`
-
-    const candidateBlock = formatCandidateContext(candidate_context || null)
-    if (candidateBlock) {
-      userMessage += '\n\n---\n\n' + candidateBlock
-    }
 
     const { text: rawText, usage } = await callAI({
       provider,

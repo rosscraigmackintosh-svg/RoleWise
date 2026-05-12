@@ -163,20 +163,24 @@ serve(async (req: Request) => {
       )
     }
 
-    // Build user message: extraction JSON + candidate context + JD excerpts.
-    // Excerpts are capped client-side (~800 chars each) so the model has
-    // direct access to JD language for phrase-level signal interpretation.
-    let userMessage = `EXTRACTION JSON (from Pass 1):\n\n${JSON.stringify(extraction_json, null, 2)}`
+    // Build user message in cache-friendly order: stable content first
+    // (candidate_context, same across roles in a session), volatile content
+    // last (extraction JSON + JD excerpts, change per role). The JD excerpts
+    // are capped client-side (~800 chars each) so the model has direct
+    // access to JD language for phrase-level signal interpretation.
+    let userMessage = ''
+
+    const candidateBlock = formatCandidateContext(candidate_context || null)
+    if (candidateBlock) {
+      userMessage += candidateBlock + '\n\n---\n\n'
+    }
+
+    userMessage += `EXTRACTION JSON (from Pass 1):\n\n${JSON.stringify(extraction_json, null, 2)}`
 
     if (rawJdExcerpt && typeof rawJdExcerpt === 'string' && rawJdExcerpt.trim()) {
       userMessage += `\n\n---\n\nRAW JD EXCERPT (for language-level signal interpretation):\n\n${rawJdExcerpt.trim()}`
     } else if (cleanedJdExcerpt && typeof cleanedJdExcerpt === 'string' && cleanedJdExcerpt.trim()) {
       userMessage += `\n\n---\n\nCLEANED JD EXCERPT (for language-level signal interpretation):\n\n${cleanedJdExcerpt.trim()}`
-    }
-
-    const candidateBlock = formatCandidateContext(candidate_context || null)
-    if (candidateBlock) {
-      userMessage += '\n\n---\n\n' + candidateBlock
     }
 
     const { text: rawText, usage } = await callAI({

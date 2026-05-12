@@ -442,11 +442,15 @@ serve(async (req: Request) => {
       )
     }
 
-    let userMessage = `Here is the job description:\n\n${jd_text}`
+    // Order: stable content first (candidate_context — same across roles in a
+    // session), volatile content last (jd_text — changes per role). This
+    // maximises OpenAI prompt-cache hit length without changing semantics.
+    let userMessage = ''
     const candidateBlock = formatCandidateContext(candidate_context || null)
     if (candidateBlock) {
-      userMessage += '\n\n---\n\n' + candidateBlock
+      userMessage += candidateBlock + '\n\n---\n\n'
     }
+    userMessage += `Here is the job description:\n\n${jd_text}`
 
     const { text: rawText, usage } = await callAI({
       provider,
