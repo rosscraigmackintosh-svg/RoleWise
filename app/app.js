@@ -14147,29 +14147,60 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         console.log('[ingestion] BACKGROUND_PIPELINE_NOT_AWAITED', { match_id: _matchId, promise_pending: true });
       }
 
-      // Navigate immediately. selectRole renders the role page underneath
-      // the modal; closing the modal then reveals it with live polling.
+      // Navigate immediately to the role analysis view.
+      //
+      // Direct-render path: we KNOW we want the analysis view for a
+      // freshly-ingested role — there's no workspace-vs-analysis decision
+      // to make. The default renderRoleDoc() routing layer is async,
+      // racy with renderRolesView, and has been observed to leave the
+      // user on the Roles archive (rwr-page) instead of the analysis
+      // page. Bypassing it deterministically.
       console.log('[ingestion] INGEST_NAVIGATING_TO_ROLE', { role_id: savedRole.id });
       try {
-        selectedRoleId = null;
-        _setAppFilter('active');
-        switchNav('applications');
-        // Inject the freshly-inserted role + match into allRoles in-memory so
-        // selectRole finds it immediately, without awaiting a full refresh.
+        // 1. Inject the freshly-inserted role + initial pipeline state
+        //    into allRoles so the rail, polling, and any other lookup
+        //    finds the role immediately.
+        const _injected = Object.assign({}, savedRole, { latest_match_output: analysis });
         try {
           if (typeof allRoles !== 'undefined' && Array.isArray(allRoles)) {
             const _existsIdx = allRoles.findIndex(r => r.id === savedRole.id);
-            const _injected  = Object.assign({}, savedRole, { latest_match_output: analysis });
             if (_existsIdx >= 0) allRoles[_existsIdx] = _injected;
             else                 allRoles.unshift(_injected);
           }
         } catch (_e) { /* non-fatal: refresh below will rebuild */ }
-        const _inboxEl = document.getElementById('role-inbox');
-        if (_inboxEl) _inboxEl.scrollTop = 0;
-        selectRole(savedRole.id, { scrollIntoView: true });
-        // Refresh in the background to sync allRoles with the DB row that
-        // includes the initial _pipeline state. The polling loop will
-        // re-render as further updates land.
+
+        // 2. Set the canonical selection state.
+        selectedRoleId = savedRole.id;
+        if (typeof currentNav !== 'undefined') currentNav = 'applications';
+        _setAppFilter('active');
+        if (typeof _syncNavActive === 'function') _syncNavActive();
+
+        // 3. Render the analysis view DIRECTLY. This writes the
+        //    canonical 11-section structure to col-overview-cards
+        //    with the running-pipeline banner. The polling loop inside
+        //    renderAnalysisView picks up _pipeline.status === 'running'
+        //    and refreshes every 5 s.
+        if (typeof renderAnalysisView === 'function') {
+          renderAnalysisView(_injected);
+        }
+
+        // 4. Render the right rail (stage stepper).
+        if (typeof renderRail === 'function') {
+          try { renderRail(_injected); } catch (_e) { /* non-fatal */ }
+        }
+
+        // 5. Hide the legacy inbox panel / show the right column.
+        if (typeof setListPanelVisible === 'function') {
+          try { setListPanelVisible(false); } catch (_e) { /* non-fatal */ }
+        }
+        const _colRail = document.getElementById('col-rail-section');
+        if (_colRail && typeof _setRailVisible === 'function') {
+          try { _setRailVisible(true); } catch (_e) { /* non-fatal */ }
+        }
+
+        // 6. Refresh in the background to sync allRoles with the DB row
+        //    that includes the initial _pipeline state. The polling loop
+        //    will re-render the analysis view as further updates land.
         Promise.resolve(refresh && refresh()).catch(() => {});
       } catch (_) { /* non-fatal — fade out anyway */ }
 
