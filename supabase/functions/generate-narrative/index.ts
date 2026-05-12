@@ -455,6 +455,94 @@ serve(async (req: Request) => {
       usage.schema_failures = missing
     }
 
+    // ── Deterministic question-shaping post-process ──────────────────────
+    // The model frequently drops or generalises verification-point questions
+    // despite explicit prompt rules. Enforce server-side: every verification
+    // point in reasoning_json.trade_offs.verification_points MUST appear as a
+    // calibration-phrased question. Replaces the most generic existing
+    // question (keyed by lack of domain nouns and presence of vague verbs).
+    try {
+      if (hasReasoning) {
+        const r = reasoning_json as Record<string, unknown>
+        const vps = (((r.trade_offs as Record<string, unknown>)?.verification_points) as string[] | undefined) || []
+        const sigAnalysis = (r.signal_analysis as Record<string, unknown>) || {}
+        const highSig = (sigAnalysis.high_signal_phrases as string[] | undefined) || []
+        const notable = (sigAnalysis.notable_language as string[] | undefined) || []
+
+        let questions: string[] = Array.isArray(narrative.questions_worth_asking)
+          ? (narrative.questions_worth_asking as string[]).slice()
+          : []
+
+        // Canonical phrasings for each verification topic.
+        const canonical = (vp: string): { topic: string; question: string } | null => {
+          const v = vp.toLowerCase()
+          if (/coding|prototyp|production code|frontend/.test(v))
+            return { topic: 'coding', question: 'Are designers expected to prototype interactions only, or contribute production frontend code?' }
+          if (/compensation|salary|day[- ]?rate|pay\b/.test(v))
+            return { topic: 'salary',  question: 'Can you clarify the compensation structure for this engagement?' }
+          if (/in[- ]?office|anchor|on[- ]?site|hybrid|days per week/.test(v))
+            return { topic: 'office',  question: 'How does the in-office expectation apply day-to-day, and what changes if the candidate is not local to a named hub?' }
+          if (/reporting line|decision authority/.test(v))
+            return { topic: 'reporting', question: 'Who does this role report to, and where does design decision authority sit?' }
+          return null
+        }
+
+        const topicSignature = (q: string): string | null => {
+          const ql = q.toLowerCase()
+          if (/(?:coding|production code|prototyp|frontend|react|typescript)/.test(ql)) return 'coding'
+          if (/(?:compensation|salary|day[- ]?rate|pay\b)/.test(ql))                    return 'salary'
+          if (/(?:in[- ]?office|anchor|on[- ]?site|days per week|hub|hybrid)/.test(ql)) return 'office'
+          if (/(?:report(?:ing)? to|reporting line|decision authority)/.test(ql))      return 'reporting'
+          return null
+        }
+
+        // Build needed verification questions.
+        const present = new Set(questions.map(topicSignature).filter(Boolean) as string[])
+        const needed: { topic: string; question: string }[] = []
+        for (const vp of vps) {
+          const c = canonical(vp)
+          if (c && !present.has(c.topic)) needed.push(c)
+        }
+
+        // Replace the most-generic questions with needed verification questions.
+        // Score: lower = more generic. A question is generic if it contains no
+        // domain-noun from high_signal_phrases/notable_language and contains
+        // template phrases ("design ownership", "stakeholder", "team dynamics",
+        // "feedback", "operational signals", "autonomy").
+        const domainNouns = [...highSig, ...notable]
+          .filter((s): s is string => typeof s === 'string')
+          .flatMap(s => s.toLowerCase().split(/[\s,]+/).filter(w => w.length > 4))
+        const isGeneric = (q: string): boolean => {
+          const ql = q.toLowerCase()
+          const hasDomainNoun = domainNouns.some(n => ql.includes(n))
+          const hasGenericTemplate = /(stakeholder|ownership|autonomy|team dynamics|feedback|operational signals|culture|cross.?functional|process)/.test(ql)
+          return !hasDomainNoun && hasGenericTemplate
+        }
+
+        if (needed.length) {
+          const ranked = questions
+            .map((q, idx) => ({ q, idx, generic: isGeneric(q), hasTopic: topicSignature(q) !== null }))
+            .sort((a, b) => (Number(b.generic) - Number(a.generic)) || (Number(a.hasTopic) - Number(b.hasTopic)))
+
+          for (const inj of needed) {
+            const victim = ranked.find(r => !r.hasTopic && r.generic) || ranked.find(r => !r.hasTopic)
+            if (victim) {
+              questions[victim.idx] = inj.question
+              victim.hasTopic = true
+              victim.q = inj.question
+              victim.generic = false
+            } else if (questions.length < 6) {
+              questions.push(inj.question)
+            }
+          }
+          narrative.questions_worth_asking = questions
+          console.log('[generate-narrative] post-process: injected verification questions for topics:', needed.map(n => n.topic))
+        }
+      }
+    } catch (postErr) {
+      console.warn('[generate-narrative] post-process error (non-fatal):', String(postErr))
+    }
+
     // Provenance — stamp the deployed prompt version on every response so the
     // client can persist it alongside the narrative for replay/regression.
     usage.narrative_version = NARRATIVE_VERSION

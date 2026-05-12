@@ -18,7 +18,7 @@
 // here is to think clearly, not to write beautifully.
 // =============================================================================
 
-export const ROLE_REASONING_VERSION = 'v4'
+export const ROLE_REASONING_VERSION = 'v5'
 
 // High-signal phrase families. If the JD contains language in any of these
 // families, the reasoning pass MUST surface a related observation in either
@@ -81,6 +81,50 @@ LOW-SIGNAL phrases (generic culture / recruiter copy) reveal almost nothing. Exa
 - "results-driven", "high-performing team", "ownership culture"
 
 When low-signal phrases dominate, note them in low_signal_phrases without inflating their interpretive weight. Do not write "the team values collaboration" — that's a vacuous re-statement.
+
+SIGNAL PRIORITY HIERARCHY (mandatory — this governs what dominates the analysis)
+
+Signals are not equal weight. The analysis must be primarily organised around HIGH-priority signals when they exist. MEDIUM signals add colour. LOW signals must NEVER dominate or open the analysis.
+
+HIGH PRIORITY (these define the role's intellectual centre of gravity):
+- workflow complexity / multi-step orchestration
+- information density / data-dense interfaces
+- AI interaction models / model behaviour / AI-native workflows / AI explainability / trust models
+- structured content systems / knowledge representation
+- research / discovery / search systems
+- operational tooling for power users
+- domain-specific workflow sophistication (legal research, AP automation, ledger, reconciliation, PI planning, etc.)
+- object models / editing states / spatial navigation / canvas
+- decision-support systems / synthesis tooling
+- data interpretation UX / sense-making interfaces
+- high cognitive-load workflow reduction
+
+MEDIUM PRIORITY (add colour, never the headline):
+- role ownership / scope boundary
+- org maturity / company stage
+- design systems contributions
+- stakeholder density (PMs, EMs, leadership count)
+- delivery process / agile rituals
+- cross-functional collaboration model
+
+LOW PRIORITY (almost never relevant on their own — note in low_signal_phrases, do not interpret):
+- company size / headcount
+- funding stage / valuation / revenue
+- generic culture language: "fast-paced", "collaborative", "cross-functional", "wear many hats", "ownership mindset"
+- generic growth framing: "help scale the product", "category-defining", "ambitious growth story"
+- generic enterprise framing: "1000+ employees", "global leader", "Series F", "$3B valuation"
+
+OPERATIONAL BRAINPOWER RULE (use this when prioritising signals)
+
+Before classifying signals, ask: "What kind of work will this designer actually spend their brainpower on day-to-day?" If a JD names workflow/AI/knowledge/research/orchestration complexity, those are the brainpower signals. Stakeholder coordination, design-system contributions, and process navigation are the framework around the brainpower — they are NOT the brainpower itself. Reflect this hierarchy in signal_analysis.high_signal_phrases and senior_interpretation.what_stands_out.
+
+For a Clio-shaped JD (AI-assisted legal research, knowledge management, information-dense enterprise SaaS), the brainpower signals are:
+- AI-assisted research / synthesis / summarization UX
+- structured legal knowledge representation
+- high-trust AI output design / source transparency
+- information-density and cognitive-load reduction
+- research workflow patterns for high-stakes professionals
+NOT generic "B2B SaaS", "stakeholder management", "design system governance", "1001+ employees".
 
 HIGH-SIGNAL EXTRACTION PRIORITY (mandatory — do not let these vanish)
 
