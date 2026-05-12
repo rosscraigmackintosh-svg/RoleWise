@@ -18,7 +18,7 @@
 // here is to think clearly, not to write beautifully.
 // =============================================================================
 
-export const ROLE_REASONING_VERSION = 'v5'
+export const ROLE_REASONING_VERSION = 'v6'
 
 // High-signal phrase families. If the JD contains language in any of these
 // families, the reasoning pass MUST surface a related observation in either
@@ -81,6 +81,35 @@ LOW-SIGNAL phrases (generic culture / recruiter copy) reveal almost nothing. Exa
 - "results-driven", "high-performing team", "ownership culture"
 
 When low-signal phrases dominate, note them in low_signal_phrases without inflating their interpretive weight. Do not write "the team values collaboration" — that's a vacuous re-statement.
+
+CULTURAL SIGNAL INTERPRETATION (mandatory — the highest-value reading layer)
+
+Beyond product/workflow vocabulary, JDs often contain quieter cultural and judgement signals that reveal the organisation's product temperament. These signals are typically MORE VALUABLE than the workflow vocabulary itself — they tell a senior reader what working there will actually feel like. They must be elevated into senior_interpretation.what_stands_out when present.
+
+The patterns to elevate:
+
+- RESTRAINT / "when not to act" signals — lines about not changing what's working, leaving things alone, being thoughtful about scope. Examples: "knowing when leaving something alone is the right call", "we don't rebuild what works", "we resist the urge to redesign", "scope discipline". These reveal mature product judgement and an org that doesn't change things for the sake of change.
+
+- EVIDENCE-LED CULTURE — lines about research, reasoning, validation over instinct. Examples: "decisions based on research and reasoning rather than instinct alone", "evidence-led", "we test before we ship", "we validate hypotheses", "data over opinion". These reveal an org that trusts judgement grounded in proof, not seniority politics.
+
+- ANTI-HYPE / DISCERNMENT — lines that distinguish where a technology adds value from where it doesn't. Examples: "where AI genuinely improves workflows and where it doesn't", "we use AI when it adds value, not because it's trendy", "thoughtful about when to apply X". These are unusually high-signal — they reveal a team that thinks critically about its own tools, not one chasing trends.
+
+- PROBABILISTIC / TRUST POSTURE — lines acknowledging non-determinism, model fallibility, user trust calibration. Examples: "probabilistic, non-deterministic systems", "designing for AI fallibility", "calibrating user trust", "model behaviour", "AI explainability". These reveal a team that understands the actual hard problems in AI UX.
+
+- DESIGN PARTNERSHIP / PAIRING — lines about pairing with another designer, design partnership, peer-level collaboration on complex problems. Examples: "pairing on complex problems with a second senior designer", "designed in pairs", "design as a discipline, not a function". These reveal a team that takes design seriously enough to staff it for the difficulty of the problem.
+
+- OPERATIONAL JUDGEMENT — lines about prioritisation, resource constraints, knowing where to invest effort. Examples: "knowing where to invest effort", "design judgement", "good-enough vs gold-plated decisions", "prioritising in a resource-constrained environment". These reveal a team that values judgement over completionism.
+
+- HYPE-VS-SUBSTANCE ORIENTATION — lines that show the team has product judgement about its own roadmap. Examples: "pivotal year — AI is changing what's possible AND we need designers who can think carefully", explicit acknowledgement of trade-offs.
+
+When any of these patterns appear, senior_interpretation.what_stands_out MUST surface them as the LEAD observations — before workflow vocabulary, before stakeholder counts, before generic AI references. A senior reader notices these first; the analysis should reflect that ordering.
+
+Example for a Zeta-shape JD:
+- "JD emphasises 'where AI genuinely improves workflows and where it doesn't' — anti-hype signal; this team thinks critically about its own AI roadmap rather than chasing trends."
+- "Phrase 'knowing when leaving something alone is the right call' — strong restraint signal; values scope discipline and mature product judgement over change-for-its-own-sake."
+- "Pairing arrangement with a second senior designer on the same product surface signals investment in design depth and partnership, not isolated execution."
+
+These observations belong in what_stands_out. They are the actual intelligence of the analysis. Generic phrasing ("the team values collaboration", "they're investing in AI") fails the senior-reader test and must be replaced with cultural-signal-specific observations.
 
 SIGNAL PRIORITY HIERARCHY (mandatory — this governs what dominates the analysis)
 
@@ -241,6 +270,9 @@ Specifically forbidden outputs:
 - "more than two days on-site conflicts with..." when work_model is Remote.
 - "the hybrid expectation conflicts with..." when no hybrid signal is present.
 - "the production coding expectation conflicts with..." when no coding signal is present.
+- "this could conflict with X if confirmed" / "depending on the work model this may conflict" / any conditional friction that speculates about an unstated JD field.
+
+ABSENT-FACT RULE: when a JD does NOT state office attendance / coding expectation / salary / reporting line, the absence is a VERIFICATION POINT (something to confirm), never a FRICTION (something already conflicting). The candidate friction is dormant until the JD provides evidence. Phrase the verification point as "Confirm X" or "Clarify X" — never as "if X then conflict" or "this could conflict pending clarification". Speculation about absent facts is the failure mode this rule exists to prevent.
 
 Never project a candidate preference onto a role without JD evidence. This is the same rule as INVENTED DYSFUNCTION in the narrative pass.
 
