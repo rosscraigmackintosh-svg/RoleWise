@@ -11241,10 +11241,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // Governance must never suppress this section.
       let _sRecommendedCv = null;
       {
-        const _cvId = _str(narr?.recommended_cv)
+        const _cvId = !_isIncomplete && (
+                      _str(narr?.recommended_cv)
                    || _str(fo._reasoning?.cv_recommendation?.variant)
                    || _str(fo.suggested_actions?.recommended_cv)
-                   || _str(fo.recommended_cv);
+                   || _str(fo.recommended_cv));
         if (_cvId) {
           let _label = _cvId;
           try {
@@ -11263,7 +11264,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
       // ── Section: Why this CV ──────────────────────────────────────────────
       let _sWhyThisCv = null;
-      {
+      if (!_isIncomplete) {
         const _why = _str(narr?.why_that_cv)
                   || _str(fo._reasoning?.cv_recommendation?.reason)
                   || _str(fo.suggested_actions?.cv_reasoning)
@@ -11272,11 +11273,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
 
       // ── Section: Final note ───────────────────────────────────────────────
-      // Always present. Uses narrative's final_note when supplied, otherwise
-      // the canonical string. This is the structural anchor: even an
-      // incomplete row carries the closing context line.
+      // Only shown when pipeline is complete. During preparation the calm
+      // preparing block is shown instead — partial "Use this as context"
+      // appearing early is misleading (no analysis exists yet to contextualise).
       let _sFinalNote = null;
-      {
+      if (!_isIncomplete) {
         const _note = _str(narr?.final_note) || 'Use this as context, not a verdict.';
         _sFinalNote = `<p class="ra-final-note">${esc(_sanitizeUiText(_note))}</p>`;
       }
@@ -11284,40 +11285,37 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // If no analysis exists at all, show a calm placeholder
       const _hasSections = _sFitReality || _s01 || _s02 || _s03 || _s04 || _sPracticalDetails || _s05 || _s06 || _sDecision || _sRecommendedCv || _sWhyThisCv;
 
-      // ── Build the pipeline-state banner from real telemetry ─────────────
-      // No more "still being prepared" — that message masks operational
-      // failures. The banner reads the canonical _pipeline object (new
-      // background-job model) or the legacy _pipeline_state/_errors (old
-      // synchronous rows). Distinguishes running vs failed vs partial.
+      // ── Build the preparing / incomplete state block ─────────────────────
+      // When pipeline is not yet complete, show a calm preparing state.
+      // Technical pipeline details are available but collapsed by default.
       const _renderIncompleteBanner = () => {
         // Prefer the new canonical _pipeline object.
         const newPl = fo._pipeline || null;
         const ps = newPl?.stages || fo._pipeline_state || null;
         const pe = (newPl?.errors && newPl.errors.length ? newPl.errors : (Array.isArray(fo._pipeline_errors) ? fo._pipeline_errors : []));
         const pt = newPl?.timings || fo._pipeline_timings || null;
-        const cc = fo._completion_check  || null;
+        const cc = fo._completion_check || null;
         const provName = (fo._aiProvider || _prov?.provider || 'unknown');
         const overallStatus = newPl?.status || (cc?.passed ? 'complete' : 'partial');
 
-        // Build a human-readable status line for each stage.
+        // Stage list for the disclosure panel.
         const statusLabel = (k) => {
           const s = ps?.[k];
           if (!s) return 'queued';
-          // Map old keys to new (back-compat).
           if (k === 'reasoning' && !s && ps?.pass1_5) return ps.pass1_5;
           if (k === 'narrative' && !s && ps?.pass2)   return ps.pass2;
           return s;
         };
         const stages = newPl ? [
-          ['Reading role',           statusLabel('pass1'),      pt?.analyse_jd_ms],
-          ['Generating reasoning',   statusLabel('reasoning'),  pt?.reasoning_ms],
-          ['Generating narrative',   statusLabel('narrative'),  pt?.narrative_ms],
-          ['Validating analysis',    statusLabel('validation'), null],
+          ['Reading role',         statusLabel('pass1'),      pt?.analyse_jd_ms],
+          ['Building reasoning',   statusLabel('reasoning'),  pt?.reasoning_ms],
+          ['Writing briefing',     statusLabel('narrative'),  pt?.narrative_ms],
+          ['Validating',           statusLabel('validation'), null],
         ] : [
-          ['Pass 1 (analyse-jd)',          ps?.pass1   || 'unknown', pt?.analyse_jd_ms],
-          ['Pass 1.5 (role-reasoning)',    ps?.pass1_5 || 'unknown', pt?.reasoning_ms],
-          ['Pass 2 (narrative)',           ps?.pass2   || 'unknown', pt?.narrative_ms],
-          ['Persist',                      ps?.persist || 'unknown', null],
+          ['Pass 1 (analyse-jd)',       ps?.pass1   || 'unknown', pt?.analyse_jd_ms],
+          ['Pass 1.5 (role-reasoning)', ps?.pass1_5 || 'unknown', pt?.reasoning_ms],
+          ['Pass 2 (narrative)',        ps?.pass2   || 'unknown', pt?.narrative_ms],
+          ['Persist',                   ps?.persist || 'unknown', null],
         ];
         const stagesHtml = stages.map(([label, status, ms]) => {
           const icon = status === 'complete' || status === 'success' ? '✓'
@@ -11330,39 +11328,32 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           return `<li class="ra-pipeline-stage ra-pipeline-${esc(status)}"><span class="ra-pipeline-icon">${icon}</span> ${esc(label)}: <strong>${esc(status)}</strong>${msStr}</li>`;
         }).join('');
 
-        // Build the "what went wrong" message from the first non-success error.
-        let primaryError = null;
-        if (pe.length) primaryError = pe[0];
+        // Error / missing / timing lines for the disclosure panel.
+        let primaryError = pe.length ? pe[0] : null;
         const errorLine = primaryError
-          ? `<p class="ra-pipeline-error">Reason: <code>${esc(primaryError.code || 'UNKNOWN')}</code> at stage <code>${esc(primaryError.stage || '?')}</code>. ${esc((primaryError.message || '').slice(0, 240))}</p>`
+          ? `<p class="ra-pipeline-error">Error: <code>${esc(primaryError.code || 'UNKNOWN')}</code> at <code>${esc(primaryError.stage || '?')}</code>. ${esc((primaryError.message || '').slice(0, 240))}</p>`
           : '';
-
-        // Sections missing line.
         const sm = Array.isArray(cc?.sections_missing) ? cc.sections_missing : [];
         const pm = Array.isArray(cc?.provenance_missing) ? cc.provenance_missing : [];
         const missingLine = (sm.length || pm.length)
           ? `<p class="ra-pipeline-missing">Missing: ${[...sm.map(s => `section <code>${esc(s)}</code>`), ...pm.map(p => `version <code>${esc(p)}</code>`)].join(', ')}.</p>`
           : '';
-
         const totalMs = pt?.total_ms;
         const totalLine = (typeof totalMs === 'number' && totalMs > 0)
-          ? `<p class="ra-pipeline-total">Total pipeline time: ${totalMs}ms · provider: <code>${esc(provName)}</code></p>`
+          ? `<p class="ra-pipeline-total">Pipeline: ${totalMs}ms · provider: <code>${esc(provName)}</code></p>`
           : `<p class="ra-pipeline-total">Provider: <code>${esc(provName)}</code></p>`;
 
-        const headline = overallStatus === 'running'
-          ? '<strong>Analysis is running.</strong> Stages persist as they complete. This page auto-refreshes every 5 seconds.'
-          : overallStatus === 'partial'
-            ? '<strong>Analysis partial.</strong> Some stages completed but the full 11-section analysis was not produced.'
-            : overallStatus === 'failed'
-              ? '<strong>Analysis failed.</strong> The ingestion pipeline did not complete.'
-              : '<strong>Analysis incomplete.</strong> The ingestion pipeline did not produce a full analysis.';
-
-        return `<div class="ra-no-analysis ra-pipeline-banner ra-pipeline-status-${esc(overallStatus)}">
-          <p>${headline}</p>
-          <ul class="ra-pipeline-stages">${stagesHtml}</ul>
-          ${errorLine}
-          ${missingLine}
-          ${totalLine}
+        // Calm preparing state — no alarming stage text at top level.
+        return `<div class="ra-preparing ra-pipeline-status-${esc(overallStatus)}">
+          <p class="ra-preparing-title">Preparing role analysis</p>
+          <p class="ra-preparing-sub">Rolewise has extracted the basics and is building the full role briefing.</p>
+          <details class="ra-pipeline-disclosure">
+            <summary class="ra-pipeline-disclosure-summary">View progress details</summary>
+            <div class="ra-pipeline-technical">
+              <ul class="ra-pipeline-stages">${stagesHtml}</ul>
+              ${errorLine}${missingLine}${totalLine}
+            </div>
+          </details>
         </div>`;
       };
 
