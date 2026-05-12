@@ -14,3 +14,7 @@ node_modules/
 
 # Claude worktrees (temporary working directories)
 .claude/worktrees/
+
+# Supabase CLI ephemeral state
+supabase/.temp/linked-project.json
+supabase/supabase/

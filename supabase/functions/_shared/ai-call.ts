@@ -19,8 +19,9 @@ export interface AIUsage {
   provider: AIProvider
   schema_failures?: string[]
   // Provenance stamps written by the edge function (not by the AI call itself):
-  narrative_version?:    string  // e.g. "v31"
-  analyse_jd_version?:   string  // e.g. "v19"
+  narrative_version?:       string  // e.g. "v32"
+  analyse_jd_version?:      string  // e.g. "v20"
+  role_reasoning_version?:  string  // e.g. "v1"
 }
 
 export interface AIResult {
