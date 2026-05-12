@@ -13771,6 +13771,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       let savedRole = null;
       let analysisError = null;
       let _matchId = null;
+      // Hoisted so the background pipeline call (outside the try block) can
+      // read these. Assigned inside the try once `text` is finalised.
+      let jd_raw = null;
+      let jd_clean = null;
+      let jd = null;
 
       try {
         // ── Duplicate detection for ingestion overlay ────────────────────────
@@ -13878,9 +13883,9 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           _completeLine();
         }
 
-        const jd_raw = text;
-        const jd_clean = cleanJobDescription ? cleanJobDescription(jd_raw) : jd_raw;
-        const jd = jd_clean || jd_raw;
+        jd_raw = text;
+        jd_clean = cleanJobDescription ? cleanJobDescription(jd_raw) : jd_raw;
+        jd = jd_clean || jd_raw;
 
         if (context === 'add') {
           // ── New role: extract metadata, create DB record, analyse ─────────
