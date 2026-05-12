@@ -13846,8 +13846,37 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           ]);
           if (_narr) analysis._narrative = _narr;
         } catch (e) {
-          console.warn('[ingestion] Pass 2 (narrative) failed or timed out:', e.message);
+          console.warn('[ingestion] Pass 2 (narrative) failed or timed out:', e?.message || e);
+          // Capture structured narrative-failure context so the DB row reveals
+          // exactly why the narrative is missing. Typed validation errors
+          // thrown by callNarrativeAPI carry a `.code` of NARRATIVE_VALIDATION_FAILED
+          // plus `.reasons` and `.context`.
+          analysis._narrative_error = {
+            code:      e?.code      || 'NARRATIVE_UNCAUGHT',
+            message:   e?.message   || String(e),
+            reasons:   Array.isArray(e?.reasons) ? e.reasons : null,
+            provider:  e?.context?.provider || _aiResult?._aiProvider || null,
+            timestamp: new Date().toISOString(),
+          };
         }
+      }
+
+      // ── Back-copy async fields from _aiResult onto analysis ────────────
+      // The earlier Object.assign at Pass-1 completion was a shallow snapshot;
+      // any field the _narrativePromise IIFE writes onto _aiResult AFTER that
+      // assign (reasoning, reasoning version, narrative, narrative error) is
+      // lost unless we explicitly propagate it here. Without this, provenance
+      // version stamps were silently dropped even when the underlying pass
+      // succeeded.
+      if (_aiResult) {
+        if (_aiResult._reasoning && !analysis._reasoning)
+          analysis._reasoning = _aiResult._reasoning;
+        if (_aiResult._role_reasoning_version && !analysis._role_reasoning_version)
+          analysis._role_reasoning_version = _aiResult._role_reasoning_version;
+        if (_aiResult._narrative && !analysis._narrative)
+          analysis._narrative = _aiResult._narrative;
+        if (_aiResult._narrative_error && !analysis._narrative_error)
+          analysis._narrative_error = _aiResult._narrative_error;
       }
       if (_arAnimator) _arAnimator.setNarrativeDone();
 
@@ -25853,6 +25882,20 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
               return narrative;
             } catch (_p2Err) {
               console.warn('[Pass 2] narrative generation failed, using template rendering', _p2Err);
+              // Capture structured failure context on aiResult so the back-copy
+              // in _runIngestionFlow can persist _narrative_error to the row.
+              aiResult._narrative_error = {
+                code:      _p2Err?.code      || 'NARRATIVE_UNCAUGHT',
+                message:   _p2Err?.message   || String(_p2Err),
+                reasons:   Array.isArray(_p2Err?.reasons) ? _p2Err.reasons : null,
+                provider:  _p2Err?.context?.provider || aiResult?._aiProvider || null,
+                context:   _p2Err?.context   || null,
+                timestamp: new Date().toISOString(),
+              };
+              // Re-throw typed validation errors so the ingestion flow's
+              // outer catch can also capture them. Non-typed errors still
+              // surface via aiResult._narrative_error above.
+              if (_p2Err?.code === 'NARRATIVE_VALIDATION_FAILED') throw _p2Err;
               return null;
             }
           })();
@@ -26372,12 +26415,23 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
         // ── Strict validation ─────────────────────────────────────────────
         // Every key must exist with the correct shape. If any check fails
-        // the entire payload is rejected and the renderer falls back to
-        // template rendering from Pass 1 structured JSON.
+        // the entire payload is rejected. Previously this returned null
+        // silently — that erased every signal of why narrative was missing
+        // from the persisted row. Now we throw a typed error so the
+        // ingestion flow can capture structured context into _narrative_error.
         const _valid = _validateNarrative(narrative);
         if (!_valid.ok) {
           console.warn('[generate-narrative] validation failed:', _valid.reasons);
-          return null;
+          const _err = new Error('NARRATIVE_VALIDATION_FAILED: ' + _valid.reasons.join('; '));
+          _err.code    = 'NARRATIVE_VALIDATION_FAILED';
+          _err.reasons = _valid.reasons;
+          _err.context = {
+            provider:           _aiProvider,
+            narrative_version:  data?.usage?.narrative_version || null,
+            reasoning_present:  !!reasoningJson,
+            narrative_keys:     narrative && typeof narrative === 'object' ? Object.keys(narrative) : [],
+          };
+          throw _err;
         }
 
         // ── Usage tracking ───────────────────────────────────────────────
