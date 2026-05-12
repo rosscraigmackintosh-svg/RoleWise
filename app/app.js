@@ -22841,9 +22841,91 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       };
 
       // ── 1. Day rate patterns (check first — day rates look like small numbers) ──
+      //
+      // PRIORITY: when a JD contains both a benchmark range (e.g. "Market range
+      // £250-£375") AND a stated rate (e.g. "Day rate: £600 Inside IR35"),
+      // prefer the STATED rate. We do this by scanning for anchor phrases first
+      // (Day rate / Daily rate / Rate: / IR35) and grabbing the money figure
+      // attached to them. Only if no anchored figure is found do we fall through
+      // to the generic first-match-wins regexes below.
 
-      // Range day rate: "£600–£700 per day", "£600-£700/day", "£600 – £700 pd"
-      const dayRangeRe = /([£€$])\s*([\d,]+)\s*(?:[-–—]\s*(?:[£€$])?\s*([\d,]+))\s*(?:\/day|per\s+day|\bpd\b|\ba\s+day)/i;
+      // 1a. Anchored: "Day rate: £600", "Daily rate £600", "Rate: £600", with
+      // optional /day suffix and optional IR35 qualifier.
+      const _scanAnchor = (anchorRe) => {
+        let am;
+        const re = new RegExp(anchorRe.source, anchorRe.flags.includes('g') ? anchorRe.flags : anchorRe.flags + 'g');
+        while ((am = re.exec(raw)) !== null) {
+          // Look at up to ~80 chars after the anchor for the first money figure.
+          const window = raw.slice(am.index, am.index + am[0].length + 80);
+          // Allow range or single: "£600", "£600-£700", "£550 - £650"
+          const wm = window.match(/([£€$])\s*([\d,]+)(?:\s*[-–—]\s*(?:[£€$])?\s*([\d,]+))?/);
+          if (!wm) continue;
+          if (!_isSalaryFigure(wm[0])) continue;
+          const cur = _detectCurrency(wm[0]);
+          const min = _parseNum(wm[2]);
+          const max = wm[3] ? _parseNum(wm[3]) : null;
+          // Sanity: a daily rate should be 100..10000. Anything outside is
+          // probably an annual figure caught by a loose anchor.
+          if (!min || min < 100 || min > 10000) continue;
+          if (max != null && (max < min || max > 20000)) continue;
+          const display = _buildDisplay(min, max, cur, 'daily', wm[0].trim());
+          return {
+            raw: `${am[0]} ${wm[0]}`.replace(/\s+/g, ' ').trim(),
+            normalized: display,
+            confidence: 'high',
+            salary_min: min,
+            salary_max: max,
+            daily_rate: min,
+            currency: cur,
+            period: 'daily',
+          };
+        }
+        return null;
+      };
+
+      // Anchor 1: explicit "Day rate" / "Daily rate" label.
+      const _dayRateAnchored = _scanAnchor(/\b(?:day|daily)\s+rate\b\s*(?::|-|of|at)?\s*/i);
+      if (_dayRateAnchored) return _dayRateAnchored;
+
+      // Anchor 2: bare "Rate:" at line start (e.g. "Rate: £600").
+      const _rateLabelAnchored = _scanAnchor(/(?:^|\n)\s*rate\s*[:\-]\s*/i);
+      if (_rateLabelAnchored) return _rateLabelAnchored;
+
+      // Anchor 3: IR35 qualifier — "£600 Inside IR35" or "£600 Outside IR35".
+      // For these, the money figure PRECEDES the anchor, so we scan back ~80 chars.
+      {
+        const ir35Re = /\b(inside|outside)\s+ir35\b/gi;
+        let im;
+        while ((im = ir35Re.exec(raw)) !== null) {
+          const start = Math.max(0, im.index - 80);
+          const before = raw.slice(start, im.index);
+          // Take the LAST money figure in the window before the IR35 mention.
+          const candidates = [...before.matchAll(/([£€$])\s*([\d,]+)(?:\s*[-–—]\s*(?:[£€$])?\s*([\d,]+))?/g)];
+          if (!candidates.length) continue;
+          const wm = candidates[candidates.length - 1];
+          if (!_isSalaryFigure(wm[0])) continue;
+          const cur = _detectCurrency(wm[0]);
+          const min = _parseNum(wm[2]);
+          const max = wm[3] ? _parseNum(wm[3]) : null;
+          if (!min || min < 100 || min > 10000) continue;
+          if (max != null && (max < min || max > 20000)) continue;
+          return {
+            raw: `${wm[0]} ${im[0]}`.trim(),
+            normalized: _buildDisplay(min, max, cur, 'daily', wm[0].trim()),
+            confidence: 'high',
+            salary_min: min,
+            salary_max: max,
+            daily_rate: min,
+            currency: cur,
+            period: 'daily',
+          };
+        }
+      }
+
+      // 1b. Fall-through: generic day-rate regexes (legacy behaviour). Only
+      // reached when none of the anchored patterns matched. Range day rate:
+      // "£600–£700 per day", "£600-£700/day", "£600 – £700 pd"
+      const dayRangeRe = /([£€$])\s*([\d,]+)\s*(?:[-–—]\s*(?:[£€$])?\s*([\d,]+))\s*(?:\/day|per\s+day|\bpd\b|\bp\/d\b|\ba\s+day)/i;
       const drm = raw.match(dayRangeRe);
       if (drm && _isSalaryFigure(drm[0])) {
         const cur = _detectCurrency(drm[0]);
@@ -22854,8 +22936,8 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
                  currency: cur, period: 'daily' };
       }
 
-      // Single day rate: "£650/day", "£650 per day", "£650 pd", "£650 a day"
-      const daySingleRe = /([£€$])\s*([\d,]+)\s*(?:\/day|per\s+day|\bpd\b|\ba\s+day)/i;
+      // Single day rate: "£650/day", "£650 per day", "£650 pd", "£650 p/d", "£650 a day"
+      const daySingleRe = /([£€$])\s*([\d,]+)\s*(?:\/day|per\s+day|\bpd\b|\bp\/d\b|\ba\s+day)/i;
       const dsm = raw.match(daySingleRe);
       if (dsm && _isSalaryFigure(dsm[0])) {
         const cur = _detectCurrency(dsm[0]);
@@ -24031,6 +24113,24 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           expect: { work_model: 'Hybrid' },
         },
         {
+          // Regression for the bug found 2026-05-12: a benchmark range earlier
+          // in the JD was overriding the explicit stated day rate. Stated rate
+          // (£600 Inside IR35) must win over benchmark range (£250-£375/day).
+          label: 'Day rate: stated rate beats benchmark range',
+          input: 'Senior Product Designer Contract\nLondon\n\nMarket benchmark for this role: £250-£375 per day across UK-based contracts.\n\nDay rate: £600 Inside IR35\n\n6 month rolling contract.',
+          expect: { salary: '£600/day' },
+        },
+        {
+          label: 'Day rate: IR35 anchor without explicit "Day rate" label',
+          input: 'UX Lead Contract\nManchester\n\nWe pay £550 Inside IR35 for senior contractors.\n\n3 month initial term.',
+          expect: { salary: '£550/day' },
+        },
+        {
+          label: 'Day rate: labelled range wins over scattered figures',
+          input: 'Lead Designer\nLondon\n\nSalary survey shows £400-£500/day for this kind of role.\n\nDay rate: £700-£800 Outside IR35\n\nContract length: 6 months.',
+          expect: { salary: '£700-£800/day' },
+        },
+        {
           label: 'LinkedIn paste with location area',
           input: 'Senior Product Designer\nAcme Corp\nLondon Area, United Kingdom\nHybrid\nFull-time',
           expect: { location: 'London, United Kingdom', work_model: 'Hybrid' },
@@ -24429,6 +24529,19 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         salaryAnnual = _detSal;
         console.log('[normaliseAnalysis] salary: deterministic wins →', salaryAnnual,
           '| AI was:', _aiSalIsWeak ? `weak ("${_mergedPd.salary_annual || 'none'}")` : 'strong');
+
+        // Day-rate IR35 enrichment: when the extractor flagged a daily period
+        // and the JD names an IR35 status, append it so the display reads
+        // "£600/day Inside IR35" instead of just "£600/day".
+        const _periodIsDaily = (_mergedPd.period || '').toLowerCase() === 'daily' ||
+                               _mergedPd.daily_rate != null;
+        if (_periodIsDaily && typeof _detectIr35Status === 'function') {
+          const _ir35 = _detectIr35Status(jdText || '', _mergedPd.employment_type || pdRaw.employment_type);
+          if (_ir35 && _ir35 !== 'Not applicable' && _ir35 !== 'Undetermined') {
+            const _hasIr35 = new RegExp(_ir35.replace(/\s+/g, '\\s+'), 'i').test(salaryAnnual);
+            if (!_hasIr35) salaryAnnual = `${salaryAnnual} ${_ir35}`;
+          }
+        }
       } else if (_aiSalIsWeak) {
         // Neither source has a real figure
         salaryAnnual  = 'Not stated';
@@ -24837,15 +24950,52 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const _roleSalCeiling = _pdForSalChk.salary_max != null ? Number(_pdForSalChk.salary_max)
                             : _pdForSalChk.salary_min != null ? Number(_pdForSalChk.salary_min)
                             : null;
-      if (_userSalFloor && _roleSalCeiling != null && _roleSalCeiling < _userSalFloor) {
-        const _salMinFmt = `£${Math.round(_userSalFloor / 1000)}k`;
-        analysis.rolewise_verdict = {
-          outcome:   'Not viable',
-          reasoning: `Salary (${_pdForSalChk.salary_annual}) is below your minimum of ${_salMinFmt}. Do not invest further time without first confirming the range has flexibility.`,
-        };
-        console.log('[normaliseAnalysis] salary break — verdict overridden to Not viable', {
-          roleSalary: _roleSalCeiling, userMin: _userSalFloor,
-        });
+      // Detect day-rate roles — viability must annualise before comparing
+      // against the user's annual salary floor. Comparing raw daily numbers
+      // (e.g. 375) to an annual floor (110000) is meaningless and was
+      // historically causing day-rate roles to be marked Not viable.
+      const _roleIsDaily = ((_pdForSalChk.period || '').toLowerCase() === 'daily') ||
+                           (_pdForSalChk.daily_rate != null);
+      const ANNUAL_WORKING_DAYS = 220; // contractor convention; gross, not take-home
+
+      if (_userSalFloor && _roleSalCeiling != null) {
+        // Compute the annual-equivalent ceiling. For day-rate roles, use
+        // daily_rate (or salary_max as fallback) × 220. For annual roles,
+        // use the existing ceiling unchanged.
+        const _dailyCeiling = _roleIsDaily
+          ? (_pdForSalChk.daily_rate != null ? Number(_pdForSalChk.daily_rate) : _roleSalCeiling)
+          : null;
+        const _annualEquiv = _roleIsDaily
+          ? (_dailyCeiling * ANNUAL_WORKING_DAYS)
+          : _roleSalCeiling;
+
+        if (_annualEquiv < _userSalFloor) {
+          const _salMinFmt = `£${Math.round(_userSalFloor / 1000)}k`;
+          if (_roleIsDaily) {
+            // Day-rate take-home varies with IR35 status and contract length.
+            // Never hard-fail: surface as a clarification flag, with the
+            // estimated annual equivalent so the user can see the math.
+            const _annualEquivFmt = `~£${Math.round(_annualEquiv / 1000)}k`;
+            analysis.rolewise_verdict = {
+              outcome:   'Needs clarification',
+              reasoning: `Day rate (${_pdForSalChk.salary_annual}) annualised at ${ANNUAL_WORKING_DAYS} working days is ${_annualEquivFmt} gross (estimated). That sits below your ${_salMinFmt} annual floor, but Inside-IR35 take-home, contract length, and utilisation make this comparison uncertain. Clarify before deciding.`,
+            };
+            console.log('[normaliseAnalysis] salary break — day-rate annualised below floor (Needs clarification)', {
+              daily_ceiling: _dailyCeiling,
+              annual_equiv:  _annualEquiv,
+              user_min:      _userSalFloor,
+              estimated:     true,
+            });
+          } else {
+            analysis.rolewise_verdict = {
+              outcome:   'Not viable',
+              reasoning: `Salary (${_pdForSalChk.salary_annual}) is below your minimum of ${_salMinFmt}. Do not invest further time without first confirming the range has flexibility.`,
+            };
+            console.log('[normaliseAnalysis] salary break — verdict overridden to Not viable', {
+              roleSalary: _roleSalCeiling, userMin: _userSalFloor,
+            });
+          }
+        }
       }
 
       return analysis;
