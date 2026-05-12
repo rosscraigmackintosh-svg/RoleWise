@@ -27013,6 +27013,15 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           }
         })();
 
+        // ── Canonical field patch — final_note ───────────────────────────
+        // final_note is deterministic: one fixed string, never model-authored.
+        // The model occasionally omits it. Patch before validation so this
+        // never causes a validation failure.
+        if (!narrative.final_note || typeof narrative.final_note !== 'string' || !narrative.final_note.trim()) {
+          narrative.final_note = 'Use this as context, not a verdict.';
+          console.log('[generate-narrative] patched missing final_note');
+        }
+
         // ── Strict validation ─────────────────────────────────────────────
         // Every key must exist with the correct shape. If any check fails
         // the entire payload is rejected. Previously this returned null
