@@ -14743,7 +14743,14 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const _location = role.location_text || null;
       const _wmRaw    = (role.work_model || '').toLowerCase();
       const _wm       = _wmRaw ? (_wmLabel[_wmRaw] || _capitalise(_wmRaw)) : null;
-      const _salary   = (role.salary_text_raw || '').trim() || null;
+      // Salary: prefer role.salary_text_raw (set at role-row insert from the
+      // first extractJDMetadata pass), but fall back to the AI-resolved value
+      // on practical_details.salary_annual. The role row is sometimes inserted
+      // BEFORE the deterministic day-rate parser has run inside normaliseAnalysis,
+      // so it can be empty even when the resolved analysis has "£600/day Inside IR35".
+      const _isUsefulSalary = s => s && s !== 'Not stated' && s !== 'Not disclosed';
+      const _pdSalary = analysis?.practical_details?.salary_annual || '';
+      const _salary   = ((role.salary_text_raw || '').trim() || (_isUsefulSalary(_pdSalary) ? _pdSalary : '')) || null;
       const _type     = role.engagement_type || analysis?.practical_details?.contract_type || null;
       const _sen      = analysis?.role_archetype?.primary
         || analysis?.what_they_are_really_looking_for?.seniority
@@ -24269,6 +24276,59 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       return { pass, fail, failures };
     };
 
+    // ─── Company-extraction regression helper ────────────────────────────────
+    // Run from console: window._testCompanyExtract()
+    // Exercises extractJDMetadata() against company-name edge cases.
+    window._testCompanyExtract = function() {
+      if (typeof extractJDMetadata !== 'function') {
+        console.warn('[_testCompanyExtract] extractJDMetadata not available');
+        return { pass: 0, fail: 0, failures: [] };
+      }
+      const cases = [
+        {
+          // Regression for the bug found 2026-05-12: a bulleted company line
+          // directly below the title was bypassed; the frequency fallback
+          // then promoted "Experience" (from "Key experience required" body
+          // text) as the company name.
+          label: 'Bullet company line under title beats body "Experience"',
+          input: 'Senior Mobile Interaction Designer\n* Experis\n* London (Hybrid)\n\nKey experience required\nExperience with mobile interaction design\nExperience working in agile teams\nExperience with WCAG 2.2',
+          expect: 'Experis',
+        },
+        {
+          // "Experience" section header must NEVER win even when it appears
+          // 5+ times in the JD body.
+          label: 'Generic "Experience" never promoted to company',
+          input: 'Senior Designer\nLondon\n\nExperience\nExperience with Figma\nExperience with React\nExperience leading teams\nExperience with research',
+          expect: null,
+        },
+        {
+          // Title-anchored backward walk still works for LinkedIn-style pastes.
+          label: 'Backward walk for LinkedIn-style company-above-title paste',
+          input: 'Acme Corp\nSenior Product Designer\nLondon Area, United Kingdom\nFull-time',
+          expect: 'Acme Corp',
+        },
+      ];
+      let pass = 0, fail = 0;
+      const failures = [];
+      for (const { label, input, expect } of cases) {
+        let got = null;
+        try {
+          const r = extractJDMetadata(input, input);
+          got = r?.company_name || null;
+        } catch (_e) {
+          got = '[threw: ' + (_e?.message || _e) + ']';
+        }
+        const ok = (expect === null) ? (got == null) : (got === expect);
+        if (ok) pass++;
+        else { fail++; failures.push(`[${label}] expected "${expect}", got "${got}"`); }
+      }
+      console.group(`_testCompanyExtract: ${pass}/${pass + fail} passed`);
+      if (failures.length) failures.forEach(f => console.warn(f));
+      else console.log('All tests passed.');
+      console.groupEnd();
+      return { pass, fail, failures };
+    };
+
     // ─── End of JD Extraction Engine v2 ──────────────────────────────────────
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -25751,11 +25811,20 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       ];
       // Section headings / tab labels that must never be accepted as company.
       // Exact-match check so legitimate names containing these substrings pass.
+      // (e.g. "Experis" is fine; "Experience" alone is a section heading.)
       const _companyExactReject = new Set([
         'role', 'job', 'company', 'who you are', 'you', 'desirable',
         'salary benchmarks', 'our take', 'insights', 'home', 'jobs',
         'companies', 'inbox', 'what the job involves', 'apply', 'save',
         'follow', 'follow company', 'hide company', 'share this job',
+        // JD section labels that frequency-walks routinely promote by mistake
+        'experience', 'key experience', 'key experience required',
+        'experience required', 'your experience', 'about you', 'about',
+        'skills', 'key skills', 'core skills', 'essential skills',
+        'nice to have', 'must have', 'must haves', 'nice to haves',
+        'overview', 'summary', 'description', 'duties', 'responsibilities',
+        'qualifications', 'benefits', 'package', 'what we offer',
+        'about the role', 'about the job', 'about the company', 'about us',
       ]);
       const _companyLocWords  = ['remote', 'hybrid', 'united kingdom', 'london'];
       const _isValidCompany = c => {
@@ -25808,6 +25877,27 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             if (/\b(is|a|an|the|and|or|of)\b/i.test(_cand)) break;   // contains common prose words
             if (/[;:!?@]/.test(_cand)) break;                         // suspicious punctuation
             if (/^\d/.test(_cand)) break;                             // starts with a number
+            if (_isValidCompany(_cand)) { company_name = _cand; break; }
+          }
+        }
+        // Walk FORWARD from the title up to 4 lines looking for a bullet-style
+        // company listing: "* Experis", "- Experis", "• Experis". Many job
+        // boards (recruiter agency posts, simple paste templates) place the
+        // company on the line immediately under the title as a bullet.
+        // Stops at the first non-bullet line so JD body bullets later down
+        // can never poison this scan.
+        if (!company_name && _titleIdx >= 0) {
+          for (let i = _titleIdx + 1; i <= Math.min(lines.length - 1, _titleIdx + 4); i++) {
+            const _bm = lines[i].match(/^[\*\-•·]\s*(.+?)\s*$/);
+            if (!_bm) break;                                          // bullet block ended
+            const _cand = _bm[1].trim();
+            if (!_cand || _cand.length < 2) break;
+            if (_SKIP_LINES.test(_cand)) continue;                    // location / type bullets — skip but keep scanning
+            const _candWords = _cand.split(/\s+/);
+            if (_candWords.length > 4) continue;
+            if (/\b(is|a|an|the|and|or|of)\b/i.test(_cand)) continue;
+            if (/[;:!?@]/.test(_cand)) continue;
+            if (/^\d/.test(_cand)) continue;
             if (_isValidCompany(_cand)) { company_name = _cand; break; }
           }
         }
