@@ -13792,10 +13792,35 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           _arAnimator.setRole(savedRole);
         }
 
+        // ── Pipeline telemetry — initialise ──────────────────────────────────
+        // Every ingestion produces a structured telemetry record on the
+        // persisted row. Eliminates silent loss: even when something fails
+        // mid-pipeline, the DB row reveals exactly what ran, when, and why.
+        const _pipelineT0 = performance.now();
+        const _pipelineErrors = [];
+        const _pipelineState = {
+          pass1:   'pending',
+          pass1_5: 'pending',
+          pass2:   'pending',
+          persist: 'pending',
+        };
+        const _pipelineTimings = {
+          analyse_jd_ms: 0,
+          reasoning_ms:  0,
+          narrative_ms:  0,
+          total_ms:      0,
+        };
+        const _recordPipelineError = (stage, code, message) => {
+          _pipelineErrors.push({ stage, code, message: String(message || '').slice(0, 500) });
+        };
+
         // ── Call analysis API ────────────────────────────────────────────────
         _tPass1Start = performance.now();
         analysis = await callAnalysisAPI(jd);
         _tPass1Done = performance.now();
+        _pipelineTimings.analyse_jd_ms = Math.round(_tPass1Done - _tPass1Start);
+        _pipelineState.pass1 = analysis ? 'success' : 'failed';
+        if (!analysis) _recordPipelineError('pass1', 'LOCAL_ANALYSIS_FAILED', 'callAnalysisAPI returned no analysis');
         console.log('[perf] Local analysis ready in', Math.round(_tPass1Done - _tPass1Start) + 'ms (AI enrichment continues in background)');
 
         // ── Company/title backfill from AI output (new roles) ───────────────
@@ -13922,15 +13947,22 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
       // Await Pass 1 — AI analysis (30 s timeout per ingestion contract)
       let _aiResult = null;
+      const _pass1AiT0 = performance.now();
       if (analysis?._aiPromise) {
         try {
           _aiResult = await Promise.race([
             analysis._aiPromise,
             new Promise((_, rej) => setTimeout(() => rej(new Error('Pass 1 timeout')), 30_000)),
           ]);
+          _pipelineState.pass1 = _aiResult ? 'success' : 'failed';
+          if (!_aiResult) _recordPipelineError('pass1', 'PASS1_NO_RESULT', 'analyse-jd returned no result');
         } catch (e) {
+          _pipelineState.pass1 = /timeout/i.test(e?.message || '') ? 'timeout' : 'failed';
+          _recordPipelineError('pass1', _pipelineState.pass1 === 'timeout' ? 'PASS1_TIMEOUT' : 'PASS1_FAILED', e?.message || String(e));
           console.warn('[ingestion] Pass 1 failed or timed out:', e.message);
         }
+        // Overwrite the local-analysis time with the actual AI Pass 1 time.
+        _pipelineTimings.analyse_jd_ms = Math.round(performance.now() - _pass1AiT0);
       }
       if (_aiResult) {
         // Merge AI result; preserve the original promise reference
@@ -13970,6 +14002,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // Await Pass 1.5 + Pass 2 — reasoning + narrative chain.
       // The promise covers both passes sequentially; the 75 s budget reflects
       // measured pipeline duration (~37–59 s on representative JDs).
+      const _pass15T0 = performance.now();
       if (_aiResult?._narrativePromise) {
         try {
           const _narr = await Promise.race([
@@ -13977,6 +14010,12 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             new Promise((_, rej) => setTimeout(() => rej(new Error('Pass 2 timeout')), NARRATIVE_PIPELINE_TIMEOUT_MS)),
           ]);
           if (_narr) analysis._narrative = _narr;
+          // Pass 1.5 succeeded if reasoning version was stamped on aiResult.
+          _pipelineState.pass1_5 = _aiResult?._role_reasoning_version ? 'success' : 'failed';
+          if (_pipelineState.pass1_5 === 'failed') _recordPipelineError('pass1_5', 'REASONING_NO_VERSION', 'role-reasoning did not stamp version (likely 422 from edge function)');
+          // Pass 2 succeeded only if narrative was returned and is now on analysis.
+          _pipelineState.pass2 = _narr ? 'success' : 'failed';
+          if (!_narr) _recordPipelineError('pass2', 'NARRATIVE_NO_RESULT', 'narrative promise resolved but returned no narrative');
         } catch (e) {
           console.warn('[ingestion] Pass 2 (narrative) failed or timed out:', e?.message || e);
           // Capture structured narrative-failure context so the DB row reveals
@@ -13990,7 +14029,32 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             provider:  e?.context?.provider || _aiResult?._aiProvider || null,
             timestamp: new Date().toISOString(),
           };
+          // Distinguish reasoning-stage vs narrative-stage failure for telemetry.
+          if (_aiResult?._role_reasoning_version) {
+            // Reasoning succeeded; narrative failed.
+            _pipelineState.pass1_5 = 'success';
+            _pipelineState.pass2   = /timeout/i.test(e?.message || '') ? 'timeout' : 'failed';
+            _recordPipelineError('pass2', e?.code || 'NARRATIVE_UNCAUGHT', e?.message || String(e));
+          } else {
+            // Reasoning failed (likely 422 truncation) or didn't run.
+            _pipelineState.pass1_5 = 'failed';
+            _pipelineState.pass2   = 'failed';
+            _recordPipelineError('pass1_5', 'REASONING_NO_VERSION', 'reasoning version absent: reasoning likely 422 or upstream failure');
+            _recordPipelineError('pass2',   e?.code || 'NARRATIVE_UNCAUGHT', e?.message || String(e));
+          }
         }
+        const _pass15End = performance.now();
+        // Best-effort split: we can't tell exactly when reasoning ended vs
+        // narrative started from outside the IIFE, so attribute time
+        // proportionally to known measurements (reasoning ~17–30 s,
+        // narrative ~10–20 s on the same provider).
+        const _chainTotalMs = Math.round(_pass15End - _pass15T0);
+        _pipelineTimings.reasoning_ms = _pipelineState.pass1_5 === 'success' ? Math.min(_chainTotalMs, 35_000) : _chainTotalMs;
+        _pipelineTimings.narrative_ms = _pipelineState.pass2   === 'success' ? Math.max(0, _chainTotalMs - _pipelineTimings.reasoning_ms) : 0;
+      } else {
+        _pipelineState.pass1_5 = 'failed';
+        _pipelineState.pass2   = 'failed';
+        _recordPipelineError('pass1_5', 'NO_NARRATIVE_PROMISE', 'aiResult had no _narrativePromise to await');
       }
 
       // ── Back-copy async fields from _aiResult onto analysis ────────────
@@ -14028,10 +14092,21 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           role_reasoning_version: _enriched._role_reasoning_version  || null,
           narrative_version:      _enriched._narrative?._narrative_version || null,
         };
+        // ── Pipeline telemetry — attach final state, timings, errors ──────
+        _pipelineTimings.total_ms = Math.round(performance.now() - _pipelineT0);
+        _enriched._pipeline_state   = _pipelineState;
+        _enriched._pipeline_timings = _pipelineTimings;
+        _enriched._pipeline_errors  = _pipelineErrors;
         try {
           await db.from('jd_matches').update({ output_json: _enriched }).eq('id', _matchId);
-          console.log('[perf] Enriched analysis persisted to jd_matches', _enriched._provenance);
+          _pipelineState.persist = 'success';
+          // Re-write with success-stamped state (best-effort; non-fatal if fails).
+          _enriched._pipeline_state = _pipelineState;
+          await db.from('jd_matches').update({ output_json: _enriched }).eq('id', _matchId);
+          console.log('[perf] Enriched analysis persisted to jd_matches', _enriched._provenance, 'pipeline:', _pipelineState);
         } catch (e) {
+          _pipelineState.persist = 'failed';
+          _recordPipelineError('persist', 'DB_UPDATE_FAILED', e?.message || String(e));
           console.warn('[ingestion] Failed to persist enriched analysis:', e);
         }
       }
