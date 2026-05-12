@@ -22812,15 +22812,32 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         return 'annual';
       };
 
-      // Build a human-readable display string from structured data
-      const _buildDisplay = (min, max, currency, period, rawStr) => {
+      // Build a human-readable display string from structured data.
+      // isOpenEnded = true only when the source explicitly indicates the
+      // single figure is a floor (e.g. "£600+", "from £600", "minimum £600",
+      // "£600 upwards", "starting at £600"). Otherwise a single value
+      // displays as the exact stated figure, no "+" appended.
+      const _buildDisplay = (min, max, currency, period, rawStr, isOpenEnded) => {
         const sym = currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : currency === 'USD' ? '$' : '';
         const fmt = n => n >= 1000 ? `${sym}${Math.round(n / 1000)}k` : `${sym}${n.toLocaleString('en-GB')}`;
         const suffix = period === 'daily' ? '/day' : period === 'hourly' ? '/hour' : '';
         if (min && max) return `${fmt(min)}-${fmt(max)}${suffix}`;
-        if (min && !max) return `${fmt(min)}+${suffix}`;
+        if (min && !max) return `${fmt(min)}${isOpenEnded ? '+' : ''}${suffix}`;
         if (!min && max) return `Up to ${fmt(max)}${suffix}`;
         return rawStr || 'Not stated';
+      };
+
+      // Detect explicit open-ended markers in a salary phrase or its surrounding
+      // context. Used to decide whether a single-value figure renders with "+".
+      const _detectOpenEnded = (matchStr, contextWindow) => {
+        const m = String(matchStr || '');
+        const c = String(contextWindow || '').toLowerCase();
+        if (/\+\s*(?:\/day|\/hour|\/yr|per\s+day|per\s+hour|per\s+(?:annum|year)|pa\b|p\.a\.?)?\s*$/i.test(m)) return true;
+        if (/\bfrom\s+[£€$]/i.test(c)) return true;
+        if (/\bstarting\s+at\s+[£€$]/i.test(c)) return true;
+        if (/\bminimum\s+[£€$]/i.test(c)) return true;
+        if (/[£€$][\d,]+\s*(?:k|K)?\s*upwards\b/i.test(c)) return true;
+        return false;
       };
 
       // ── K-propagation helper: "£80-90k" → both get k, "£100-£150k" → both get k ──
@@ -22868,7 +22885,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           // probably an annual figure caught by a loose anchor.
           if (!min || min < 100 || min > 10000) continue;
           if (max != null && (max < min || max > 20000)) continue;
-          const display = _buildDisplay(min, max, cur, 'daily', wm[0].trim());
+          // Open-ended only when the source explicitly says so. The IR35
+          // anchor ("£600 Inside IR35") describes an exact stated rate — not
+          // an open-ended one — so the default behaviour (no "+") is right.
+          const _open = (max == null) ? _detectOpenEnded(wm[0], window) : false;
+          const display = _buildDisplay(min, max, cur, 'daily', wm[0].trim(), _open);
           return {
             raw: `${am[0]} ${wm[0]}`.replace(/\s+/g, ' ').trim(),
             normalized: display,
@@ -22909,9 +22930,13 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           const max = wm[3] ? _parseNum(wm[3]) : null;
           if (!min || min < 100 || min > 10000) continue;
           if (max != null && (max < min || max > 20000)) continue;
+          // IR35 anchor describes an exact stated rate, not an open-ended one.
+          // The context around the money figure is checked only for explicit
+          // "from £X" / "minimum £X" / "£X+" markers.
+          const _ir35Open = (max == null) ? _detectOpenEnded(wm[0], before) : false;
           return {
             raw: `${wm[0]} ${im[0]}`.trim(),
-            normalized: _buildDisplay(min, max, cur, 'daily', wm[0].trim()),
+            normalized: _buildDisplay(min, max, cur, 'daily', wm[0].trim(), _ir35Open),
             confidence: 'high',
             salary_min: min,
             salary_max: max,
@@ -22942,7 +22967,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       if (dsm && _isSalaryFigure(dsm[0])) {
         const cur = _detectCurrency(dsm[0]);
         const val = _parseNum(dsm[2]);
-        return { raw: dsm[0].trim(), normalized: _buildDisplay(val, null, cur, 'daily', dsm[0].trim()),
+        // Only add "+" if the JD explicitly marks this as open-ended
+        // (e.g. "from £650/day", "£650+/day", "£650/day upwards").
+        const _ctx = raw.slice(Math.max(0, dsm.index - 30), dsm.index + dsm[0].length + 10);
+        const _open = _detectOpenEnded(dsm[0], _ctx);
+        return { raw: dsm[0].trim(), normalized: _buildDisplay(val, null, cur, 'daily', dsm[0].trim(), _open),
                  confidence: 'high', salary_min: val, salary_max: null, daily_rate: val,
                  currency: cur, period: 'daily' };
       }
@@ -22966,7 +22995,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         const cur = _detectCurrency(lsm[0]);
         const val = _parseNum(lsm[2] + (lsm[3] || ''));
         if (val && val >= 10000) {
-          return { raw: lsm[0].trim(), normalized: _buildDisplay(val, null, cur, 'annual', lsm[0].trim()),
+          // LinkedIn "/yr" single values are typically exact stated rates,
+          // not floors. Only flag open-ended when explicit markers appear nearby.
+          const _ctx = raw.slice(Math.max(0, lsm.index - 30), lsm.index + lsm[0].length + 10);
+          const _open = _detectOpenEnded(lsm[0], _ctx);
+          return { raw: lsm[0].trim(), normalized: _buildDisplay(val, null, cur, 'annual', lsm[0].trim(), _open),
                    confidence: 'high', salary_min: val, salary_max: null, daily_rate: null,
                    currency: cur, period: 'annual' };
         }
@@ -24116,9 +24149,23 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           // Regression for the bug found 2026-05-12: a benchmark range earlier
           // in the JD was overriding the explicit stated day rate. Stated rate
           // (£600 Inside IR35) must win over benchmark range (£250-£375/day).
+          // Display must NOT add "+" for an exact stated rate.
           label: 'Day rate: stated rate beats benchmark range',
           input: 'Senior Product Designer Contract\nLondon\n\nMarket benchmark for this role: £250-£375 per day across UK-based contracts.\n\nDay rate: £600 Inside IR35\n\n6 month rolling contract.',
           expect: { salary: '£600/day' },
+        },
+        {
+          // Regression: minimal JD form — "Day rate: £600 Inside IR35" alone
+          // must produce "£600/day" (no "+", IR35 captured separately).
+          label: 'Day rate: exact stated rate, no plus',
+          input: 'Senior Designer Contract\n\nDay rate: £600 Inside IR35\n\n6 month engagement.',
+          expect: { salary: '£600/day' },
+        },
+        {
+          // Open-ended marker present — "+" is appropriate.
+          label: 'Day rate: explicit open-ended marker keeps "+"',
+          input: 'Lead Designer Contract\n\nDay rate: from £600 Outside IR35\n\nRolling contract.',
+          expect: { salary: '£600+/day' },
         },
         {
           label: 'Day rate: IR35 anchor without explicit "Day rate" label',
@@ -24419,8 +24466,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
         const sMin      = _sMinNum != null ? _fmt(_sMinNum) : null;
         const sMax      = _sMaxNum != null ? _fmt(_sMaxNum) : null;
+        // figStr: single-value figures do NOT append "+". AI-supplied
+        // structured data represents stated rates; an explicit "from £X" or
+        // "minimum £X" would have been captured as a range or kept verbatim.
         const figStr    = sMin && sMax ? `${symbol}${sMin} to ${symbol}${sMax}`
-                        : sMin        ? `${symbol}${sMin}+`
+                        : sMin        ? `${symbol}${sMin}`
                         : sMax        ? `Up to ${symbol}${sMax}`
                         : null;
         if (figStr) {
@@ -24434,6 +24484,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
             const hrFig = sMin && sMax ? `${symbol}${sMin} to ${symbol}${sMax}`
                         : sMin ? `${symbol}${sMin}` : `Up to ${symbol}${sMax}`;
             salaryAnnual = `${hrFig}${currLabel}/hr${annualStr}${geoNote}`;
+          } else if (period === 'daily') {
+            // ── Daily display: "£600/day", "£600-£700/day", "Up to £800/day" ──
+            const dayFig = sMin && sMax ? `${symbol}${sMin}-${symbol}${sMax}`
+                         : sMin ? `${symbol}${sMin}` : `Up to ${symbol}${sMax}`;
+            salaryAnnual = `${dayFig}${currLabel}/day${geoNote}`;
           } else {
             // ── Monthly / Annual display (existing logic) ─────────────────
             const periodLabel = period === 'monthly' ? ' / month' : ' annually';
@@ -24529,19 +24584,6 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         salaryAnnual = _detSal;
         console.log('[normaliseAnalysis] salary: deterministic wins →', salaryAnnual,
           '| AI was:', _aiSalIsWeak ? `weak ("${_mergedPd.salary_annual || 'none'}")` : 'strong');
-
-        // Day-rate IR35 enrichment: when the extractor flagged a daily period
-        // and the JD names an IR35 status, append it so the display reads
-        // "£600/day Inside IR35" instead of just "£600/day".
-        const _periodIsDaily = (_mergedPd.period || '').toLowerCase() === 'daily' ||
-                               _mergedPd.daily_rate != null;
-        if (_periodIsDaily && typeof _detectIr35Status === 'function') {
-          const _ir35 = _detectIr35Status(jdText || '', _mergedPd.employment_type || pdRaw.employment_type);
-          if (_ir35 && _ir35 !== 'Not applicable' && _ir35 !== 'Undetermined') {
-            const _hasIr35 = new RegExp(_ir35.replace(/\s+/g, '\\s+'), 'i').test(salaryAnnual);
-            if (!_hasIr35) salaryAnnual = `${salaryAnnual} ${_ir35}`;
-          }
-        }
       } else if (_aiSalIsWeak) {
         // Neither source has a real figure
         salaryAnnual  = 'Not stated';
@@ -24550,6 +24592,31 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       } else {
         // AI had a valid value; deterministic found nothing — keep AI
         console.log('[normaliseAnalysis] salary: AI value kept →', salaryAnnual);
+      }
+
+      // ── Day-rate IR35 enrichment (universal, runs after all salary paths) ──
+      // When the resolved salary represents a daily rate AND the JD names an
+      // IR35 status, append it so the display reads "£600/day Inside IR35".
+      // We also capture the status as a separate ir35_status field on
+      // practical_details so consumers can query it without parsing strings.
+      let _ir35Status = null;
+      {
+        const _periodIsDaily =
+          ((_mergedPd.period || pdRaw.period || '').toLowerCase() === 'daily') ||
+          (_mergedPd.daily_rate != null) ||
+          (pdRaw.daily_rate != null) ||
+          (typeof salaryAnnual === 'string' && /\/\s*day\b/i.test(salaryAnnual));
+        if (_periodIsDaily && typeof _detectIr35Status === 'function') {
+          const _engType = _mergedPd.employment_type || pdRaw.employment_type || pdRaw.working_pattern || pdRaw.contract_type;
+          const _ir35 = _detectIr35Status(jdText || '', _engType);
+          if (_ir35 && _ir35 !== 'Not applicable' && _ir35 !== 'Undetermined') {
+            _ir35Status = _ir35;
+            const _hasIr35 = new RegExp(_ir35.replace(/\s+/g, '\\s+'), 'i').test(salaryAnnual || '');
+            if (!_hasIr35 && salaryAnnual && salaryAnnual !== 'Not stated') {
+              salaryAnnual = `${salaryAnnual} ${_ir35}`;
+            }
+          }
+        }
       }
 
       const practical_details = {
@@ -24566,6 +24633,10 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         daily_rate:      _mergedPd.daily_rate   != null ? _mergedPd.daily_rate  : (pdRaw.daily_rate  != null ? pdRaw.daily_rate  : null),
         currency:        _mergedPd.currency     || pdRaw.currency  || null,
         period:          _mergedPd.period       || pdRaw.period    || null,
+        // IR35 status (Inside IR35 / Outside IR35) detected from the JD when
+        // present. Null when not applicable, not stated, or undetermined.
+        // Consumers can query this directly without parsing salary_annual.
+        ir35_status:     _ir35Status,
         // reporting_line: v2 engine is stricter than AI — use merged result
         reporting_line:  str(_mergedPd.reporting_line || 'Not stated'),
         visa:            str(_mergedPd.visa || pdRaw.visa),
