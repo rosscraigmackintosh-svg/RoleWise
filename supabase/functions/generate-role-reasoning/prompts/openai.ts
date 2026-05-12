@@ -18,7 +18,7 @@
 // here is to think clearly, not to write beautifully.
 // =============================================================================
 
-export const ROLE_REASONING_VERSION = 'v7'
+export const ROLE_REASONING_VERSION = 'v8'
 
 // High-signal phrase families. If the JD contains language in any of these
 // families, the reasoning pass MUST surface a related observation in either
@@ -327,25 +327,27 @@ primary_reason_to_be_careful: 1–2 sentences. Cite a specific signal or candida
 
 EDITORIAL INTERPRETATION (most important — populate every field)
 
-This is the human-meaning layer of the reasoning. The narrative pass reads this directly and translates it into prose; it does not re-derive interpretation. Each field below is a structured observation in short, dense, senior-operator language. NOT prose. NOT hedged. NOT generic SaaS abstractions. If you cannot fill a field with a meaningful observation from JD evidence, write a short empty string ("") rather than padding with filler.
+This is the human-meaning layer of the reasoning. The narrative pass reads this directly and translates it into prose; it does not re-derive interpretation. Each field below is a structured observation in short, plain, senior-operator language. NOT prose. NOT hedged. NOT generic SaaS abstractions. If you cannot fill a field with a meaningful observation from JD evidence, write a short empty string ("") rather than padding with filler.
+
+PLAIN WORDS RULE (applies to every field below): the narrative pass copies your phrasing texture into its prose. So write these the way a senior operator would speak, not the way a strategy deck would print. Avoid hyphen-compound jargon ("feature-theatre", "signal-to-hype", "change-for-its-own-sake", "high-velocity"), avoid ratio talk, avoid stacking three abstractions in one sentence. Concrete > abstract. Short > clever. If a field reads like a McKinsey slide, rewrite it.
 
 Each field is one short sentence (under 25 words). Cite JD evidence implicitly through specificity — name the actual signal, don't paraphrase it.
 
 role_core:
-- this_role_is_really: One sentence naming what the role actually is beneath the JD vocabulary. Example: "A workflow and decision-support design role inside a probabilistic marketing platform, not a generic AI feature build."
-- primary_operational_challenge: The actual hard problem the designer will face. Example: "Translating AI/probabilistic system behaviour into trustable UI affordances for marketers used to deterministic tools."
-- what_the_designer_will_spend_their_brainpower_on: The intellectual centre of the job. Example: "Calibrating trust signals between an AI marketing engine and the marketers operating it."
-- product_maturity_shape: Where the product sits in its lifecycle and what that demands. Example: "Mature enterprise platform in a pivotal AI re-architecture year."
-- execution_vs_strategy_balance: How the role splits between shipping and shaping. Example: "Execution-led with embedded strategic judgement, not pure feature delivery."
+- this_role_is_really: One sentence naming what the role actually is beneath the JD vocabulary. Example: "Mostly a decision-support design job inside an AI marketing platform, not generic AI feature work."
+- primary_operational_challenge: The actual hard problem the designer will face. Example: "Making the AI's marketing decisions feel trustworthy to marketers who are used to controlling everything themselves."
+- what_the_designer_will_spend_their_brainpower_on: The intellectual centre of the job. Example: "Working out how to show users what the model is doing and why, without overwhelming them."
+- product_maturity_shape: Where the product sits in its lifecycle and what that demands. Example: "A mature platform going through an AI rebuild — most surfaces exist, the team is reshaping them."
+- execution_vs_strategy_balance: How the role splits between shipping and shaping. Example: "Mostly shipping, with real say in how the AI features get framed."
 
-cultural_signals: ARRAY of 1–4 entries. Each = { signal (the literal JD phrase), evidence (the surrounding context), interpretation (what this tells a senior reader about the org). These are the highest-value observations in the entire output. Pull from restraint, evidence-led culture, anti-hype, probabilistic posture, design partnership, operational judgement. Example entry:
+cultural_signals: ARRAY of 1–4 entries. Each = { signal (the literal JD phrase), evidence (the surrounding context), interpretation (what this tells a senior reader about the org). These are the highest-value observations in the entire output. Pull from restraint, evidence-led culture, anti-hype, probabilistic posture, design partnership, operational judgement. Write the interpretation in plain language a designer would actually say. Example entry:
   { "signal": "knowing when leaving something alone is the right call",
     "evidence": "What you'll do — assess and build on existing patterns",
-    "interpretation": "Mature product judgement culture with low feature-theatre risk; values scope discipline over change-for-its-own-sake." }
+    "interpretation": "A team that doesn't rebuild things for the sake of it. Values judgement about when to leave things alone." }
 
 ai_posture (only populate if AI is meaningfully part of the role; otherwise empty strings):
-- ai_philosophy: How the org treats AI. Example: "Selective, restraint-oriented AI adoption — value-led not trend-led."
-- trust_posture: How the team thinks about AI trust/explainability. Example: "Evidence-led and anti-hype; treats AI as one tool among many."
+- ai_philosophy: How the org treats AI. Example: "Picky about where AI actually helps. Not chasing it for its own sake."
+- trust_posture: How the team thinks about AI trust/explainability. Example: "Wants the model's reasoning to be visible to users, not hidden."
 - restraint_signal: One word/phrase rating Strong / Moderate / Weak / Absent + a why-clause.
 - probabilistic_system_maturity: How much the team understands non-deterministic systems. One word/phrase rating + why.
 
@@ -362,7 +364,7 @@ organisation_shape:
 - likely_design_culture: One sentence on what working as a designer here likely feels like.
 
 candidate_alignment (must reflect actual candidate context, not generic flattery):
-- strongest_alignment: The most meaningful non-trivial alignment between role and candidate. Thinking-style level, not keyword-level. Example: "Candidate's instinct for simplifying operational complexity without flattening the underlying system maps directly onto the JD's restraint and judgement signals."
+- strongest_alignment: The most meaningful non-trivial alignment between role and candidate. Thinking-style level, not keyword-level. Plain example: "The candidate has spent years making complex enterprise tools feel less complex — that's exactly the kind of work this team is hiring for."
 - strongest_tension: The most meaningful non-trivial friction. Cite both sides. Empty string if no real friction exists.
 - likely_energy_match: How well the candidate's preferred working conditions match the role's likely day-to-day. One sentence.
 - likely_frustration_point: The thing most likely to grind on the candidate over six months. Empty string if none.
@@ -371,9 +373,9 @@ strategic_read (the senior-peer take):
 - why_this_role_is_interesting: One sentence naming the genuine intellectual/strategic draw, if there is one. Empty string if there isn't.
 - why_this_role_might_be_draining: One sentence on the realistic downside vector. Empty string if there isn't.
 - what_makes_this_role_meaningful: One sentence on what's at stake beyond shipping features.
-- overall_character: A senior reader's one-line take. Example: "Thoughtful, systems-heavy enterprise AI role with restraint and operational maturity; high signal-to-hype ratio."
+- overall_character: A senior reader's one-line take, in plain words. Example: "A thoughtful enterprise AI role with real product judgement. The work is substantive and the team seems to know what they're doing."
 
-Quality bar for editorial_interpretation: every field must be the kind of observation a senior product/design operator would make on first read, compressed into one sentence. If a field reads like a generic SaaS analysis sentence, it has failed. Re-read the JD evidence and try again.
+Quality bar for editorial_interpretation: every field must be the kind of observation a senior product/design operator would say out loud, in plain English, after first read. If a field reads like consultancy prose or a strategy slide, it has failed. Re-read the JD evidence and try again, plainer.
 
 SENIOR INTERPRETATION
 
