@@ -10901,8 +10901,61 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     // understand the role and update state without becoming a dashboard,
     // scorecard, or ATS detail view.
     // ────────────────────────────────────────────────────────────────────────────
+    // ── Live-pipeline polling state ───────────────────────────────────────
+    // When the role page opens with a running pipeline, poll the row every
+    // 5 s and re-render until the pipeline completes. One poller at a time;
+    // selectRole / renderAnalysisView swap it when the user navigates.
+    let _pipelinePollHandle = null;
+    let _pipelinePollRoleId = null;
+
+    function _stopPipelinePolling() {
+      if (_pipelinePollHandle) {
+        clearInterval(_pipelinePollHandle);
+        _pipelinePollHandle = null;
+        _pipelinePollRoleId = null;
+      }
+    }
+
+    function _startPipelinePolling(roleId) {
+      _stopPipelinePolling();
+      _pipelinePollRoleId = roleId;
+      _pipelinePollHandle = setInterval(async () => {
+        if (_pipelinePollRoleId !== roleId) return; // user navigated away
+        try {
+          const { data, error } = await db.from('jd_matches')
+            .select('output_json, created_at')
+            .eq('role_id', roleId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (error || !data) return;
+          const pipeline = data.output_json?._pipeline;
+          // Update local cache + re-render the open role.
+          const role = (typeof allRoles !== 'undefined' && Array.isArray(allRoles))
+            ? allRoles.find(r => r.id === roleId) : null;
+          if (role) {
+            role.latest_match_output = data.output_json;
+            // Only re-render if still on this role's view.
+            if (typeof selectedRoleId === 'undefined' || selectedRoleId === null || selectedRoleId === roleId) {
+              renderAnalysisView(role);
+            }
+          }
+          // Stop polling on terminal states.
+          if (pipeline && pipeline.status !== 'running') {
+            console.log('[poll] pipeline terminal:', pipeline.status, 'stages:', pipeline.stages);
+            _stopPipelinePolling();
+          }
+        } catch (e) {
+          console.warn('[poll] error:', e?.message || e);
+        }
+      }, 5000);
+    }
+
     function renderAnalysisView(role) {
       _exitIntakeMode();
+      // Stop any in-flight poller from a previous role. A new poller is
+      // started below if this role's pipeline is still running.
+      _stopPipelinePolling();
 
       const el = document.getElementById('col-overview-cards');
       if (!el) return;
@@ -10919,18 +10972,23 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const pd    = fo.practical_details || {};
       const narr  = fo._narrative || null;
 
-      // ── Incomplete-state detection (post-3-pass-pipeline rows only) ─────
-      // A row is "incomplete" when Pass 1 ran (we have a provider/version
-      // stamp) but Pass 1.5 and Pass 2 never persisted. We must NOT show
-      // Pass 1 placeholder strings ("No summary available", "Not stated")
-      // as if they were the final analysis. Legacy rows that pre-date the
-      // 3-pass pipeline have no _provenance block; they keep their fallback.
+      // ── Incomplete-state detection ──────────────────────────────────────
+      // Pipeline-aware: prefer the canonical _pipeline.status when present.
+      // When pipeline is 'running', show progress; when 'complete', render
+      // normally; when 'partial' / 'failed', show the failure banner.
+      // Legacy rows without _pipeline fall back to provenance-based detection.
       const _prov          = fo._provenance || null;
+      const _pipeline      = fo._pipeline   || null;
       const _hasProvenance = _prov && typeof _prov === 'object';
       const _pass1Ran      = _hasProvenance && !!_prov.analyse_jd_version;
       const _reasoningMissing = _hasProvenance && !_prov.role_reasoning_version;
       const _narrativeMissing = !narr || !_prov?.narrative_version;
-      const _isIncomplete  = _pass1Ran && (_reasoningMissing || _narrativeMissing);
+      const _isRunning     = _pipeline?.status === 'running';
+      // If the new _pipeline object is present, its status is canonical.
+      // Otherwise fall back to the legacy provenance-based detection.
+      const _isIncomplete  = _pipeline
+        ? _pipeline.status !== 'complete'
+        : (_pass1Ran && (_reasoningMissing || _narrativeMissing));
 
       // ── Helpers ──────────────────────────────────────────────────────────────
       const _str = v => (v && typeof v === 'string' && v !== 'Not stated' && v !== 'Unknown') ? v : null;
@@ -11217,31 +11275,48 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // If no analysis exists at all, show a calm placeholder
       const _hasSections = _sFitReality || _s01 || _s02 || _s03 || _s04 || _sPracticalDetails || _s05 || _s06 || _sDecision || _sRecommendedCv || _sWhyThisCv;
 
-      // ── Build the failure-explanation banner from real telemetry ───────
+      // ── Build the pipeline-state banner from real telemetry ─────────────
       // No more "still being prepared" — that message masks operational
-      // failures. Surface the exact pipeline state, the specific stage
-      // that failed, the error code/message, and the provider used.
+      // failures. The banner reads the canonical _pipeline object (new
+      // background-job model) or the legacy _pipeline_state/_errors (old
+      // synchronous rows). Distinguishes running vs failed vs partial.
       const _renderIncompleteBanner = () => {
-        const ps = fo._pipeline_state    || null;
-        const pe = Array.isArray(fo._pipeline_errors) ? fo._pipeline_errors : [];
-        const pt = fo._pipeline_timings  || null;
+        // Prefer the new canonical _pipeline object.
+        const newPl = fo._pipeline || null;
+        const ps = newPl?.stages || fo._pipeline_state || null;
+        const pe = (newPl?.errors && newPl.errors.length ? newPl.errors : (Array.isArray(fo._pipeline_errors) ? fo._pipeline_errors : []));
+        const pt = newPl?.timings || fo._pipeline_timings || null;
         const cc = fo._completion_check  || null;
         const provName = (fo._aiProvider || _prov?.provider || 'unknown');
+        const overallStatus = newPl?.status || (cc?.passed ? 'complete' : 'partial');
 
-        // Build a human-readable status line for each pass.
+        // Build a human-readable status line for each stage.
         const statusLabel = (k) => {
           const s = ps?.[k];
-          if (!s) return 'unknown';
+          if (!s) return 'queued';
+          // Map old keys to new (back-compat).
+          if (k === 'reasoning' && !s && ps?.pass1_5) return ps.pass1_5;
+          if (k === 'narrative' && !s && ps?.pass2)   return ps.pass2;
           return s;
         };
-        const stages = [
-          ['Pass 1 (analyse-jd)',          statusLabel('pass1'),   pt?.analyse_jd_ms],
-          ['Pass 1.5 (role-reasoning)',    statusLabel('pass1_5'), pt?.reasoning_ms],
-          ['Pass 2 (narrative)',           statusLabel('pass2'),   pt?.narrative_ms],
-          ['Persist',                      statusLabel('persist'), null],
+        const stages = newPl ? [
+          ['Reading role',           statusLabel('pass1'),      pt?.analyse_jd_ms],
+          ['Generating reasoning',   statusLabel('reasoning'),  pt?.reasoning_ms],
+          ['Generating narrative',   statusLabel('narrative'),  pt?.narrative_ms],
+          ['Validating analysis',    statusLabel('validation'), null],
+        ] : [
+          ['Pass 1 (analyse-jd)',          ps?.pass1   || 'unknown', pt?.analyse_jd_ms],
+          ['Pass 1.5 (role-reasoning)',    ps?.pass1_5 || 'unknown', pt?.reasoning_ms],
+          ['Pass 2 (narrative)',           ps?.pass2   || 'unknown', pt?.narrative_ms],
+          ['Persist',                      ps?.persist || 'unknown', null],
         ];
         const stagesHtml = stages.map(([label, status, ms]) => {
-          const icon = status === 'success' ? '✓' : status === 'pending' ? '…' : status === 'timeout' ? '⌛' : status === 'failed' ? '✗' : '?';
+          const icon = status === 'complete' || status === 'success' ? '✓'
+                     : status === 'running'  ? '↻'
+                     : status === 'queued'   || status === 'pending' ? '…'
+                     : status === 'timeout'  ? '⌛'
+                     : status === 'failed'   ? '✗'
+                     : '?';
           const msStr = (typeof ms === 'number' && ms > 0) ? ` <span class="ra-pipeline-ms">${ms}ms</span>` : '';
           return `<li class="ra-pipeline-stage ra-pipeline-${esc(status)}"><span class="ra-pipeline-icon">${icon}</span> ${esc(label)}: <strong>${esc(status)}</strong>${msStr}</li>`;
         }).join('');
@@ -11265,8 +11340,16 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           ? `<p class="ra-pipeline-total">Total pipeline time: ${totalMs}ms · provider: <code>${esc(provName)}</code></p>`
           : `<p class="ra-pipeline-total">Provider: <code>${esc(provName)}</code></p>`;
 
-        return `<div class="ra-no-analysis ra-pipeline-banner">
-          <p><strong>Analysis incomplete.</strong> The ingestion pipeline did not produce a full analysis.</p>
+        const headline = overallStatus === 'running'
+          ? '<strong>Analysis is running.</strong> Stages persist as they complete. This page auto-refreshes every 5 seconds.'
+          : overallStatus === 'partial'
+            ? '<strong>Analysis partial.</strong> Some stages completed but the full 11-section analysis was not produced.'
+            : overallStatus === 'failed'
+              ? '<strong>Analysis failed.</strong> The ingestion pipeline did not complete.'
+              : '<strong>Analysis incomplete.</strong> The ingestion pipeline did not produce a full analysis.';
+
+        return `<div class="ra-no-analysis ra-pipeline-banner ra-pipeline-status-${esc(overallStatus)}">
+          <p>${headline}</p>
           <ul class="ra-pipeline-stages">${stagesHtml}</ul>
           ${errorLine}
           ${missingLine}
@@ -11480,6 +11563,15 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         _textarea.addEventListener('keydown', e => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') _editBtn.click();
         });
+      }
+
+      // ── Start live pipeline polling when running ──────────────────────
+      // The background pipeline writes _pipeline.status='running' until it
+      // completes; we poll the row every 5 s and re-render so the user
+      // sees each stage flip from "queued" → "running" → "complete"
+      // without leaving the page or hitting refresh.
+      if (_isRunning && role?.id) {
+        _startPipelinePolling(role.id);
       }
     }
 
@@ -13993,239 +14085,68 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         return;
       }
 
-      // ── Analysis ready: await AI enrichment before opening role ─────────────
-      // The animator holds at the gated 'buildrole'/'risks'/'overview' steps
-      // while we await the AI passes. Ready only appears once all required
-      // enrichment is done (or has timed out with a graceful fallback).
+      // ── BACKGROUND-JOB MODEL ─────────────────────────────────────────────
+      // The synchronous-blocking modal is dead. Modal closes after local
+      // extraction + initial persist. The full AI pipeline runs in the
+      // background, persisting after each stage. The role page polls and
+      // progressively renders as stages complete.
+      //
+      // No awaits here. The modal would have to hold the user for 60–120 s
+      // on the current pipeline; that interaction model is broken.
       _lineTimers.forEach(clearTimeout);
       _completeLine();
       _ingestionTimerStop(overlay);
       overlay._ingDone = true;
 
-      // Signal animator: Pass 1 has started (already in-flight from callAnalysisAPI)
-      if (_arAnimator) _arAnimator.setAnalysisAiStarted();
-
-      // Await Pass 1 — AI analysis (30 s timeout per ingestion contract)
-      let _aiResult = null;
-      const _pass1AiT0 = performance.now();
-      if (analysis?._aiPromise) {
-        try {
-          _aiResult = await Promise.race([
-            analysis._aiPromise,
-            new Promise((_, rej) => setTimeout(() => rej(new Error('Pass 1 timeout')), 30_000)),
-          ]);
-          _pipelineState.pass1 = _aiResult ? 'success' : 'failed';
-          if (!_aiResult) _recordPipelineError('pass1', 'PASS1_NO_RESULT', 'analyse-jd returned no result');
-        } catch (e) {
-          _pipelineState.pass1 = /timeout/i.test(e?.message || '') ? 'timeout' : 'failed';
-          _recordPipelineError('pass1', _pipelineState.pass1 === 'timeout' ? 'PASS1_TIMEOUT' : 'PASS1_FAILED', e?.message || String(e));
-          console.warn('[ingestion] Pass 1 failed or timed out:', e.message);
-        }
-        // Overwrite the local-analysis time with the actual AI Pass 1 time.
-        _pipelineTimings.analyse_jd_ms = Math.round(performance.now() - _pass1AiT0);
-      }
-      if (_aiResult) {
-        // Merge AI result; preserve the original promise reference
-        Object.assign(analysis, _aiResult, { _aiPromise: analysis._aiPromise });
-
-        // ── Maturity precedence ────────────────────────────────────────────────
-        // The local rule-based extractor can mis-classify a mature company as
-        // "Startup" on an innocuous substring match. The AI Pass 1 prompt enforces
-        // COMPANY MATURITY PRIORITY and returns an authoritative company_stage.
-        // When AI says established/enterprise, overwrite any local startup-flavoured
-        // signals so Pass 2 narrative sees a consistent input.
-        const _aiStage = String(_aiResult.company_stage || '').toLowerCase();
-        const _isAiMature = _aiStage === 'established' || _aiStage === 'enterprise';
-        if (_isAiMature) {
-          const _startupRe = /^(?:startup|scaleup|scale[- ]up|early[- ]stage|emerging)$/i;
-          if (analysis.practical_details && typeof analysis.practical_details === 'object') {
-            if (analysis.practical_details.company_type && _startupRe.test(analysis.practical_details.company_type)) {
-              analysis.practical_details.company_type = _aiStage === 'enterprise' ? 'Enterprise' : 'Established';
-            }
-            if (Array.isArray(analysis.practical_details._extraction_notes)) {
-              analysis.practical_details._extraction_notes = analysis.practical_details._extraction_notes
-                .filter(n => !/described as a startup but stage not specified/i.test(String(n)));
-            }
-          }
-          if (analysis.role_shape_signals && typeof analysis.role_shape_signals === 'object') {
-            if (_startupRe.test(String(analysis.role_shape_signals.company_stage || ''))) {
-              analysis.role_shape_signals.company_stage = _aiStage;
-            }
-            if (_startupRe.test(String(analysis.role_shape_signals.company_stage_signal || ''))) {
-              analysis.role_shape_signals.company_stage_signal = _aiStage;
-            }
-          }
-        }
-      }
-      if (_arAnimator) _arAnimator.setAnalysisAiDone();
-
-      // Await Pass 1.5 + Pass 2 — reasoning + narrative chain.
-      // The promise covers both passes sequentially; the 75 s budget reflects
-      // measured pipeline duration (~37–59 s on representative JDs).
-      const _pass15T0 = performance.now();
-      if (_aiResult?._narrativePromise) {
-        try {
-          const _narr = await Promise.race([
-            _aiResult._narrativePromise,
-            new Promise((_, rej) => setTimeout(() => rej(new Error('Pass 2 timeout')), NARRATIVE_PIPELINE_TIMEOUT_MS)),
-          ]);
-          if (_narr) analysis._narrative = _narr;
-          // Pass 1.5 succeeded if reasoning version was stamped on aiResult.
-          _pipelineState.pass1_5 = _aiResult?._role_reasoning_version ? 'success' : 'failed';
-          if (_pipelineState.pass1_5 === 'failed') _recordPipelineError('pass1_5', 'REASONING_NO_VERSION', 'role-reasoning did not stamp version (likely 422 from edge function)');
-          // Pass 2 succeeded only if narrative was returned and is now on analysis.
-          _pipelineState.pass2 = _narr ? 'success' : 'failed';
-          if (!_narr) _recordPipelineError('pass2', 'NARRATIVE_NO_RESULT', 'narrative promise resolved but returned no narrative');
-        } catch (e) {
-          console.warn('[ingestion] Pass 2 (narrative) failed or timed out:', e?.message || e);
-          // Capture structured narrative-failure context so the DB row reveals
-          // exactly why the narrative is missing. Typed validation errors
-          // thrown by callNarrativeAPI carry a `.code` of NARRATIVE_VALIDATION_FAILED
-          // plus `.reasons` and `.context`.
-          analysis._narrative_error = {
-            code:      e?.code      || 'NARRATIVE_UNCAUGHT',
-            message:   e?.message   || String(e),
-            reasons:   Array.isArray(e?.reasons) ? e.reasons : null,
-            provider:  e?.context?.provider || _aiResult?._aiProvider || null,
-            timestamp: new Date().toISOString(),
-          };
-          // Distinguish reasoning-stage vs narrative-stage failure for telemetry.
-          if (_aiResult?._role_reasoning_version) {
-            // Reasoning succeeded; narrative failed.
-            _pipelineState.pass1_5 = 'success';
-            _pipelineState.pass2   = /timeout/i.test(e?.message || '') ? 'timeout' : 'failed';
-            _recordPipelineError('pass2', e?.code || 'NARRATIVE_UNCAUGHT', e?.message || String(e));
-          } else {
-            // Reasoning failed (likely 422 truncation) or didn't run.
-            _pipelineState.pass1_5 = 'failed';
-            _pipelineState.pass2   = 'failed';
-            _recordPipelineError('pass1_5', 'REASONING_NO_VERSION', 'reasoning version absent: reasoning likely 422 or upstream failure');
-            _recordPipelineError('pass2',   e?.code || 'NARRATIVE_UNCAUGHT', e?.message || String(e));
-          }
-        }
-        const _pass15End = performance.now();
-        // Best-effort split: we can't tell exactly when reasoning ended vs
-        // narrative started from outside the IIFE, so attribute time
-        // proportionally to known measurements (reasoning ~17–30 s,
-        // narrative ~10–20 s on the same provider).
-        const _chainTotalMs = Math.round(_pass15End - _pass15T0);
-        _pipelineTimings.reasoning_ms = _pipelineState.pass1_5 === 'success' ? Math.min(_chainTotalMs, 35_000) : _chainTotalMs;
-        _pipelineTimings.narrative_ms = _pipelineState.pass2   === 'success' ? Math.max(0, _chainTotalMs - _pipelineTimings.reasoning_ms) : 0;
-      } else {
-        _pipelineState.pass1_5 = 'failed';
-        _pipelineState.pass2   = 'failed';
-        _recordPipelineError('pass1_5', 'NO_NARRATIVE_PROMISE', 'aiResult had no _narrativePromise to await');
+      // Signal animator briefly so the user sees confirmation, then complete.
+      if (_arAnimator) {
+        _arAnimator.setAnalysisAiStarted();
+        _arAnimator.setAnalysisAiDone();
+        _arAnimator.setNarrativeDone();
       }
 
-      // ── Back-copy async fields from _aiResult onto analysis ────────────
-      // The earlier Object.assign at Pass-1 completion was a shallow snapshot;
-      // any field the _narrativePromise IIFE writes onto _aiResult AFTER that
-      // assign (reasoning, reasoning version, narrative, narrative error) is
-      // lost unless we explicitly propagate it here. Without this, provenance
-      // version stamps were silently dropped even when the underlying pass
-      // succeeded.
-      if (_aiResult) {
-        if (_aiResult._reasoning && !analysis._reasoning)
-          analysis._reasoning = _aiResult._reasoning;
-        if (_aiResult._role_reasoning_version && !analysis._role_reasoning_version)
-          analysis._role_reasoning_version = _aiResult._role_reasoning_version;
-        if (_aiResult._narrative && !analysis._narrative)
-          analysis._narrative = _aiResult._narrative;
-        if (_aiResult._narrative_error && !analysis._narrative_error)
-          analysis._narrative_error = _aiResult._narrative_error;
-      }
-      if (_arAnimator) _arAnimator.setNarrativeDone();
-
-      // ── Hard completion check (deterministic validator) ─────────────────
-      // A role is ONLY considered complete when all of these hold:
-      //   - _narrative exists
-      //   - all 11 canonical narrative sections are populated
-      //   - provenance versions are stamped for all three passes
-      // Any failure produces an explicit _completion_check failure object
-      // that gets persisted; the row is never silently marked complete.
-      const _runCompletionCheck = (a) => {
-        const reasons = [];
-        const sections_missing = [];
-        const narr = a?._narrative;
-        if (!narr) reasons.push('narrative_missing');
-        else {
-          const checks = [
-            ['fit_reality',                  () => Array.isArray(narr.fit_reality?.paragraphs) && narr.fit_reality.paragraphs.length > 0],
-            ['what_this_role_actually_is',   () => Array.isArray(narr.what_this_role_actually_is?.paragraphs) && narr.what_this_role_actually_is.paragraphs.length > 0],
-            ['what_you_would_actually_do',   () => narr.what_you_would_actually_do && (Array.isArray(narr.what_you_would_actually_do.bullets) && narr.what_you_would_actually_do.bullets.length > 0)],
-            ['what_they_really_need_from_you', () => narr.what_they_really_need_from_you && (Array.isArray(narr.what_they_really_need_from_you.bullets) && narr.what_they_really_need_from_you.bullets.length > 0 || Array.isArray(narr.what_they_really_need_from_you.paragraphs) && narr.what_they_really_need_from_you.paragraphs.length > 0)],
-            ['practical_details',            () => Array.isArray(narr.practical_details?.items) && narr.practical_details.items.length > 0],
-            ['risks_and_unknowns',           () => narr.risks_and_unknowns && (Array.isArray(narr.risks_and_unknowns.inferred) || Array.isArray(narr.risks_and_unknowns.stated))],
-            ['questions_worth_asking',       () => Array.isArray(narr.questions_worth_asking) && narr.questions_worth_asking.length > 0],
-            ['decision',                     () => typeof narr.decision?.summary === 'string' && narr.decision.summary.trim().length > 0],
-            ['recommended_cv',               () => typeof narr.recommended_cv === 'string' && narr.recommended_cv.trim().length > 0],
-            ['why_that_cv',                  () => typeof narr.why_that_cv === 'string' && narr.why_that_cv.trim().length > 0],
-            ['final_note',                   () => typeof narr.final_note === 'string' && narr.final_note.trim().length > 0],
-          ];
-          for (const [name, fn] of checks) {
-            try { if (!fn()) sections_missing.push(name); }
-            catch { sections_missing.push(name); }
-          }
-          if (sections_missing.length) reasons.push('sections_missing');
-        }
-        const prov = a?._provenance || {};
-        const provenance_missing = [];
-        if (!prov.analyse_jd_version)     provenance_missing.push('analyse_jd_version');
-        if (!prov.role_reasoning_version) provenance_missing.push('role_reasoning_version');
-        if (!prov.narrative_version)      provenance_missing.push('narrative_version');
-        if (provenance_missing.length) reasons.push('provenance_missing');
-        return {
-          passed: reasons.length === 0,
-          reasons,
-          sections_missing,
-          provenance_missing,
-          timestamp: new Date().toISOString(),
-        };
+      // Initialise the canonical _pipeline object. Stages: extract (already
+      // done locally), pass1 (analyse-jd), reasoning (1.5), narrative (2),
+      // validation. All persisted on every transition.
+      const _nowIso = () => new Date().toISOString();
+      analysis._pipeline = {
+        status:       'running',
+        stages: {
+          extract:    'complete',
+          pass1:      'queued',
+          reasoning:  'queued',
+          narrative:  'queued',
+          validation: 'queued',
+        },
+        timings: { analyse_jd_ms: 0, reasoning_ms: 0, narrative_ms: 0, total_ms: 0 },
+        errors:       [],
+        started_at:   _nowIso(),
+        updated_at:   _nowIso(),
+        completed_at: null,
+        retry_count:  0,
       };
-
-      // Persist the fully-enriched analysis to jd_matches so the analysis
-      // page opens with complete content. (Initial insert had local-only data.)
-      if (_matchId && analysis) {
-        const _enriched = Object.assign({}, analysis);
-        delete _enriched._aiPromise;
-        delete _enriched._narrativePromise;
-        // Surface provenance at a stable top-level key so the row is queryable
-        // without spelunking the nested narrative object. The individual stamps
-        // (_aiProvider, _analyse_jd_version, _narrative._narrative_version) also
-        // remain in place for backwards compatibility.
-        _enriched._provenance = {
-          provider:               _enriched._aiProvider              || null,
-          analyse_jd_version:     _enriched._analyse_jd_version      || null,
-          role_reasoning_version: _enriched._role_reasoning_version  || null,
-          narrative_version:      _enriched._narrative?._narrative_version || null,
-        };
-        // ── Run the hard completion check ─────────────────────────────────
-        const _completion = _runCompletionCheck(_enriched);
-        _enriched._completion_check = _completion;
-        if (!_completion.passed) {
-          console.warn('[ingestion] Completion check FAILED:', _completion.reasons, 'sections_missing:', _completion.sections_missing, 'provenance_missing:', _completion.provenance_missing);
-          for (const missing of _completion.sections_missing) _recordPipelineError('completion', 'SECTION_MISSING', missing);
-          for (const missing of _completion.provenance_missing) _recordPipelineError('completion', 'PROVENANCE_MISSING', missing);
-        }
-
-        // ── Pipeline telemetry — attach final state, timings, errors ──────
-        _pipelineTimings.total_ms = Math.round(performance.now() - _pipelineT0);
-        _enriched._pipeline_state   = _pipelineState;
-        _enriched._pipeline_timings = _pipelineTimings;
-        _enriched._pipeline_errors  = _pipelineErrors;
-        try {
-          await db.from('jd_matches').update({ output_json: _enriched }).eq('id', _matchId);
-          _pipelineState.persist = 'success';
-          // Re-write with success-stamped state (best-effort; non-fatal if fails).
-          _enriched._pipeline_state = _pipelineState;
-          await db.from('jd_matches').update({ output_json: _enriched }).eq('id', _matchId);
-          console.log('[perf] Enriched analysis persisted to jd_matches', _enriched._provenance, 'pipeline:', _pipelineState, 'completion:', _completion.passed ? 'PASS' : 'FAIL');
-        } catch (e) {
-          _pipelineState.persist = 'failed';
-          _recordPipelineError('persist', 'DB_UPDATE_FAILED', e?.message || String(e));
-          console.warn('[ingestion] Failed to persist enriched analysis:', e);
-        }
+      // Persist the initial running state so the role page can show progress
+      // the moment it opens.
+      try {
+        const _initial = Object.assign({}, analysis);
+        delete _initial._aiPromise;
+        delete _initial._narrativePromise;
+        if (_matchId) await db.from('jd_matches').update({ output_json: _initial }).eq('id', _matchId);
+      } catch (e) {
+        console.warn('[ingestion] Initial pipeline-state persist failed:', e);
       }
+
+      // Kick off the background pipeline. Fire-and-forget. The browser
+      // keeps the JS context alive while the promise is pending, even
+      // after the user navigates to the role page.
+      if (_matchId) {
+        _runBackgroundPipeline(_matchId, analysis, savedRole, jd, jdText, _pipelineT0)
+          .catch(err => console.error('[bg-pipeline] unhandled error:', err));
+      }
+
+      // Background pipeline owns all enrichment persistence and the final
+      // completion check. _runIngestionFlow's only remaining job is to
+      // transition the user to the role page so they see live progress.
 
       // Pre-render the analysis view behind the overlay with the enriched role.
       // Refresh first so allRoles picks up the updated jd_matches row.
@@ -14262,6 +14183,192 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         _arAnimator.completePipeline();
       }
       overlay._ingFinalize = _doFadeOut;
+    }
+
+    // ─── Hard completion check (deterministic validator) ─────────────────
+    // Module-scope helper used by the background pipeline. A row is
+    // considered complete only when all 11 canonical narrative sections
+    // are populated AND provenance versions are stamped for all three
+    // passes. Failures produce a structured _completion_check object
+    // that gets persisted.
+    function _runCompletionCheck(a) {
+      const reasons = [];
+      const sections_missing = [];
+      const narr = a?._narrative;
+      if (!narr) reasons.push('narrative_missing');
+      else {
+        const checks = [
+          ['fit_reality',                    () => Array.isArray(narr.fit_reality?.paragraphs) && narr.fit_reality.paragraphs.length > 0],
+          ['what_this_role_actually_is',     () => Array.isArray(narr.what_this_role_actually_is?.paragraphs) && narr.what_this_role_actually_is.paragraphs.length > 0],
+          ['what_you_would_actually_do',     () => narr.what_you_would_actually_do && (Array.isArray(narr.what_you_would_actually_do.bullets) && narr.what_you_would_actually_do.bullets.length > 0)],
+          ['what_they_really_need_from_you', () => narr.what_they_really_need_from_you && (Array.isArray(narr.what_they_really_need_from_you.bullets) && narr.what_they_really_need_from_you.bullets.length > 0 || Array.isArray(narr.what_they_really_need_from_you.paragraphs) && narr.what_they_really_need_from_you.paragraphs.length > 0)],
+          ['practical_details',              () => Array.isArray(narr.practical_details?.items) && narr.practical_details.items.length > 0],
+          ['risks_and_unknowns',             () => narr.risks_and_unknowns && (Array.isArray(narr.risks_and_unknowns.inferred) || Array.isArray(narr.risks_and_unknowns.stated))],
+          ['questions_worth_asking',         () => Array.isArray(narr.questions_worth_asking) && narr.questions_worth_asking.length > 0],
+          ['decision',                       () => typeof narr.decision?.summary === 'string' && narr.decision.summary.trim().length > 0],
+          ['recommended_cv',                 () => typeof narr.recommended_cv === 'string' && narr.recommended_cv.trim().length > 0],
+          ['why_that_cv',                    () => typeof narr.why_that_cv === 'string' && narr.why_that_cv.trim().length > 0],
+          ['final_note',                     () => typeof narr.final_note === 'string' && narr.final_note.trim().length > 0],
+        ];
+        for (const [name, fn] of checks) {
+          try { if (!fn()) sections_missing.push(name); }
+          catch { sections_missing.push(name); }
+        }
+        if (sections_missing.length) reasons.push('sections_missing');
+      }
+      const prov = a?._provenance || {};
+      const provenance_missing = [];
+      if (!prov.analyse_jd_version)     provenance_missing.push('analyse_jd_version');
+      if (!prov.role_reasoning_version) provenance_missing.push('role_reasoning_version');
+      if (!prov.narrative_version)      provenance_missing.push('narrative_version');
+      if (provenance_missing.length) reasons.push('provenance_missing');
+      return {
+        passed: reasons.length === 0,
+        reasons,
+        sections_missing,
+        provenance_missing,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    // ─── Background analysis pipeline ────────────────────────────────────
+    // Runs after the user has been navigated to the role page. Each stage
+    // persists its state to jd_matches.output_json._pipeline so the role
+    // page (polling every 5 s) can progressively render. No await blocks
+    // a synchronous modal; the user sees stages complete in the UI.
+    //
+    // analysisRef is the same analysis object that _runIngestionFlow built.
+    // It already has _aiPromise (Pass 1) hanging off it from callAnalysisAPI.
+    // Pass 1.5 and Pass 2 are called directly here so each can be tracked
+    // and persisted independently.
+    async function _runBackgroundPipeline(matchId, analysisRef, savedRole, jdRaw, jdText, t0) {
+      const pl = analysisRef._pipeline;
+      const nowIso = () => new Date().toISOString();
+      const persistOnce = async () => {
+        pl.updated_at = nowIso();
+        try {
+          const snap = Object.assign({}, analysisRef);
+          delete snap._aiPromise;
+          delete snap._narrativePromise;
+          await db.from('jd_matches').update({ output_json: snap }).eq('id', matchId);
+        } catch (e) {
+          console.warn('[bg-pipeline] persist failed:', e?.message || e);
+        }
+      };
+      const recordError = (stage, code, message) => {
+        pl.errors.push({ stage, code, message: String(message || '').slice(0, 500) });
+      };
+
+      // ── Pass 1 ────────────────────────────────────────────────────────
+      pl.stages.pass1 = 'running';
+      await persistOnce();
+      const p1T0 = performance.now();
+      let aiResult = null;
+      try {
+        aiResult = await Promise.race([
+          analysisRef._aiPromise,
+          new Promise((_, rej) => setTimeout(() => rej(new Error('pass1 timeout')), 60_000)),
+        ]);
+      } catch (e) {
+        pl.stages.pass1 = /timeout/i.test(e?.message || '') ? 'timeout' : 'failed';
+        recordError('pass1', pl.stages.pass1 === 'timeout' ? 'PASS1_TIMEOUT' : 'PASS1_FAILED', e?.message || String(e));
+      }
+      pl.timings.analyse_jd_ms = Math.round(performance.now() - p1T0);
+      if (!aiResult) {
+        pl.stages.pass1 = pl.stages.pass1 === 'running' ? 'failed' : pl.stages.pass1;
+        pl.status = 'failed';
+        pl.completed_at = nowIso();
+        await persistOnce();
+        return;
+      }
+
+      // Merge AI Pass 1 result + maturity precedence (unchanged from prior flow).
+      Object.assign(analysisRef, aiResult, { _aiPromise: undefined });
+      const aiStage = String(aiResult.company_stage || '').toLowerCase();
+      const isMature = aiStage === 'established' || aiStage === 'enterprise';
+      if (isMature) {
+        const startupRe = /^(?:startup|scaleup|scale[- ]up|early[- ]stage|emerging)$/i;
+        if (analysisRef.practical_details && typeof analysisRef.practical_details === 'object') {
+          if (analysisRef.practical_details.company_type && startupRe.test(analysisRef.practical_details.company_type)) {
+            analysisRef.practical_details.company_type = aiStage === 'enterprise' ? 'Enterprise' : 'Established';
+          }
+          if (Array.isArray(analysisRef.practical_details._extraction_notes)) {
+            analysisRef.practical_details._extraction_notes = analysisRef.practical_details._extraction_notes
+              .filter(n => !/described as a startup but stage not specified/i.test(String(n)));
+          }
+        }
+      }
+      pl.stages.pass1 = 'complete';
+      pl.stages.reasoning = 'running';
+      await persistOnce();
+
+      // ── Pass 1.5 (reasoning) ──────────────────────────────────────────
+      const rT0 = performance.now();
+      let reasoning = null;
+      try {
+        if (typeof callRoleReasoningAPI === 'function') {
+          reasoning = await callRoleReasoningAPI(analysisRef, jdText || jdRaw);
+        }
+      } catch (e) {
+        recordError('reasoning', 'REASONING_THROWN', e?.message || String(e));
+      }
+      pl.timings.reasoning_ms = Math.round(performance.now() - rT0);
+      if (reasoning) {
+        analysisRef._reasoning = reasoning;
+        analysisRef._role_reasoning_version = reasoning._role_reasoning_version || null;
+        pl.stages.reasoning = 'complete';
+      } else {
+        pl.stages.reasoning = 'failed';
+        recordError('reasoning', 'REASONING_NULL', 'reasoning returned no object (likely 422 truncation or upstream)');
+      }
+      pl.stages.narrative = 'running';
+      await persistOnce();
+
+      // ── Pass 2 (narrative) ────────────────────────────────────────────
+      const nT0 = performance.now();
+      let narrative = null;
+      try {
+        if (typeof callNarrativeAPI === 'function') {
+          narrative = await callNarrativeAPI(analysisRef, reasoning);
+        }
+      } catch (e) {
+        analysisRef._narrative_error = {
+          code:      e?.code      || 'NARRATIVE_UNCAUGHT',
+          message:   e?.message   || String(e),
+          reasons:   Array.isArray(e?.reasons) ? e.reasons : null,
+          provider:  e?.context?.provider || analysisRef?._aiProvider || null,
+          timestamp: nowIso(),
+        };
+        recordError('narrative', e?.code || 'NARRATIVE_UNCAUGHT', e?.message || String(e));
+      }
+      pl.timings.narrative_ms = Math.round(performance.now() - nT0);
+      if (narrative) {
+        analysisRef._narrative = narrative;
+        pl.stages.narrative = 'complete';
+      } else {
+        pl.stages.narrative = 'failed';
+        if (!analysisRef._narrative_error) recordError('narrative', 'NARRATIVE_NULL', 'narrative returned no object');
+      }
+      pl.stages.validation = 'running';
+      await persistOnce();
+
+      // ── Validation ────────────────────────────────────────────────────
+      analysisRef._provenance = {
+        provider:               analysisRef._aiProvider             || null,
+        analyse_jd_version:     analysisRef._analyse_jd_version     || null,
+        role_reasoning_version: analysisRef._role_reasoning_version || null,
+        narrative_version:      analysisRef._narrative?._narrative_version || null,
+      };
+      const completion = _runCompletionCheck(analysisRef);
+      analysisRef._completion_check = completion;
+      pl.stages.validation = completion.passed ? 'complete' : 'failed';
+      pl.status            = completion.passed ? 'complete' : 'partial';
+      pl.completed_at      = nowIso();
+      pl.timings.total_ms  = Math.round(performance.now() - (t0 || performance.now()));
+      for (const m of (completion.sections_missing   || [])) recordError('validation', 'SECTION_MISSING',    m);
+      for (const m of (completion.provenance_missing || [])) recordError('validation', 'PROVENANCE_MISSING', m);
+      await persistOnce();
+      console.log('[bg-pipeline] complete', { status: pl.status, stages: pl.stages, timings: pl.timings, errors: pl.errors.length });
     }
     // ─── Legacy completed-trace path (replaced by animator above) ─────────────
     // Kept commented for reference. The animator now drives the full UI:
