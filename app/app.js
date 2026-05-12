@@ -31395,9 +31395,9 @@ If a field cannot be determined from the message, return null for that field.`,
       };
 
       // ── Filter / group predicates ────────────────────────────────────────
-      // "Saved" is the explicit user_decision === 'save' state (live model).
-      // Roles at JD Review with no decision yet appear only under "All" — the
-      // user must explicitly click Save to surface them in the Saved group.
+      // "Saved" is the explicit user_decision === 'save' state. Fresh roles
+      // (stage='JD Review', user_decision=null) match none of the five
+      // predicates below — they land in the "To review" catch-all instead.
       const _isClosed       = r => isArchivedRole(r) || r.user_decision === 'skip';
       const _isInProcess    = r => !_isClosed(r) && _IN_PROGRESS_STAGES.has(currentStageLabel(r));
       const _isApplied      = r => !_isClosed(r) && !_isInProcess(r) && (r.user_decision === 'apply' || (!!r._appliedDate && currentStageLabel(r) === 'Applied'));
@@ -31421,11 +31421,33 @@ If a field cannot be determined from the message, return null for that field.`,
         }).sort(roleSort);
       }
 
+      // Catch-all "To review" — any non-archived role not yet claimed by one
+      // of the five groups above. Typical occupant: a freshly-ingested role
+      // with stage='JD Review' and user_decision=null. Without this group a
+      // newly-added role would be counted in the sidebar but invisible in
+      // every filter (the gap that "All" was incorrectly assumed to cover).
+      // Computed AFTER the five existing predicates so it picks up only
+      // orphans — clicking Save / Apply / Skip moves the role out into the
+      // right group on the next render.
+      const _toReviewGroup = {
+        key:   'to_review',
+        label: 'To review',
+        sub:   'Recently added roles awaiting a decision',
+        tone:  'live',
+        roles: _all.filter(r => !_seenInGroup.has(r.id) && !isArchivedRole(r)).sort(roleSort),
+      };
+      _toReviewGroup.roles.forEach(r => _seenInGroup.add(r.id));
+      // Insert near the top of the rendered order — after "Needs attention"
+      // so the risk surface still leads, but before "In progress" so newly
+      // added roles are immediately visible without scrolling.
+      _groups.splice(1, 0, _toReviewGroup);
+
       // ── Filter pills ─────────────────────────────────────────────────────
       const _byKey = k => _groups.find(g => g.key === k);
       const _filters = [
         { key: 'all',             label: 'All',             count: _all.length },
         { key: 'needs_attention', label: 'Needs attention', count: _byKey('needs_attention').roles.length },
+        { key: 'to_review',       label: 'To review',       count: _byKey('to_review').roles.length },
         { key: 'in_process',      label: 'In process',      count: _byKey('in_process').roles.length },
         { key: 'applied',         label: 'Applied',         count: _byKey('applied').roles.length },
         { key: 'saved',           label: 'Saved',           count: _byKey('saved').roles.length },
