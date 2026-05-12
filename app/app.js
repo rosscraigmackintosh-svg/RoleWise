@@ -14094,25 +14094,22 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
 
       // ── BACKGROUND-JOB MODEL ─────────────────────────────────────────────
-      // Modal closes immediately after local extraction + initial persist.
-      // The full AI pipeline runs in the background. The role page polls
-      // and progressively renders as stages complete. No awaits hold the
-      // user on a synchronous screen.
+      // Local extraction + initial persist is done. The full AI pipeline
+      // runs in the background while the overlay stays visible. The
+      // overlay's animator gates wait for REAL pipeline stage transitions,
+      // not synthetic immediate completion. When status reaches a terminal
+      // state the Ready CTA is shown and the user clicks "Open role overview"
+      // to commit the transition to the analysis page.
       console.log('[ingestion] INGEST_ROLE_CREATED', { role_id: savedRole.id, match_id: _matchId });
       _lineTimers.forEach(clearTimeout);
       _completeLine();
       _ingestionTimerStop(overlay);
       overlay._ingDone = true;
 
-      // Signal animator state flags so its progress lines complete instantly
-      // (the animator polls these gates every 250 ms and walks through the
-      // build/risks/overview/done steps without waiting on real AI passes).
-      if (_arAnimator) {
-        _arAnimator.setAnalysisAiStarted();
-        _arAnimator.setAnalysisAiDone();
-        _arAnimator.setNarrativeDone();
-        _arAnimator.completePipeline();
-      }
+      // NOTE: animator gates (setAnalysisAiStarted / setAnalysisAiDone /
+      // setNarrativeDone / completePipeline) are NOT called here. They
+      // are driven by the real-pipeline watcher installed below, which
+      // polls analysis._pipeline.stages every 500 ms.
 
       // Initialise the canonical _pipeline object. Stages: extract (already
       // done locally), pass1 (analyse-jd), reasoning (1.5), narrative (2),
@@ -14180,90 +14177,118 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         }
       }
 
-      // Navigate immediately to the role analysis view.
-      //
-      // Direct-render path: we KNOW we want the analysis view for a
-      // freshly-ingested role — there's no workspace-vs-analysis decision
-      // to make. The default renderRoleDoc() routing layer is async,
-      // racy with renderRolesView, and has been observed to leave the
-      // user on the Roles archive (rwr-page) instead of the analysis
-      // page. Bypassing it deterministically.
-      console.log('[ingestion] INGEST_NAVIGATING_TO_ROLE', { role_id: savedRole.id });
-      try {
-        // 1. Inject the freshly-inserted role + initial pipeline state
-        //    into allRoles so the rail, polling, and any other lookup
-        //    finds the role immediately.
-        const _injected = Object.assign({}, savedRole, { latest_match_output: analysis });
-        try {
-          if (typeof allRoles !== 'undefined' && Array.isArray(allRoles)) {
-            const _existsIdx = allRoles.findIndex(r => r.id === savedRole.id);
-            if (_existsIdx >= 0) allRoles[_existsIdx] = _injected;
-            else                 allRoles.unshift(_injected);
-          }
-        } catch (_e) { /* non-fatal: refresh below will rebuild */ }
-
-        // 2. Set the canonical selection state.
-        selectedRoleId = savedRole.id;
-        if (typeof currentNav !== 'undefined') currentNav = 'applications';
-        _setAppFilter('active');
-        if (typeof _syncNavActive === 'function') _syncNavActive();
-
-        // 3. Render the analysis view DIRECTLY. This writes the
-        //    canonical 11-section structure to col-overview-cards
-        //    with the running-pipeline banner. The polling loop inside
-        //    renderAnalysisView picks up _pipeline.status === 'running'
-        //    and refreshes every 5 s.
-        if (typeof renderAnalysisView === 'function') {
-          renderAnalysisView(_injected);
-        }
-
-        // 4. Render the right rail (stage stepper).
-        if (typeof renderRail === 'function') {
-          try { renderRail(_injected); } catch (_e) { /* non-fatal */ }
-        }
-
-        // 5. Hide the legacy inbox panel / show the right column.
-        if (typeof setListPanelVisible === 'function') {
-          try { setListPanelVisible(false); } catch (_e) { /* non-fatal */ }
-        }
-        const _colRail = document.getElementById('col-rail-section');
-        if (_colRail && typeof _setRailVisible === 'function') {
-          try { _setRailVisible(true); } catch (_e) { /* non-fatal */ }
-        }
-
-        // 6. Refresh in the background to sync allRoles with the DB row
-        //    that includes the initial _pipeline state. The polling loop
-        //    will re-render the analysis view as further updates land.
-        Promise.resolve(refresh && refresh()).catch(() => {});
-      } catch (_) { /* non-fatal — fade out anyway */ }
-
       const _tFirstRender = performance.now();
-      const _totalMs = Math.round(_tFirstRender - _pipeT0);
-      console.log('[perf] Role ready at', _totalMs + 'ms (sync ingest finished — pipeline continues in background)');
+      console.log('[perf] Role row ready at', Math.round(_tFirstRender - _pipeT0) + 'ms — overlay remains; pipeline runs in background');
 
+      // ── Pipeline state watcher ────────────────────────────────────────
+      // Polls analysis._pipeline (mutated in-place by _runBackgroundPipeline)
+      // every 500 ms and feeds real stage transitions into the animator's
+      // gates. The animator's terminal "done" step waits for pipelineDone;
+      // we only call completePipeline() once the real pipeline reaches a
+      // terminal state. All animator setters are idempotent.
       _readyToTransition = true;
+      let _bgEnrichmentApplied = false;
+      const _watchPipeline = setInterval(() => {
+        const pl = analysis && analysis._pipeline;
+        if (!pl || !_arAnimator) return;
+        const s = pl.stages || {};
 
-      // ── Hard auto-navigation: force-close the overlay ─────────────────
-      // The legacy Ready-CTA path is bypassed entirely. Use the dedicated
-      // forceCloseIngestionOverlay() helper which is idempotent, hides
-      // every CTA, hides the root overlay three ways, and clears all
-      // modal-lock state. The animator reference is parked on the
-      // overlay element so the helper can stop it.
-      console.log('[ingestion] INGEST_AUTO_NAV_TRIGGERED', { role_id: savedRole.id, match_id: _matchId });
-      if (overlay && _arAnimator) overlay._arAnimatorRef = _arAnimator;
-      forceCloseIngestionOverlay('auto-nav-complete');
-
-      // Belt-and-braces auto-nav verification. If for any reason the
-      // overlay is still visible 1 s after we triggered close, force
-      // close again with a different reason tag.
-      setTimeout(() => {
-        const stillVisible = overlay && !overlay.hasAttribute('hidden')
-          && getComputedStyle(overlay).display !== 'none';
-        if (stillVisible) {
-          console.warn('[ingestion] INGEST_AUTO_NAV_FALLBACK — overlay still visible 1 s after close trigger; forcing again');
-          forceCloseIngestionOverlay('auto-nav-fallback');
+        // Gate 1: Pass 1 in flight or done → "Building role analysis…"
+        if (s.pass1 && s.pass1 !== 'queued') {
+          _arAnimator.setAnalysisAiStarted();
         }
-      }, 1000);
+        // Gate 2: Pass 1 done → "Checking risks and unknowns…"
+        if (s.pass1 === 'complete' || s.pass1 === 'failed' || s.pass1 === 'timeout') {
+          _arAnimator.setAnalysisAiDone();
+          // Re-feed the animator with the AI-enriched analysis so the
+          // extracted-fields panel can update (better company/title/etc).
+          if (!_bgEnrichmentApplied && s.pass1 === 'complete') {
+            _bgEnrichmentApplied = true;
+            try { _arAnimator.setAnalysis(analysis); _arAnimator.setRole(savedRole); } catch (_e) { /* non-fatal */ }
+          }
+        }
+        // Gate 3: Narrative reached terminal → "Preparing role overview…"
+        if (s.narrative === 'complete' || s.narrative === 'failed' || s.narrative === 'timeout') {
+          _arAnimator.setNarrativeDone();
+        }
+
+        // Terminal: pipeline reached complete or partial → Ready CTA appears.
+        // 'partial' still gets the CTA — the user can open and see the
+        // preparing/incomplete state on the analysis page if needed.
+        if (pl.status === 'complete' || pl.status === 'partial') {
+          _arAnimator.completePipeline();
+          clearInterval(_watchPipeline);
+          overlay._pipelineWatcher = null;
+          console.log('[ingestion] PIPELINE_TERMINAL', { status: pl.status, match_id: _matchId });
+        } else if (pl.status === 'failed') {
+          const firstErr = (pl.errors && pl.errors[0]) || null;
+          const msg = firstErr && firstErr.message ? firstErr.message : 'Analysis could not be prepared.';
+          _arAnimator.failPipeline(new Error(msg));
+          clearInterval(_watchPipeline);
+          overlay._pipelineWatcher = null;
+          console.warn('[ingestion] PIPELINE_FAILED', { status: pl.status, code: firstErr?.code, match_id: _matchId });
+        }
+      }, 500);
+      overlay._pipelineWatcher = _watchPipeline;
+
+      // Safety timeout: 180 s. If the pipeline never reports terminal,
+      // force completePipeline so the user can proceed. The persisted
+      // row still reflects the real state and the analysis page will
+      // poll/render whatever is available.
+      const _watcherSafetyTimer = setTimeout(() => {
+        if (overlay._pipelineWatcher === _watchPipeline) {
+          console.warn('[ingestion] PIPELINE_WATCHER_TIMEOUT — forcing Ready CTA after 180 s', { match_id: _matchId });
+          try { _arAnimator && _arAnimator.completePipeline(); } catch (_e) { /* non-fatal */ }
+          clearInterval(_watchPipeline);
+          overlay._pipelineWatcher = null;
+        }
+      }, 180_000);
+
+      // ── Ready-CTA finalize handler ────────────────────────────────────
+      // Wired to the "Open role overview" button via _overlay._ingFinalize
+      // (set up at modal open time, line ~13609). When the user clicks
+      // the Ready CTA, this fires to commit the navigation transition.
+      if (overlay && _arAnimator) overlay._arAnimatorRef = _arAnimator;
+      overlay._ingFinalize = function _finalizeAndNavigate() {
+        // Stop the watcher + safety timer (idempotent).
+        if (_watchPipeline) clearInterval(_watchPipeline);
+        if (_watcherSafetyTimer) clearTimeout(_watcherSafetyTimer);
+
+        console.log('[ingestion] INGEST_NAVIGATING_TO_ROLE', { role_id: savedRole.id, pipeline_status: analysis._pipeline?.status });
+        try {
+          // 1. Inject the role into allRoles with the latest analysis snapshot
+          //    so renderAnalysisView reads the freshest in-memory data.
+          const _injected = Object.assign({}, savedRole, { latest_match_output: analysis });
+          try {
+            if (typeof allRoles !== 'undefined' && Array.isArray(allRoles)) {
+              const _existsIdx = allRoles.findIndex(r => r.id === savedRole.id);
+              if (_existsIdx >= 0) allRoles[_existsIdx] = _injected;
+              else                 allRoles.unshift(_injected);
+            }
+          } catch (_e) { /* non-fatal: refresh below will rebuild */ }
+
+          // 2. Set the canonical selection state.
+          selectedRoleId = savedRole.id;
+          if (typeof currentNav !== 'undefined') currentNav = 'applications';
+          _setAppFilter('active');
+          if (typeof _syncNavActive === 'function') _syncNavActive();
+
+          // 3. Direct-render analysis view (bypasses renderRoleDoc routing).
+          if (typeof renderAnalysisView === 'function') renderAnalysisView(_injected);
+
+          // 4. Right rail / list panel housekeeping.
+          if (typeof renderRail === 'function') { try { renderRail(_injected); } catch (_e) {} }
+          if (typeof setListPanelVisible === 'function') { try { setListPanelVisible(false); } catch (_e) {} }
+          const _colRail = document.getElementById('col-rail-section');
+          if (_colRail && typeof _setRailVisible === 'function') { try { _setRailVisible(true); } catch (_e) {} }
+
+          // 5. Background DB refresh.
+          Promise.resolve(refresh && refresh()).catch(() => {});
+        } catch (_) { /* non-fatal — close overlay anyway */ }
+
+        // 6. Close the overlay with the regular fade animation.
+        _closeIngestionOverlay(overlay);
+      };
     }
 
     // ─── Hard completion check (deterministic validator) ─────────────────
