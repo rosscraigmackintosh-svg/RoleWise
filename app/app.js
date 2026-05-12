@@ -31550,12 +31550,25 @@ If a field cannot be determined from the message, return null for that field.`,
           </section>`;
       };
 
-      // Body — all groups when filter='all'; single matching group otherwise.
+      // Body — "All" is a flat newest-first list of every role. Other filters
+      // render a single matching group with its own header. The grouped layout
+      // (Needs attention / To review / In progress / Applied / Saved / Closed)
+      // is reachable via the dedicated filter pills, but never via "All".
       let _bodyHtml = '';
       if (!_all.length) {
         _bodyHtml = '<div class="rwr-empty">No roles yet. Click <span class="rwr-empty-action">+ Add role</span> to begin.</div>';
       } else if (_rolesFilter === 'all') {
-        _bodyHtml = _groups.map(g => _renderGroup(g, { showWhenEmpty: g.key === 'saved' && g.roles.length === 0 })).join('');
+        const _flat = [..._all].sort(roleSort);
+        _bodyHtml = `
+          <section class="rwr-group">
+            <div class="rwr-group-head">
+              <div class="rwr-group-title">
+                <span class="rwo-dot rwo-dot--live"></span>All roles<span class="rwr-group-count">${_flat.length}</span>
+              </div>
+              <span class="rwr-group-sub">Every role, newest first</span>
+            </div>
+            <div class="rwr-group-list">${_flat.map(_renderCard).join('')}</div>
+          </section>`;
       } else {
         const g = _byKey(_rolesFilter);
         _bodyHtml = g ? _renderGroup(g, { showWhenEmpty: true }) : '';
