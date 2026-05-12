@@ -14179,45 +14179,25 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
       _readyToTransition = true;
 
-      function _doFadeOut() {
-        if (!_doFadeOut._called) {
-          _doFadeOut._called = true;
-          _closeIngestionOverlay(overlay);
-          console.log('[ingestion] INGEST_OVERLAY_CLOSED', { match_id: _matchId });
-        }
-      }
-
-      // ── Hard auto-navigation (kills the legacy Ready-CTA race) ──────────
-      // The animator runs its own 250 ms tick loop and can call
-      // _showReadyState() (which un-hides the "Open role overview" CTA)
-      // independently of this code path. Even after we call _doFadeOut(),
-      // a pending tick will re-show the CTA mid-fade. Hard stop:
-      //   1. Halt the animator timer so no further ticks run.
-      //   2. Force-hide the Ready CTA element directly.
-      //   3. Fade out the overlay.
+      // ── Hard auto-navigation: force-close the overlay ─────────────────
+      // The legacy Ready-CTA path is bypassed entirely. Use the dedicated
+      // forceCloseIngestionOverlay() helper which is idempotent, hides
+      // every CTA, hides the root overlay three ways, and clears all
+      // modal-lock state. The animator reference is parked on the
+      // overlay element so the helper can stop it.
       console.log('[ingestion] INGEST_AUTO_NAV_TRIGGERED', { role_id: savedRole.id, match_id: _matchId });
-      if (_arAnimator && typeof _arAnimator.stop === 'function') {
-        try { _arAnimator.stop(); } catch (_e) { /* non-fatal */ }
-      }
-      const _readyCta = document.getElementById('rw-ing-ready');
-      if (_readyCta) { _readyCta.setAttribute('hidden', ''); _readyCta.style.display = 'none'; }
-      const _onethingCta = document.getElementById('rw-ing-onething');
-      if (_onethingCta) { _onethingCta.setAttribute('hidden', ''); _onethingCta.style.display = 'none'; }
-
-      overlay._ingFinalize = _doFadeOut;
-      _doFadeOut();
+      if (overlay && _arAnimator) overlay._arAnimatorRef = _arAnimator;
+      forceCloseIngestionOverlay('auto-nav-complete');
 
       // Belt-and-braces auto-nav verification. If for any reason the
-      // overlay is still visible 1 s after we triggered close, log a
-      // warning and try again. This becomes the fallback path the spec
-      // asked for ("CTA can remain only as a fallback if auto-nav fails").
+      // overlay is still visible 1 s after we triggered close, force
+      // close again with a different reason tag.
       setTimeout(() => {
         const stillVisible = overlay && !overlay.hasAttribute('hidden')
           && getComputedStyle(overlay).display !== 'none';
         if (stillVisible) {
-          console.warn('[ingestion] INGEST_AUTO_NAV_FALLBACK — overlay still visible 1 s after close trigger; forcing hidden');
-          overlay.setAttribute('hidden', '');
-          overlay.style.display = 'none';
+          console.warn('[ingestion] INGEST_AUTO_NAV_FALLBACK — overlay still visible 1 s after close trigger; forcing again');
+          forceCloseIngestionOverlay('auto-nav-fallback');
         }
       }, 1000);
     }
@@ -15310,6 +15290,78 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         // Remove the intake-mode class (legacy) if still present
         document.querySelector('.app')?.classList.remove('intake-mode');
       }, 320); // matches rw-ing-fadeout animation duration
+    }
+
+    // ─── forceCloseIngestionOverlay(reason) ──────────────────────────────
+    // Hard, idempotent overlay close. Bypasses the CSS exit animation.
+    // Use after auto-navigation when we want the overlay GONE immediately,
+    // regardless of any animator state, pending ticks, or CTA visibility.
+    // Safe to call multiple times.
+    function forceCloseIngestionOverlay(reason) {
+      const el = document.getElementById('rw-ingestion-overlay');
+      const wasVisible = el && !el.hasAttribute('hidden')
+        && getComputedStyle(el).display !== 'none';
+      if (!el) {
+        console.log('[ingestion] INGEST_OVERLAY_CLOSED (no element)', { reason });
+        return;
+      }
+
+      // 1. Stop any running animator on the overlay so it can't re-show CTAs.
+      if (el._arAnimatorRef && typeof el._arAnimatorRef.stop === 'function') {
+        try { el._arAnimatorRef.stop(); } catch (_e) { /* non-fatal */ }
+      }
+
+      // 2. Cleanup hooks (timers, listeners) from openIngestionOverlay.
+      if (el._ingCleanup) {
+        try { el._ingCleanup(); } catch (_e) { /* non-fatal */ }
+        el._ingCleanup = null;
+      }
+
+      // 3. Force-hide every interactive card inside the overlay so even if
+      //    the root somehow stays visible, no CTA is clickable.
+      ['rw-ing-ready', 'rw-ing-onething', 'rw-ing-idle', 'rw-ing-processing', 'rw-ing-error'].forEach(id => {
+        const child = document.getElementById(id);
+        if (child) {
+          child.setAttribute('hidden', '');
+          child.style.display = 'none';
+        }
+      });
+
+      // 4. Remove the exit-animation class so a future open isn't broken.
+      el.classList.remove('rw-ingestion-overlay--exit');
+
+      // 5. Set every signal that hides the root overlay. Three layers so a
+      //    surprise CSS rule can't keep it visible:
+      //      a) [hidden] attribute (matches .rw-ingestion-overlay[hidden] {display:none})
+      //      b) inline style.display = 'none' (beats any class-based selector)
+      //      c) inline style.opacity = 0 + pointer-events: none (visual + interaction)
+      el.setAttribute('hidden', '');
+      el.style.display       = 'none';
+      el.style.opacity       = '0';
+      el.style.pointerEvents = 'none';
+
+      // 6. ARIA / modal state cleanup.
+      el.setAttribute('aria-hidden', 'true');
+
+      // 7. Clear overlay-private state so a future open re-initialises cleanly.
+      el._ingDone           = false;
+      el._ingFinalize       = null;
+      el._ingSubmittedReset = el._ingSubmittedReset || null;
+      el._arAnimatorRef     = null;
+
+      // 8. Remove modal-lock classes wherever they live.
+      document.querySelector('.app')?.classList.remove('intake-mode');
+      if (document.body.style.overflow === 'hidden') document.body.style.overflow = '';
+      document.body.classList.remove('rw-modal-open');
+      document.body.classList.remove('rw-ingestion-open');
+
+      // 9. Restore focus to a sane default if focus was inside the overlay.
+      const activeEl = document.activeElement;
+      if (activeEl && el.contains(activeEl) && typeof activeEl.blur === 'function') {
+        try { activeEl.blur(); } catch (_e) { /* non-fatal */ }
+      }
+
+      console.log('[ingestion] INGEST_OVERLAY_CLOSED', { reason, was_visible: wasVisible });
     }
 
     // ─── Open blank workspace (new Add Role path) ────────────────────────────
