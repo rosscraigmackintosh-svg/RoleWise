@@ -20,7 +20,12 @@ const OPENAI_API_KEY    = Deno.env.get('OPENAI_API_KEY') || ''
 // ANTHROPIC_MODEL env var: e.g. 'claude-haiku-4-5-20251001'
 // OPENAI_MODEL env var:    e.g. 'gpt-4o-mini' (default) or 'gpt-4o'
 const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-haiku-4-5-20251001'
-const OPENAI_MODEL    = Deno.env.get('OPENAI_MODEL')    || 'gpt-4o-mini'
+// Route-specific override takes precedence so the extraction model can be
+// tuned independently. Fallback chain:
+//   OPENAI_MODEL_ANALYSE_JD -> OPENAI_MODEL -> default.
+const OPENAI_MODEL    = Deno.env.get('OPENAI_MODEL_ANALYSE_JD')
+                     || Deno.env.get('OPENAI_MODEL')
+                     || 'gpt-4o-mini'
 
 // ─── System Prompts ───────────────────────────────────────────────────────────
 // Source of truth: /app/ai/prompts/rolewise-prompts.js → ROLEWISE_EXTRACTION_PROMPT

@@ -97,25 +97,37 @@ async function callOpenAI(params: {
   apiKey: string
   maxTokens: number
 }): Promise<AIResult> {
+  // GPT-5 and the o1/o3/o4 reasoning families reject `max_tokens` (400:
+  // "Unsupported parameter"). They require `max_completion_tokens` instead.
+  // Branch on model-name prefix so older Chat Completions models keep
+  // working unchanged.
+  const isReasoningModel = /^(gpt-5|o1|o3|o4)/i.test(params.model)
+  const body: Record<string, unknown> = {
+    model: params.model,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: params.systemPrompt },
+      { role: 'user', content: params.userMessage },
+    ],
+  }
+  if (isReasoningModel) {
+    body.max_completion_tokens = params.maxTokens
+  } else {
+    body.max_tokens = params.maxTokens
+  }
+
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${params.apiKey}`,
     },
-    body: JSON.stringify({
-      model: params.model,
-      max_tokens: params.maxTokens,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: params.systemPrompt },
-        { role: 'user', content: params.userMessage },
-      ],
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!response.ok) {
     const errText = await response.text()
+    console.error('[OPENAI_ERROR_RAW]', { status: response.status, body: errText, model: params.model })
     throw new Error(`OpenAI API error ${response.status}: ${errText}`)
   }
 

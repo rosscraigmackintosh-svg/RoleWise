@@ -21,7 +21,12 @@ const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const OPENAI_API_KEY    = Deno.env.get('OPENAI_API_KEY') || ''
 
 const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-haiku-4-5-20251001'
-const OPENAI_MODEL    = Deno.env.get('OPENAI_MODEL')    || 'gpt-4o-mini'
+// Route-specific override takes precedence so the reasoning model can be
+// tuned independently of extraction. Fallback chain:
+//   OPENAI_MODEL_REASONING -> OPENAI_MODEL -> default.
+const OPENAI_MODEL    = Deno.env.get('OPENAI_MODEL_REASONING')
+                     || Deno.env.get('OPENAI_MODEL')
+                     || 'gpt-4o-mini'
 
 // Anthropic uses the same composable prompt — we don't keep a separate inline
 // prompt for the reasoning pass because the spec is already declarative and

@@ -22,7 +22,12 @@ const OPENAI_API_KEY    = Deno.env.get('OPENAI_API_KEY') || ''
 // ANTHROPIC_MODEL env var: e.g. 'claude-haiku-4-5-20251001'
 // OPENAI_MODEL env var:    e.g. 'gpt-4o-mini' (default) or 'gpt-4o'
 const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-haiku-4-5-20251001'
-const OPENAI_MODEL    = Deno.env.get('OPENAI_MODEL')    || 'gpt-4o-mini'
+// Route-specific override takes precedence so the narrative model can be
+// tuned independently of extraction. Fallback chain:
+//   OPENAI_MODEL_NARRATIVE -> OPENAI_MODEL -> default.
+const OPENAI_MODEL    = Deno.env.get('OPENAI_MODEL_NARRATIVE')
+                     || Deno.env.get('OPENAI_MODEL')
+                     || 'gpt-4o-mini'
 
 // ─── Anthropic System Prompt ─────────────────────────────────────────────────
 // Source of truth: /app/ai/prompts/rolewise-prompts.js
