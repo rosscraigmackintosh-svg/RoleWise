@@ -11216,8 +11216,66 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
       // If no analysis exists at all, show a calm placeholder
       const _hasSections = _sFitReality || _s01 || _s02 || _s03 || _s04 || _sPracticalDetails || _s05 || _s06 || _sDecision || _sRecommendedCv || _sWhyThisCv;
+
+      // ── Build the failure-explanation banner from real telemetry ───────
+      // No more "still being prepared" — that message masks operational
+      // failures. Surface the exact pipeline state, the specific stage
+      // that failed, the error code/message, and the provider used.
+      const _renderIncompleteBanner = () => {
+        const ps = fo._pipeline_state    || null;
+        const pe = Array.isArray(fo._pipeline_errors) ? fo._pipeline_errors : [];
+        const pt = fo._pipeline_timings  || null;
+        const cc = fo._completion_check  || null;
+        const provName = (fo._aiProvider || _prov?.provider || 'unknown');
+
+        // Build a human-readable status line for each pass.
+        const statusLabel = (k) => {
+          const s = ps?.[k];
+          if (!s) return 'unknown';
+          return s;
+        };
+        const stages = [
+          ['Pass 1 (analyse-jd)',          statusLabel('pass1'),   pt?.analyse_jd_ms],
+          ['Pass 1.5 (role-reasoning)',    statusLabel('pass1_5'), pt?.reasoning_ms],
+          ['Pass 2 (narrative)',           statusLabel('pass2'),   pt?.narrative_ms],
+          ['Persist',                      statusLabel('persist'), null],
+        ];
+        const stagesHtml = stages.map(([label, status, ms]) => {
+          const icon = status === 'success' ? '✓' : status === 'pending' ? '…' : status === 'timeout' ? '⌛' : status === 'failed' ? '✗' : '?';
+          const msStr = (typeof ms === 'number' && ms > 0) ? ` <span class="ra-pipeline-ms">${ms}ms</span>` : '';
+          return `<li class="ra-pipeline-stage ra-pipeline-${esc(status)}"><span class="ra-pipeline-icon">${icon}</span> ${esc(label)}: <strong>${esc(status)}</strong>${msStr}</li>`;
+        }).join('');
+
+        // Build the "what went wrong" message from the first non-success error.
+        let primaryError = null;
+        if (pe.length) primaryError = pe[0];
+        const errorLine = primaryError
+          ? `<p class="ra-pipeline-error">Reason: <code>${esc(primaryError.code || 'UNKNOWN')}</code> at stage <code>${esc(primaryError.stage || '?')}</code>. ${esc((primaryError.message || '').slice(0, 240))}</p>`
+          : '';
+
+        // Sections missing line.
+        const sm = Array.isArray(cc?.sections_missing) ? cc.sections_missing : [];
+        const pm = Array.isArray(cc?.provenance_missing) ? cc.provenance_missing : [];
+        const missingLine = (sm.length || pm.length)
+          ? `<p class="ra-pipeline-missing">Missing: ${[...sm.map(s => `section <code>${esc(s)}</code>`), ...pm.map(p => `version <code>${esc(p)}</code>`)].join(', ')}.</p>`
+          : '';
+
+        const totalMs = pt?.total_ms;
+        const totalLine = (typeof totalMs === 'number' && totalMs > 0)
+          ? `<p class="ra-pipeline-total">Total pipeline time: ${totalMs}ms · provider: <code>${esc(provName)}</code></p>`
+          : `<p class="ra-pipeline-total">Provider: <code>${esc(provName)}</code></p>`;
+
+        return `<div class="ra-no-analysis ra-pipeline-banner">
+          <p><strong>Analysis incomplete.</strong> The ingestion pipeline did not produce a full analysis.</p>
+          <ul class="ra-pipeline-stages">${stagesHtml}</ul>
+          ${errorLine}
+          ${missingLine}
+          ${totalLine}
+        </div>`;
+      };
+
       const _noAnalysisHtml = _isIncomplete
-        ? '<div class="ra-no-analysis"><p><strong>Analysis is still being prepared.</strong></p><p>Rolewise has extracted the basics, but the deeper role analysis has not finished yet.</p></div>'
+        ? _renderIncompleteBanner()
         : !_hasSections
           ? '<p class="ra-no-analysis">No analysis available for this role yet. Paste the job description to generate one.</p>'
           : '';
@@ -13525,14 +13583,16 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
 
     // ── Processing flow ─────────────────────────────────────────────────────
     // ── Ingestion pipeline budgets ──────────────────────────────────────────
-    // Pass 1 (analyse-jd):           ~6 s typical
-    // Pass 1.5 (generate-role-reasoning): ~17 s typical
-    // Pass 2 (generate-narrative):   ~20–36 s typical
+    // Pass 1 (analyse-jd):           ~12–25 s typical
+    // Pass 1.5 (generate-role-reasoning): ~17–35 s typical (larger schema in v7+)
+    // Pass 2 (generate-narrative):   ~10–40 s typical (heavier output in v37+)
     // The 1.5 + 2 chain runs sequentially inside _narrativePromise, so the
-    // post-Pass-1 timeout must cover both. Measured worst-case on the Clio JD
-    // was 59 s end-to-end; 75 s gives realistic headroom without indefinite
-    // blocking.
-    const NARRATIVE_PIPELINE_TIMEOUT_MS = 75_000;
+    // post-Pass-1 timeout must cover both. Reliability-mode measurement:
+    // openai SAI iter 1 ran 112 s end-to-end (sequential pipeline, including
+    // Pass 1) — well past the prior 75 s budget which was a known silent-loss
+    // failure cause. 150 s gives reliable headroom for the post-v7-reasoning
+    // pipeline without runaway open promises.
+    const NARRATIVE_PIPELINE_TIMEOUT_MS = 150_000;
 
     async function _runIngestionFlow({ context, role, text, url, overlay, linesEl, qEls }) {
       // Helper: append a new stacking progress line
@@ -14076,6 +14136,53 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
       if (_arAnimator) _arAnimator.setNarrativeDone();
 
+      // ── Hard completion check (deterministic validator) ─────────────────
+      // A role is ONLY considered complete when all of these hold:
+      //   - _narrative exists
+      //   - all 11 canonical narrative sections are populated
+      //   - provenance versions are stamped for all three passes
+      // Any failure produces an explicit _completion_check failure object
+      // that gets persisted; the row is never silently marked complete.
+      const _runCompletionCheck = (a) => {
+        const reasons = [];
+        const sections_missing = [];
+        const narr = a?._narrative;
+        if (!narr) reasons.push('narrative_missing');
+        else {
+          const checks = [
+            ['fit_reality',                  () => Array.isArray(narr.fit_reality?.paragraphs) && narr.fit_reality.paragraphs.length > 0],
+            ['what_this_role_actually_is',   () => Array.isArray(narr.what_this_role_actually_is?.paragraphs) && narr.what_this_role_actually_is.paragraphs.length > 0],
+            ['what_you_would_actually_do',   () => narr.what_you_would_actually_do && (Array.isArray(narr.what_you_would_actually_do.bullets) && narr.what_you_would_actually_do.bullets.length > 0)],
+            ['what_they_really_need_from_you', () => narr.what_they_really_need_from_you && (Array.isArray(narr.what_they_really_need_from_you.bullets) && narr.what_they_really_need_from_you.bullets.length > 0 || Array.isArray(narr.what_they_really_need_from_you.paragraphs) && narr.what_they_really_need_from_you.paragraphs.length > 0)],
+            ['practical_details',            () => Array.isArray(narr.practical_details?.items) && narr.practical_details.items.length > 0],
+            ['risks_and_unknowns',           () => narr.risks_and_unknowns && (Array.isArray(narr.risks_and_unknowns.inferred) || Array.isArray(narr.risks_and_unknowns.stated))],
+            ['questions_worth_asking',       () => Array.isArray(narr.questions_worth_asking) && narr.questions_worth_asking.length > 0],
+            ['decision',                     () => typeof narr.decision?.summary === 'string' && narr.decision.summary.trim().length > 0],
+            ['recommended_cv',               () => typeof narr.recommended_cv === 'string' && narr.recommended_cv.trim().length > 0],
+            ['why_that_cv',                  () => typeof narr.why_that_cv === 'string' && narr.why_that_cv.trim().length > 0],
+            ['final_note',                   () => typeof narr.final_note === 'string' && narr.final_note.trim().length > 0],
+          ];
+          for (const [name, fn] of checks) {
+            try { if (!fn()) sections_missing.push(name); }
+            catch { sections_missing.push(name); }
+          }
+          if (sections_missing.length) reasons.push('sections_missing');
+        }
+        const prov = a?._provenance || {};
+        const provenance_missing = [];
+        if (!prov.analyse_jd_version)     provenance_missing.push('analyse_jd_version');
+        if (!prov.role_reasoning_version) provenance_missing.push('role_reasoning_version');
+        if (!prov.narrative_version)      provenance_missing.push('narrative_version');
+        if (provenance_missing.length) reasons.push('provenance_missing');
+        return {
+          passed: reasons.length === 0,
+          reasons,
+          sections_missing,
+          provenance_missing,
+          timestamp: new Date().toISOString(),
+        };
+      };
+
       // Persist the fully-enriched analysis to jd_matches so the analysis
       // page opens with complete content. (Initial insert had local-only data.)
       if (_matchId && analysis) {
@@ -14092,6 +14199,15 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           role_reasoning_version: _enriched._role_reasoning_version  || null,
           narrative_version:      _enriched._narrative?._narrative_version || null,
         };
+        // ── Run the hard completion check ─────────────────────────────────
+        const _completion = _runCompletionCheck(_enriched);
+        _enriched._completion_check = _completion;
+        if (!_completion.passed) {
+          console.warn('[ingestion] Completion check FAILED:', _completion.reasons, 'sections_missing:', _completion.sections_missing, 'provenance_missing:', _completion.provenance_missing);
+          for (const missing of _completion.sections_missing) _recordPipelineError('completion', 'SECTION_MISSING', missing);
+          for (const missing of _completion.provenance_missing) _recordPipelineError('completion', 'PROVENANCE_MISSING', missing);
+        }
+
         // ── Pipeline telemetry — attach final state, timings, errors ──────
         _pipelineTimings.total_ms = Math.round(performance.now() - _pipelineT0);
         _enriched._pipeline_state   = _pipelineState;
@@ -14103,7 +14219,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           // Re-write with success-stamped state (best-effort; non-fatal if fails).
           _enriched._pipeline_state = _pipelineState;
           await db.from('jd_matches').update({ output_json: _enriched }).eq('id', _matchId);
-          console.log('[perf] Enriched analysis persisted to jd_matches', _enriched._provenance, 'pipeline:', _pipelineState);
+          console.log('[perf] Enriched analysis persisted to jd_matches', _enriched._provenance, 'pipeline:', _pipelineState, 'completion:', _completion.passed ? 'PASS' : 'FAIL');
         } catch (e) {
           _pipelineState.persist = 'failed';
           _recordPipelineError('persist', 'DB_UPDATE_FAILED', e?.message || String(e));
