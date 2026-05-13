@@ -33827,7 +33827,11 @@ If a field cannot be determined from the message, return null for that field.`,
       };
     }
     function _chatSessionTouch() {
-      if (_chatSession) _chatSession.updated_at = new Date().toISOString();
+      if (_chatSession) {
+        _chatSession.updated_at = new Date().toISOString();
+        // Step 4: shadow every touch so a tab reload restores the latest state.
+        _chatSessionShadowWrite();
+      }
     }
 
     function renderChatIngestView() {
@@ -33847,6 +33851,13 @@ If a field cannot be determined from the message, return null for that field.`,
       };
       // Step 1: initialise the new canonical session in parallel.
       _chatSession = _chatSessionInit();
+
+      // Step 4: localStorage shadow recovery. If a previous tab session left
+      // a ready/failed/saved snapshot, restore the chat surface from it
+      // before continuing with the rest of the render. This is gated below
+      // by an early return so the rest of renderChatIngestView does not
+      // overwrite the restored state.
+      const _shadow = _chatSessionShadowRead();
 
       el.innerHTML = `
         <div class="rwc-page" id="rwc-page">
@@ -33912,6 +33923,14 @@ If a field cannot be determined from the message, return null for that field.`,
 
       // CTA listeners are wired by _chatIngestRenderCtaBar each time it
       // re-renders the bar (per-state listeners avoid stale closures).
+
+      // Step 4: if a shadowed session exists, replay it onto the surface.
+      // The opener bubble above is already in place; the restore appends
+      // user + bot bubbles, hides the composer, and reveals the CTA bar.
+      if (_shadow) {
+        _chatIngestRestoreFromShadow(_shadow);
+        return;
+      }
 
       setTimeout(() => _ta.focus(), 60);
     }
@@ -34302,6 +34321,8 @@ If a field cannot be determined from the message, return null for that field.`,
         s.save_error     = null;
         s.status         = 'saved';
         _chatSessionTouch();
+        // Save success — clear the shadow. The role is now durably in the DB.
+        _chatSessionShadowClear();
 
         // Mirror onto the legacy state object (still read by some paths until
         // Step 6 removes the legacy state entirely).
@@ -34372,15 +34393,144 @@ If a field cannot be determined from the message, return null for that field.`,
     }
 
     // ─── Discard: drop in-memory analysis, no DB writes ─────────────────────
-    // Step 3 stub. Inline confirmation + localStorage shadow clearing lands
-    // in Step 4. For now: clear the session and re-render the empty chat
-    // surface so the user can start a fresh paste.
+    // Inline confirmation (per plan decision 1). First click toggles the
+    // CTA bar into a "Discard this read?" prompt with Yes / Cancel buttons.
+    // Yes clears the session + localStorage shadow and re-renders the view.
+    // Cancel returns to the ready CTA bar.
+    let _chatIngestPendingDiscard = false;
     function _chatIngestDiscard() {
-      console.log('[chat-ingest] DISCARDED', { had_analysis: !!_chatSession?.analysis });
-      _chatSession      = null;
-      _chatIngestState  = null;
-      // Re-render the view from scratch.
-      renderChatIngestView();
+      if (!_chatIngestPendingDiscard) {
+        _chatIngestPendingDiscard = true;
+        const bar = document.getElementById('rwc-cta-bar');
+        if (bar) {
+          bar.innerHTML = `
+            <span class="rwc-composer-hint">Discard this read?</span>
+            <button class="rwc-btn" type="button" id="rwc-cta-discard-cancel">Cancel</button>
+            <button class="rwc-btn rwc-btn--primary" type="button" id="rwc-cta-discard-yes">Discard</button>
+          `;
+          bar.querySelector('#rwc-cta-discard-cancel')?.addEventListener('click', () => {
+            _chatIngestPendingDiscard = false;
+            _chatIngestRenderCtaBar();
+          });
+          bar.querySelector('#rwc-cta-discard-yes')?.addEventListener('click', () => {
+            console.log('[chat-ingest] DISCARDED', { had_analysis: !!_chatSession?.analysis });
+            _chatIngestPendingDiscard = false;
+            _chatSessionShadowClear();
+            _chatSession     = null;
+            _chatIngestState = null;
+            renderChatIngestView();
+          });
+        }
+        return;
+      }
+    }
+
+    // ─── localStorage shadow ────────────────────────────────────────────────
+    // Defensive cache so a tab reload mid-session doesn't lose the analysis.
+    // Single key per tab (multi-tab semantics deliberately simple per plan
+    // decision 2). TTL 30 minutes. Only restores ready/failed states; an
+    // analysing snapshot is stale (the in-flight Promise died with the page).
+    const _CHAT_SHADOW_KEY    = 'rwc:chat-session';
+    const _CHAT_SHADOW_TTL_MS = 30 * 60 * 1000; // 30 minutes
+    let   _chatShadowWriteTimer = null;
+
+    function _chatSessionShadowWrite() {
+      if (!_chatSession) return;
+      // Debounce 500ms so rapid status transitions don't thrash localStorage.
+      if (_chatShadowWriteTimer) clearTimeout(_chatShadowWriteTimer);
+      _chatShadowWriteTimer = setTimeout(() => {
+        _chatShadowWriteTimer = null;
+        try {
+          // Strip transient Promise refs that can't be JSON-serialised.
+          const snap = Object.assign({}, _chatSession);
+          if (snap.analysis) {
+            const a = Object.assign({}, snap.analysis);
+            delete a._aiPromise;
+            delete a._narrativePromise;
+            snap.analysis = a;
+          }
+          localStorage.setItem(_CHAT_SHADOW_KEY, JSON.stringify(snap));
+        } catch (e) {
+          // Quota or serialisation failure; non-fatal.
+          console.warn('[chat-ingest] shadow write failed (non-fatal)', e?.message || e);
+        }
+      }, 500);
+    }
+
+    function _chatSessionShadowRead() {
+      try {
+        const raw = localStorage.getItem(_CHAT_SHADOW_KEY);
+        if (!raw) return null;
+        const snap = JSON.parse(raw);
+        if (!snap || typeof snap !== 'object') return null;
+        // TTL check
+        const updated = snap.updated_at ? new Date(snap.updated_at).getTime() : 0;
+        if (Date.now() - updated > _CHAT_SHADOW_TTL_MS) {
+          localStorage.removeItem(_CHAT_SHADOW_KEY);
+          return null;
+        }
+        // Only restore ready/failed; analysing snapshots are stale because
+        // the in-flight Promise died with the page.
+        if (snap.status !== 'ready' && snap.status !== 'failed' && snap.status !== 'saved') {
+          return null;
+        }
+        return snap;
+      } catch (e) {
+        console.warn('[chat-ingest] shadow read failed (non-fatal)', e?.message || e);
+        return null;
+      }
+    }
+
+    function _chatSessionShadowClear() {
+      try { localStorage.removeItem(_CHAT_SHADOW_KEY); } catch (_e) { /* non-fatal */ }
+      if (_chatShadowWriteTimer) { clearTimeout(_chatShadowWriteTimer); _chatShadowWriteTimer = null; }
+    }
+
+    // ─── Restore the chat surface from a shadowed session ───────────────────
+    // Replays the bubbles the user would have seen at the time the snapshot
+    // was written. Does NOT re-run AI; the cached analysis is what we have.
+    function _chatIngestRestoreFromShadow(snap) {
+      _chatSession = snap;
+      _chatIngestState = {
+        submitted: true,
+        analysis:  snap.analysis,
+        savedRoleId:  snap.saved_role_id  || null,
+        savedMatchId: snap.saved_match_id || null,
+        savedRole:    snap.saved_role     || null,
+      };
+      // Hide composer (analysis already exists).
+      const _composer = document.getElementById('rwc-composer');
+      if (_composer) _composer.setAttribute('hidden', '');
+
+      // Replay the bubble sequence.
+      const _esc = esc;
+      const rawText = snap.jd_raw || '';
+      const _preview = rawText.length > 600 ? rawText.slice(0, 600) + '…' : rawText;
+      _chatIngestAppendUser(`<div class="rwc-jd-collapsed">${_esc(_preview)}</div><div class="rwc-jd-meta">${rawText.length.toLocaleString()} chars</div>`);
+
+      // Facts bubble (built from cached meta + signals).
+      const _wmMap = { remote: 'Remote', hybrid: 'Hybrid', 'on-site': 'On-site', onsite: 'On-site' };
+      const _workModel = snap.meta?.remote_model ? (_wmMap[snap.meta.remote_model.toLowerCase()] || snap.meta.remote_model) : null;
+      _chatIngestAppendBot(_chatIngestRenderFactsBody({
+        title:    snap.meta?.role_title    || null,
+        company:  snap.meta?.company_name  || null,
+        location: snap.meta?.location      || null,
+        workModel: _workModel,
+        salary:   snap.meta?.salary_annual || null,
+        engagement: snap.engagement_type   || null,
+        ir35:     snap.ir35_status         || null,
+      }));
+
+      // First-read + watch-outs from cached narrative.
+      if (snap.narrative) {
+        _chatIngestAppendBot(_chatIngestRenderFirstReadBody(snap.narrative));
+        _chatIngestAppendBot(_chatIngestRenderCheckBody(snap.narrative));
+      }
+      _chatIngestAppendBot(`<p class="rwc-bubble-intro">${snap.status === 'failed' ? 'Save failed earlier. Try again, open the role, or discard.' : (snap.status === 'saved' ? 'This role is saved. Open it or discard the chat.' : 'Save this role?')}</p>`);
+      _chatIngestRenderCtaBar();
+      const _ctaBar = document.getElementById('rwc-cta-bar');
+      if (_ctaBar) _ctaBar.removeAttribute('hidden');
+      console.log('[chat-ingest] RESTORED_FROM_SHADOW', { status: snap.status, age_ms: Date.now() - new Date(snap.updated_at || 0).getTime() });
     }
 
     // ─── CTA bar renderer (status-aware) ────────────────────────────────────
