@@ -1,17 +1,20 @@
 // =============================================================================
-// synthesise-chat-read — Conversational synthesis layer for chat-ingest mode
+// synthesise-chat-read — Applicant Mode briefing layer for chat-ingest mode
 //
 // Reads the canonical _narrative (from reason-and-narrate or the Deep path)
-// and produces an opinionated, paced conversational read.
+// and produces a STRUCTURED briefing — 12 sections rendered cleanly inside
+// the chat surface.
 //
 // IMPORTANT:
 // - This does NOT replace or alter the canonical narrative. Saved role pages
-//   continue to render the 11-section structured output.
-// - The synth output (chat_read) is presentation-only. It is NOT persisted
-//   into jd_matches.output_json. Chat-ingest stores it on the client-side
+//   continue to render the 11-section canonical structure independently.
+// - The briefing is presentation-only. It is NOT persisted into
+//   jd_matches.output_json. Chat-ingest stores it on the client-side
 //   session + localStorage shadow only.
-// - If this function fails, the chat surface falls back to the existing
-//   section-by-section renderer. It is a quality lift, not a hard dependency.
+// - If this function fails, the client falls back to a deterministic
+//   canonical-to-briefing mapper. The chat surface always produces a read.
+// - recommended_cv_variant is OVERWRITTEN server-side with the canonical
+//   narrative.recommended_cv. The model is not allowed to re-pick.
 //
 // Deploy: supabase functions deploy synthesise-chat-read
 // =============================================================================
@@ -21,44 +24,34 @@ import { callAI, type AIProvider } from '../_shared/ai-call.ts'
 import { OPENAI_SYSTEM_PROMPT, CHAT_SYNTH_VERSION } from './prompts/openai.ts'
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || ''
+const OPENAI_MODEL   = Deno.env.get('OPENAI_MODEL_CHAT_SYNTH') || 'gpt-4.1-mini'
 
-// Route-specific override. Default is gpt-4.1-mini — synthesis from an
-// already-structured input is a transformation task; mini is plenty.
-const OPENAI_MODEL = Deno.env.get('OPENAI_MODEL_CHAT_SYNTH')
-                  || 'gpt-4.1-mini'
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-// Reuse the same candidate-context formatter shape as reason-and-narrate so
-// the voice rules (you-for-friction, candidate-coding bans) carry through.
 function formatCandidateContext(ctx: Record<string, unknown> | null): string {
   if (!ctx || typeof ctx !== 'object') return ''
-
   const lines: string[] = ['CANDIDATE CONTEXT']
-  lines.push('(The reader IS this candidate. The synthesis addresses them as "you". Never use the name in output.)')
+  lines.push('(The reader IS this candidate. The briefing addresses them as "you". Never use the name in output.)')
   lines.push('')
-
   const id = ctx.identity as Record<string, string> | undefined
   if (id) {
     lines.push('WHO: ' + [id.name, id.seniority, (id.years_experience ? id.years_experience + ' years experience' : null), id.location].filter(Boolean).join(' | '))
   }
-
   const strengths = ctx.core_strengths as string[] | undefined
   if (Array.isArray(strengths) && strengths.length) {
     lines.push('', 'CORE STRENGTHS:')
     strengths.forEach(s => lines.push('- ' + s))
   }
-
   const envs = ctx.preferred_environments as string[] | undefined
   if (Array.isArray(envs) && envs.length) {
     lines.push('', 'PREFERRED ENVIRONMENTS:')
     envs.forEach(s => lines.push('- ' + s))
   }
-
   const frictions = ctx.known_frictions as string[] | undefined
   if (Array.isArray(frictions) && frictions.length) {
     lines.push('', 'KNOWN FRICTIONS:')
     frictions.forEach(s => lines.push('- ' + s))
   }
-
   return lines.join('\n')
 }
 
@@ -81,40 +74,94 @@ function formatMeta(meta: Record<string, unknown> | null): string {
 }
 
 // ─── Output validation ──────────────────────────────────────────────────────
-// Reject obviously-malformed or empty synth output. A failed validation is
-// surfaced as a 422 so the client falls back to section rendering.
-function validateChatRead(parsed: unknown): { ok: true; turns: Array<Record<string, unknown>> } | { ok: false; reason: string } {
-  if (!parsed || typeof parsed !== 'object') return { ok: false, reason: 'not-an-object' }
-  const turns = (parsed as Record<string, unknown>).turns
-  if (!Array.isArray(turns)) return { ok: false, reason: 'turns-not-array' }
-  if (turns.length === 0)    return { ok: false, reason: 'turns-empty' }
-  if (turns.length > 8)      return { ok: false, reason: 'turns-too-many' }
 
-  let bulletsCount = 0
-  for (let i = 0; i < turns.length; i++) {
-    const t = turns[i] as Record<string, unknown>
-    if (!t || typeof t !== 'object') return { ok: false, reason: `turn-${i}-not-object` }
-    const type = t.type
-    if (type === 'p') {
-      const text = typeof t.text === 'string' ? t.text.trim() : ''
-      if (!text) return { ok: false, reason: `turn-${i}-empty-text` }
-    } else if (type === 'bullets') {
-      bulletsCount++
-      const lead = typeof t.lead === 'string' ? t.lead.trim() : ''
-      const items = t.items
-      if (!lead) return { ok: false, reason: `turn-${i}-empty-lead` }
-      if (!Array.isArray(items) || items.length < 2 || items.length > 6) {
-        return { ok: false, reason: `turn-${i}-bad-items` }
-      }
-      if (items.some(it => typeof it !== 'string' || !it.trim())) {
-        return { ok: false, reason: `turn-${i}-empty-item` }
-      }
-    } else {
-      return { ok: false, reason: `turn-${i}-unknown-type` }
-    }
+const PRACTICAL_KEYS = [
+  'location', 'work_model', 'employment_type', 'salary',
+  'monthly_equivalent', 'visa_sponsorship', 'reporting_line',
+  'industry', 'company_stage',
+] as const
+
+const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0
+const isStringArray = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.length > 0 && v.every(x => isNonEmptyString(x))
+
+function validateBriefing(parsed: unknown):
+  { ok: true; briefing: Record<string, unknown> }
+  | { ok: false; reason: string }
+{
+  if (!parsed || typeof parsed !== 'object') return { ok: false, reason: 'not-an-object' }
+  const b = (parsed as Record<string, unknown>).applicant_briefing
+  if (!b || typeof b !== 'object') return { ok: false, reason: 'missing-applicant_briefing' }
+  const obj = b as Record<string, unknown>
+
+  // Required string-array sections (must be non-empty).
+  const requiredArrays = [
+    'fit_reality_summary', 'role_summary',
+    'what_you_would_actually_do', 'what_they_are_really_looking_for',
+    'questions_worth_asking', 'suggested_actions',
+  ]
+  for (const k of requiredArrays) {
+    if (!isStringArray(obj[k])) return { ok: false, reason: `bad-${k}` }
   }
-  if (bulletsCount > 1) return { ok: false, reason: 'too-many-bullet-turns' }
-  return { ok: true, turns: turns as Array<Record<string, unknown>> }
+
+  // Why this role exists: { stated, inferred } — at least one bucket non-empty.
+  const wte = obj.why_this_role_exists as Record<string, unknown> | undefined
+  if (!wte || typeof wte !== 'object') return { ok: false, reason: 'bad-why_this_role_exists' }
+  const wteStated   = Array.isArray(wte.stated)   ? wte.stated   : []
+  const wteInferred = Array.isArray(wte.inferred) ? wte.inferred : []
+  if (![...wteStated, ...wteInferred].length) return { ok: false, reason: 'empty-why_this_role_exists' }
+
+  // Risks: { stated, inferred, verification_points } — at least one bucket non-empty.
+  const ru = obj.risks_and_unknowns as Record<string, unknown> | undefined
+  if (!ru || typeof ru !== 'object') return { ok: false, reason: 'bad-risks_and_unknowns' }
+  const ruStated   = Array.isArray(ru.stated)              ? ru.stated              : []
+  const ruInferred = Array.isArray(ru.inferred)            ? ru.inferred            : []
+  const ruVerify   = Array.isArray(ru.verification_points) ? ru.verification_points : []
+  if (![...ruStated, ...ruInferred, ...ruVerify].length) return { ok: false, reason: 'empty-risks_and_unknowns' }
+
+  // Practical details: object with the fixed key set; values may be null.
+  const pd = obj.practical_details as Record<string, unknown> | undefined
+  if (!pd || typeof pd !== 'object') return { ok: false, reason: 'bad-practical_details' }
+  // Don't reject if some keys are missing — just normalise below.
+
+  // why_this_cv and final_note: strings.
+  if (!isNonEmptyString(obj.why_this_cv)) return { ok: false, reason: 'bad-why_this_cv' }
+  if (!isNonEmptyString(obj.final_note))  return { ok: false, reason: 'bad-final_note' }
+
+  // recommended_cv_variant: string or null. Server-side override below.
+  const cv = obj.recommended_cv_variant
+  if (cv !== null && !isNonEmptyString(cv)) return { ok: false, reason: 'bad-recommended_cv_variant' }
+
+  return { ok: true, briefing: obj }
+}
+
+function normaliseBriefing(b: Record<string, unknown>, canonicalRecommendedCv: string | null): Record<string, unknown> {
+  // Force the CV to mirror the canonical narrative — the model is not allowed
+  // to re-pick. If the canonical is null/empty, we surface null and the
+  // renderer suppresses the section.
+  b.recommended_cv_variant = canonicalRecommendedCv && canonicalRecommendedCv.trim()
+    ? canonicalRecommendedCv.trim()
+    : null
+
+  // Normalise practical_details: ensure every fixed key is present.
+  const pd = (b.practical_details as Record<string, unknown>) || {}
+  const filledPd: Record<string, string | null> = {}
+  for (const k of PRACTICAL_KEYS) {
+    const v = pd[k]
+    filledPd[k] = (typeof v === 'string' && v.trim()) ? v.trim() : null
+  }
+  b.practical_details = filledPd
+
+  // Ensure risks + why_this_role_exists sub-arrays exist (may be empty).
+  const wte = b.why_this_role_exists as Record<string, unknown>
+  wte.stated   = Array.isArray(wte.stated)   ? wte.stated.filter(isNonEmptyString)   : []
+  wte.inferred = Array.isArray(wte.inferred) ? wte.inferred.filter(isNonEmptyString) : []
+  const ru = b.risks_and_unknowns as Record<string, unknown>
+  ru.stated              = Array.isArray(ru.stated)              ? ru.stated.filter(isNonEmptyString)              : []
+  ru.inferred            = Array.isArray(ru.inferred)            ? ru.inferred.filter(isNonEmptyString)            : []
+  ru.verification_points = Array.isArray(ru.verification_points) ? ru.verification_points.filter(isNonEmptyString) : []
+
+  return b
 }
 
 // ─── Request handler ───────────────────────────────────────────────────────
@@ -183,7 +230,7 @@ serve(async (req: Request) => {
       userMessage,
       model,
       apiKey,
-      maxTokens: 900, // ~340-word deep cap + JSON overhead
+      maxTokens: 1800, // ~700-word deep cap + JSON overhead for 12 sections
     })
     const latencyMs = Math.round(performance.now() - t0)
 
@@ -199,27 +246,28 @@ serve(async (req: Request) => {
       )
     }
 
-    const validation = validateChatRead(parsed)
+    const validation = validateBriefing(parsed)
     if (!validation.ok) {
       console.warn('[synthesise-chat-read] validation failed:', validation.reason)
       return new Response(
-        JSON.stringify({ error: 'Synth output failed validation', reason: validation.reason, raw: rawText.slice(0, 500) }),
+        JSON.stringify({ error: 'Briefing failed validation', reason: validation.reason, raw: rawText.slice(0, 500) }),
         { status: 422, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
       )
     }
 
-    // Provenance stamps the client persists onto _provenance (presentation-
-    // only; chat_read itself is not stored in output_json).
+    // Canonical CV mirror + practical_details normalisation.
+    const canonicalCv = typeof (narrative as Record<string, unknown>).recommended_cv === 'string'
+      ? ((narrative as Record<string, unknown>).recommended_cv as string)
+      : null
+    const briefing = normaliseBriefing(validation.briefing, canonicalCv)
+
     usage.chat_synth_version = CHAT_SYNTH_VERSION
     usage.analysis_mode      = 'fast'
 
-    console.log(`[synthesise-chat-read] OK provider=${provider} model=${model} version=${CHAT_SYNTH_VERSION} verbosity=${verbosityMode} turns=${validation.turns.length} latency_ms=${latencyMs}`)
+    console.log(`[synthesise-chat-read] OK provider=${provider} model=${model} version=${CHAT_SYNTH_VERSION} verbosity=${verbosityMode} latency_ms=${latencyMs}`)
 
     return new Response(
-      JSON.stringify({
-        chat_read: { turns: validation.turns },
-        usage,
-      }),
+      JSON.stringify({ applicant_briefing: briefing, usage }),
       { status: 200, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
     )
   } catch (err) {

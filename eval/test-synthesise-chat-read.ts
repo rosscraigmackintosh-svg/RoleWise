@@ -114,17 +114,17 @@ for (let i = 0; i < jdFiles.length; i++) {
     continue
   }
 
-  const turns = synRes.data?.chat_read?.turns || []
-  const heuristics = analyseTone(turns)
+  const briefing = synRes.data?.applicant_briefing || null
+  const heuristics = analyseBriefing(briefing, narrative)
 
-  console.log(`  OK  pass1=${exMs}ms  rn=${rnMs}ms  synth=${synMs}ms  turns=${turns.length}  words=${heuristics.totalWords}  flags=${heuristics.flags.join(',') || 'clean'}`)
+  console.log(`  OK  pass1=${exMs}ms  rn=${rnMs}ms  synth=${synMs}ms  words=${heuristics.totalWords}  cv_mirror=${heuristics.cvMirrorOk ? 'ok' : 'MISMATCH'}  flags=${heuristics.flags.join(',') || 'clean'}`)
 
   await Deno.writeTextFile(`${stampDir}/${jdId}.json`, JSON.stringify({
     jd:        jdFile,
     verbosity,
     latency_ms: { analyse_jd: exMs, reason_and_narrate: rnMs, synth: synMs },
     meta,
-    chat_read: { turns },
+    applicant_briefing: briefing,
     heuristics,
     usage:     synRes.data?.usage || null,
     canonical: { extraction, narrative },
@@ -133,12 +133,10 @@ for (let i = 0; i < jdFiles.length; i++) {
   summary.push({
     jd:               jdFile,
     status:           'ok',
-    turns:            turns.length,
     total_words:      heuristics.totalWords,
-    bullets_turns:    heuristics.bulletsTurnCount,
+    cv_mirror_ok:     heuristics.cvMirrorOk,
     flags:            heuristics.flags,
-    leads_with_pos:   heuristics.leadsWithPositive,
-    leads_with_caut:  heuristics.leadsWithCaution,
+    section_counts:   heuristics.sectionCounts,
     synth_ms:         synMs,
   })
 
@@ -167,7 +165,70 @@ console.log(`\nReview each ${stampDir}/<id>.json for the actual chat_read prose.
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-function analyseTone(turns: Array<Record<string, unknown>>) {
+function analyseBriefing(briefing: Record<string, unknown> | null, narrative: Record<string, unknown> | null) {
+  const flags: string[] = []
+  if (!briefing) return { totalWords: 0, flags: ['no-briefing'], cvMirrorOk: false, sectionCounts: {} as Record<string, number> }
+
+  const fits  = (briefing.fit_reality_summary as string[]) || []
+  const role  = (briefing.role_summary as string[]) || []
+  const wte   = briefing.why_this_role_exists as Record<string, string[]> || { stated: [], inferred: [] }
+  const wyd   = (briefing.what_you_would_actually_do as string[]) || []
+  const wtr   = (briefing.what_they_are_really_looking_for as string[]) || []
+  const ru    = briefing.risks_and_unknowns as Record<string, string[]> || { stated: [], inferred: [], verification_points: [] }
+  const qs    = (briefing.questions_worth_asking as string[]) || []
+  const sa    = (briefing.suggested_actions as string[]) || []
+
+  const sectionCounts: Record<string, number> = {
+    fits: fits.length,
+    role_summary: role.length,
+    wte_stated: (wte.stated || []).length,
+    wte_inferred: (wte.inferred || []).length,
+    actually_do: wyd.length,
+    really_looking_for: wtr.length,
+    risks_stated: (ru.stated || []).length,
+    risks_inferred: (ru.inferred || []).length,
+    verification_points: (ru.verification_points || []).length,
+    questions: qs.length,
+    suggested_actions: sa.length,
+  }
+
+  // Joined text for tone scanning.
+  const allArrays = [
+    ...fits, ...role,
+    ...(wte.stated || []), ...(wte.inferred || []),
+    ...wyd, ...wtr,
+    ...(ru.stated || []), ...(ru.inferred || []), ...(ru.verification_points || []),
+    ...qs, ...sa,
+  ]
+  const joined = [
+    ...allArrays,
+    String(briefing.why_this_cv || ''),
+    String(briefing.final_note || ''),
+  ].join(' ')
+
+  const totalWords = joined.split(/\s+/).filter(Boolean).length
+
+  if (/—/.test(joined))                                                                        flags.push('em-dash')
+  if (/\b(chafe|chafes|struggles|hates|won't cope|can't cope)\b/i.test(joined))                flags.push('candidate-pejorative')
+  if (/\b(fit[_ ]reality|risks_and_unknowns|recommended[_ ]cv|why[_ ]that[_ ]cv)\b/i.test(joined)) flags.push('leaked-schema-name')
+  if (/\b(apply (now|today|to this)|definitely (apply|skip)|don't (bother|apply))\b/i.test(joined)) flags.push('verdict-imperative')
+  if (/\b(strong match|where you excel|plays to your strengths|leverages your experience|expertise shines|perfect fit)\b/i.test(joined)) flags.push('banned-generic-praise')
+
+  // Section count sanity
+  if (fits.length < 4 || fits.length > 7)                                                       flags.push('fits-count-off')
+  if (role.length < 2 || role.length > 4)                                                       flags.push('role-summary-count-off')
+  if (wyd.length < 4 || wyd.length > 8)                                                         flags.push('actually-do-count-off')
+  if (qs.length < 4 || qs.length > 7)                                                           flags.push('questions-count-off')
+
+  // CV mirror check — must equal canonical.
+  const canonicalCv = String(narrative?.recommended_cv || '') || null
+  const briefingCv  = (briefing.recommended_cv_variant as string | null) ?? null
+  const cvMirrorOk  = canonicalCv === briefingCv
+
+  return { totalWords, flags, cvMirrorOk, sectionCounts }
+}
+
+function _legacyAnalyseTone(turns: Array<Record<string, unknown>>) {
   let totalWords = 0
   let bulletsTurnCount = 0
   const flags: string[] = []
