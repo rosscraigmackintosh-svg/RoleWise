@@ -33938,6 +33938,10 @@ If a field cannot be determined from the message, return null for that field.`,
         // Analysis (built progressively; same shape persisted as output_json)
         analysis:   null,
         narrative:  null,
+        // Conversational synthesis output (presentation-only — NOT persisted
+        // to jd_matches.output_json; shadowed alongside the rest of the
+        // session so reload restore can replay the conversational turns).
+        chat_read:  null,
         timings:    { pass1_ms: 0, reason_and_narrate_ms: 0, total_ms: 0 },
         // Save-time
         saved_role:     null,
@@ -34432,6 +34436,47 @@ If a field cannot be determined from the message, return null for that field.`,
       return `<p class="rwc-facts-line">${parts.join(' · ')}</p>`;
     }
 
+    // ─── Conversational renderer (synth-driven) ─────────────────────────────
+    // Walks chat_read.turns in order, lands the first turn in place of the
+    // pending bubble, then appends subsequent turns with a small jittered
+    // delay (~280-360ms) so the conversation has rhythm without faking
+    // typing. The bullets turn (max one per read) renders as a soft list.
+    async function _chatIngestRenderConversational(chatRead, firstReadPending) {
+      const turns = (chatRead && Array.isArray(chatRead.turns)) ? chatRead.turns : [];
+      if (!turns.length) {
+        if (firstReadPending) _chatIngestReplacePending(firstReadPending, `<p>I couldn't put together a read from this one.</p>`);
+        return;
+      }
+      for (let i = 0; i < turns.length; i++) {
+        const t = turns[i];
+        const html = _chatIngestRenderConvTurn(t);
+        if (i === 0 && firstReadPending) {
+          _chatIngestReplacePending(firstReadPending, html);
+        } else {
+          // Jittered pause between turns. Last turn lands without an
+          // artificial wait afterwards — the close line adds its own beat.
+          const _wait = 280 + Math.floor(Math.random() * 80);
+          await new Promise(r => setTimeout(r, _wait));
+          _chatIngestAppendBot(html);
+        }
+      }
+    }
+
+    function _chatIngestRenderConvTurn(t) {
+      const _esc = esc;
+      if (!t || typeof t !== 'object') return '';
+      if (t.type === 'p') {
+        return `<p>${_esc(_sanitizeUiText(t.text || ''))}</p>`;
+      }
+      if (t.type === 'bullets') {
+        const lead = t.lead ? `<p>${_esc(_sanitizeUiText(t.lead))}</p>` : '';
+        const items = Array.isArray(t.items) ? t.items : [];
+        const lis = items.map(s => `<li>${_esc(_sanitizeUiText(typeof s === 'string' ? s : String(s)))}</li>`).join('');
+        return `${lead}<ul class="rwc-soft">${lis}</ul>`;
+      }
+      return '';
+    }
+
     function _chatIngestRenderFirstReadBody(narr) {
       // Plain prose paragraphs. No "Here's the role read." opener — the
       // analysis just starts speaking. The decision summary appears as its
@@ -34724,8 +34769,17 @@ If a field cannot be determined from the message, return null for that field.`,
         ir35:     snap.ir35_status         || null,
       }));
 
-      // First-read + watch-outs from cached narrative.
-      if (snap.narrative) {
+      // Restore the conversational read if the snapshot has one cached;
+      // otherwise replay the section-by-section renderers from the
+      // canonical narrative. On restore we skip the inter-turn pacing
+      // delays — the read is already complete; no point pretending to
+      // think about it again.
+      if (snap.chat_read && Array.isArray(snap.chat_read.turns) && snap.chat_read.turns.length) {
+        for (const t of snap.chat_read.turns) {
+          const html = _chatIngestRenderConvTurn(t);
+          if (html) _chatIngestAppendBot(html);
+        }
+      } else if (snap.narrative) {
         _chatIngestAppendBot(_chatIngestRenderFirstReadBody(snap.narrative));
         _chatIngestAppendBot(_chatIngestRenderCheckBody(snap.narrative));
       }
