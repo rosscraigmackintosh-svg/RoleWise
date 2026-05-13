@@ -25956,6 +25956,17 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         'about us', 'about the company', 'introduction', 'summary', 'background',
         'responsibilities', 'requirements', 'qualifications', 'benefits', 'description',
         'the position', 'the role', 'the team', 'what you', 'who we', 'why join',
+        // Job-board / ATS footer + legal fragments. Substring match: any
+        // candidate containing one of these is almost certainly footer chrome
+        // (e.g. "Workable Technology Limited 2012-2026 Terms &") rather than
+        // a real company name. If AI extraction later finds a better company,
+        // it overrides this null.
+        'powered by workable', 'workable technology',
+        'powered by greenhouse', 'powered by lever', 'powered by ashby',
+        'powered by smartrecruiters', 'powered by bamboohr',
+        'terms &', 'terms and conditions', 'terms of service', 'terms of use',
+        'privacy policy', 'privacy notice', 'cookie policy', 'cookies policy',
+        'all rights reserved', '©', '(c) ',
       ];
       // Section headings / tab labels that must never be accepted as company.
       // Exact-match check so legitimate names containing these substrings pass.
@@ -25997,6 +26008,13 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         if (_companyLocWords.some(w => cl.includes(w)))  return false;
         if (c.split(' ').length > 6) return false;               // too long
         if (/\b(and|the|for|with|that|this|from)\b$/i.test(c)) return false;
+        // Footer-style strings carry copyright year ranges, e.g.
+        // "Workable Technology Limited 2012-2026". Real company names rarely
+        // contain a 4-digit year, and never a year range with a dash.
+        if (/\b(19|20)\d{2}\s*[-–]\s*(19|20)\d{2}\b/.test(c)) return false;
+        if (/\b(19|20)\d{2}\b/.test(c)) return false;
+        // Trailing legal/footer punctuation ("Foo Ltd &", "Foo, Inc.")
+        if (/[&|•·]\s*$/.test(c)) return false;
         return true;
       };
 
