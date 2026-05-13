@@ -14543,7 +14543,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // ingestion overlay (analysisRef._analysis_mode === 'fast'). When the
       // toggle is "deep" OR neither flag is on, the legacy 3-pass path runs
       // exactly as before — no Fast-mode side effects.
-      const FAST_MODE_ROUTING_ENABLED = false; // flip after soft-launch eval
+      const FAST_MODE_ROUTING_ENABLED = true; // production default — Phase 3 eval passed (commit 53f771f), Phase 2 client wiring validated (commit 871c944)
       const _fastFlagActive = (typeof window !== 'undefined' && window.ROLEWISE_FAST_MODE === true)
                               || FAST_MODE_ROUTING_ENABLED;
       const _useFastPath = _fastFlagActive && analysisRef._analysis_mode === 'fast';
