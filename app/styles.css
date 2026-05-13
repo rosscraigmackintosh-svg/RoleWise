@@ -20606,6 +20606,127 @@ a.rw-rail-contact-name:hover {
    even if older markup briefly renders them during transition. */
 .rwc-mode-conv .rwc-list-lead { display: none; }
 
+/* ─── Applicant Mode briefing ─────────────────────────────────────────────
+   Distinct visually from the saved-role page: no cards, no fills, hairline
+   dividers, uppercase letter-spaced section labels, key/value Practical
+   Details grid. Lives inside the chat-stream so user-bubble + action-row
+   keep their existing layout. */
+
+/* Header chip — small muted tag with timestamp. Anchors the user on the
+   chat-side briefing surface. */
+.rwc-mode-conv .rwc-brief-chip {
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-tertiary, #807e7a);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.rwc-mode-conv .rwc-brief-chip-label { font-weight: 500; }
+.rwc-mode-conv .rwc-brief-chip-time  { font-weight: 400; opacity: 0.75; }
+
+/* Section container — each section is its own bot message; the divider
+   above the heading creates the breathing room. */
+.rwc-mode-conv .rwc-brief-section { padding: 0; margin: 0; }
+
+/* Calm section heading. Uppercase + letter-spaced + secondary colour:
+   reads as "this is a section" without shouting. */
+.rwc-mode-conv .rwc-brief-heading {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-secondary, #4a4a48);
+  margin: 0 0 10px;
+}
+
+/* Hairline divider — low contrast, plenty of breathing room either side. */
+.rwc-mode-conv .rwc-brief-divider {
+  border: 0;
+  border-top: 1px solid var(--border, #e3e3e0);
+  margin: 18px 0 14px;
+  opacity: 0.7;
+}
+
+/* Sub-block label inside Risks / Why-This-Role-Exists: small uppercase
+   muted tag above the bullet list. */
+.rwc-mode-conv .rwc-brief-sublabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-tertiary, #807e7a);
+  margin: 6px 0 6px;
+}
+.rwc-mode-conv .rwc-brief-sublabel:first-child { margin-top: 0; }
+
+/* Bullet lists inside the briefing — slightly tighter than the conv-mode
+   .rwc-soft default to keep the briefing scannable. */
+.rwc-mode-conv .rwc-msg-bot .rwc-bubble ul.rwc-soft.rwc-brief-list {
+  margin: 0 0 4px;
+}
+.rwc-mode-conv .rwc-msg-bot .rwc-bubble ul.rwc-soft.rwc-brief-list li {
+  margin-bottom: 4px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* Practical Details — key/value rows. Two-column subtle grid. Missing
+   values render in muted italic. */
+.rwc-mode-conv .rwc-brief-pd {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.rwc-mode-conv .rwc-brief-pd-row {
+  display: contents;
+}
+.rwc-mode-conv .rwc-brief-pd-key {
+  color: var(--text-tertiary, #807e7a);
+  font-weight: 500;
+}
+.rwc-mode-conv .rwc-brief-pd-val {
+  color: var(--text-primary, #1a1a18);
+}
+.rwc-mode-conv .rwc-brief-pd-row.is-missing .rwc-brief-pd-val {
+  color: var(--text-tertiary, #807e7a);
+  font-style: italic;
+}
+
+/* Recommended CV section — name on its own line, then the why paragraph. */
+.rwc-mode-conv .rwc-brief-cv-name {
+  font-size: 15px;
+  font-weight: 500;
+  margin: 0 0 6px;
+  color: var(--text-primary, #1a1a18);
+}
+.rwc-mode-conv .rwc-brief-cv-why {
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0;
+  color: var(--text-secondary, #4a4a48);
+}
+
+/* Final note — bare muted line, no heading, slightly smaller. */
+.rwc-mode-conv .rwc-brief-final {
+  font-size: 13px;
+  color: var(--text-tertiary, #807e7a);
+  margin: 6px 0 0;
+}
+
+/* Fallback note when the synth call failed and we rendered from the
+   canonical mapper. Sits below the briefing, calm muted. */
+.rwc-mode-conv .rwc-brief-fallback-note {
+  font-size: 12px;
+  color: var(--text-tertiary, #807e7a);
+  margin: 12px 0 0;
+  font-style: italic;
+}
+
 /* Inline action row (appears under the final assistant turn). */
 .rwc-mode-conv .rwc-action-row {
   display: flex;
