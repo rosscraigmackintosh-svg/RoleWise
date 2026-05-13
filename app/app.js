@@ -33956,6 +33956,10 @@ If a field cannot be determined from the message, return null for that field.`,
         // re-running the synth call).
         briefing:        null,
         briefing_source: null, // 'synth' | 'canonical-fallback'
+        // v1.1 — decision state
+        user_decision:     null,  // 'save' | 'apply' | 'skip' once committed
+        skip_reason:       null,
+        skip_reason_other: null,
         timings:    { pass1_ms: 0, reason_and_narrate_ms: 0, total_ms: 0 },
         // Save-time
         saved_role:     null,
@@ -34179,12 +34183,23 @@ If a field cannot be determined from the message, return null for that field.`,
     // Returns: { role, match } on success.
     // Throws on any DB error.
     async function _chatSessionPersist(params) {
-      const { jd_raw, jd_clean, jd, meta, ir35, day_rate_text, engagement_type, contract_length, initialOutputJson } = params || {};
+      const {
+        jd_raw, jd_clean, jd, meta, ir35, day_rate_text, engagement_type, contract_length,
+        initialOutputJson,
+        decision,            // v1.1: 'save' | 'apply' | 'skip' (defaults to 'save')
+        skip_reason,         // v1.1: short tag if skipped (optional)
+        skip_reason_other,   // v1.1: freeform text if 'other' (optional)
+      } = params || {};
 
       const _wmMap = { remote: 'remote', hybrid: 'hybrid', 'on-site': 'onsite', onsite: 'onsite' };
       const _workModel = meta?.remote_model ? (_wmMap[meta.remote_model.toLowerCase()] || meta.remote_model.toLowerCase()) : null;
 
-      const { data: newRole, error: re } = await db.from('roles').insert({
+      // v1.1 — decision-aware role row.
+      // Save:  user_decision='save',  outcome_state=NULL
+      // Apply: user_decision='apply', outcome_state=NULL
+      // Skip:  user_decision='skip',  outcome_state='skipped', skip_reason{_other} optional
+      const _decision = (decision === 'apply' || decision === 'skip') ? decision : 'save';
+      const _roleRow = {
         company_name:        meta?.company_name || null,
         role_title:          meta?.role_title   || null,
         location_text:       meta?.location     || null,
@@ -34198,7 +34213,15 @@ If a field cannot be determined from the message, return null for that field.`,
         day_rate_text:       day_rate_text || null,
         contract_length:     contract_length || null,
         source:              'chat-ingest',
-      }).select().single();
+        user_decision:       _decision,
+      };
+      if (_decision === 'skip') {
+        _roleRow.outcome_state    = 'skipped';
+        if (skip_reason)        _roleRow.skip_reason       = skip_reason;
+        if (skip_reason_other)  _roleRow.skip_reason_other = skip_reason_other;
+      }
+
+      const { data: newRole, error: re } = await db.from('roles').insert(_roleRow).select().single();
       if (re || !newRole) throw new Error(re?.message || 'role insert failed');
 
       // Shape mirrors _runIngestionFlow's jd_matches insert (line ~14087).
@@ -34224,7 +34247,45 @@ If a field cannot be determined from the message, return null for that field.`,
         try { await db.from('roles').delete().eq('id', newRole.id); } catch (_e) { /* best effort */ }
         throw new Error(me?.message || 'jd_matches insert failed');
       }
-      return { role: newRole, match: newMatch };
+
+      // v1.1 — Apply: also insert a 'stage = Applied' row in role_updates so
+      // the role lands in the Applications view at the right state, and
+      // _appliedDate gets computed correctly on next refresh().
+      let appliedEvent = null;
+      if (_decision === 'apply') {
+        try {
+          const { data: stageRow } = await db.from('role_updates').insert({
+            role_id:       newRole.id,
+            event_type:    'stage',
+            status:        'in_progress',
+            stage_reached: 'Applied',
+            note:          null,
+          }).select().single();
+          appliedEvent = stageRow || null;
+        } catch (e) {
+          // Non-fatal: role still saved with user_decision='apply'. A future
+          // refresh() will not see an Applied stage event for it. Log so we
+          // know.
+          console.warn('[chat-ingest] role_updates Applied insert failed (non-fatal)', e?.message || e);
+        }
+      }
+
+      // v1.1 — Decision snapshot for longitudinal pattern learning. Same
+      // table used by the standard role-decision flow. Skip reason captured
+      // here too so the candidate-context learning loop sees it.
+      try {
+        await db.from('role_decision_snapshots').insert({
+          role_id:           newRole.id,
+          user_decision:     _decision,
+          skip_reason:       _decision === 'skip' ? (skip_reason || null)       : null,
+          skip_reason_other: _decision === 'skip' ? (skip_reason_other || null) : null,
+          notes:             null,
+        });
+      } catch (e) {
+        console.warn('[chat-ingest] role_decision_snapshots insert failed (non-fatal)', e?.message || e);
+      }
+
+      return { role: newRole, match: newMatch, appliedEvent };
     }
 
     async function _chatIngestSubmit(rawText) {
@@ -34503,10 +34564,17 @@ If a field cannot be determined from the message, return null for that field.`,
       const _arr = (x) => Array.isArray(x) ? x.filter(Boolean) : [];
 
       // ── 1. Header chip — replaces the firstReadPending in place ───────────
+      // Includes the role title when one is available and the full chip stays
+      // under ~80 chars. Anchors the user on reload-restore — a returning
+      // user sees what they were looking at.
       const _now = new Date();
       const _hh  = String(_now.getHours()).padStart(2, '0');
       const _mm  = String(_now.getMinutes()).padStart(2, '0');
-      const headerHtml = `<div class="rwc-brief-chip"><span class="rwc-brief-chip-label">Applicant Mode briefing</span><span class="rwc-brief-chip-time"> · ${_hh}:${_mm}</span></div>`;
+      const _roleTitle = _chatSession?.meta?.role_title ? String(_chatSession.meta.role_title).trim() : '';
+      const _chipBase = 'Applicant Mode briefing';
+      const _chipWithTitle = _roleTitle ? `${_chipBase} · ${_roleTitle}` : _chipBase;
+      const _chipText  = (_chipWithTitle.length <= 80) ? _chipWithTitle : _chipBase;
+      const headerHtml = `<div class="rwc-brief-chip"><span class="rwc-brief-chip-label">${_esc(_chipText)}</span><span class="rwc-brief-chip-time"> · ${_hh}:${_mm}</span></div>`;
       if (firstReadPending) {
         _chatIngestReplacePending(firstReadPending, headerHtml);
       } else {
@@ -34729,26 +34797,34 @@ If a field cannot be determined from the message, return null for that field.`,
       `;
     }
 
-    // ─── Save: persist the in-memory analysis now ───────────────────────────
-    // Step 3: this is the new persistence point. Called when the user clicks
-    // the Save CTA (or implicitly via Open). Idempotent — if the session is
-    // already saved, returns the cached row without re-inserting.
+    // ─── Save / Apply / Skip: decision-aware persistence ────────────────────
+    // v1.1: a single persistence helper drives all three primary actions.
+    // The decision param routes the inserts:
+    //   'save'  → user_decision='save'
+    //   'apply' → user_decision='apply' + role_updates 'Applied' stage row
+    //   'skip'  → user_decision='skip', outcome_state='skipped', optional reason
+    // Idempotent — if the session is already persisted, returns the cached
+    // row without re-inserting (the chat surface should not allow two
+    // decisions on the same session, but defensive).
     //
     // Returns the savedRole on success; throws on persistence failure.
-    async function _chatIngestSave() {
+    async function _chatIngestSave(opts) {
       const s = _chatSession;
       if (!s || s.status !== 'ready' && s.status !== 'failed') {
-        // Save called from the wrong state — ignore silently.
         return s?.saved_role || null;
       }
       if (s.saved_role && s.saved_role_id) {
-        // Already persisted (e.g. user clicked Save then Open). Idempotent.
         return s.saved_role;
       }
 
-      s.status = 'saving';
+      const decision         = (opts && opts.decision)         || 'save';
+      const skip_reason      = (opts && opts.skip_reason)      || null;
+      const skip_reason_other = (opts && opts.skip_reason_other) || null;
+
+      s.status        = 'saving';
+      s.user_decision = decision;
       _chatSessionTouch();
-      _chatIngestRenderCtaBar(); // surface "Saving..."
+      _chatIngestRenderCtaBar();
 
       // Per plan decision 3: 2 retries with 1s / 3s backoff before failing.
       // Orphan rollback (delete role row if jd_matches fails) lives inside
@@ -34769,6 +34845,9 @@ If a field cannot be determined from the message, return null for that field.`,
             engagement_type: s.engagement_type,
             contract_length: s.contract_length,
             initialOutputJson: _chatSessionBuildOutputJson(s.analysis),
+            decision,
+            skip_reason,
+            skip_reason_other,
           });
           break;
         } catch (e) {
@@ -34796,11 +34875,18 @@ If a field cannot be determined from the message, return null for that field.`,
       s.saved_match_id = persisted.match.id;
       s.save_error     = null;
       s.status         = 'saved';
+
+      // v1.1 — if Apply decision, splice the Applied stage event into the
+      // role's role_updates array so the Applications view picks it up
+      // before refresh() reloads from the DB.
+      if (persisted.appliedEvent) {
+        s.saved_role.role_updates = [persisted.appliedEvent, ...(s.saved_role.role_updates || [])];
+      }
       _chatSessionTouch();
       _chatSessionShadowClear();
 
-      console.log('[chat-ingest] SAVED_AS_ROLE', { role_id: persisted.role.id });
-      _chatIngestRenderCtaBar(); // surface "Saved" state
+      console.log('[chat-ingest] PERSISTED', { role_id: persisted.role.id, decision });
+      _chatIngestRenderCtaBar();
       Promise.resolve(refresh && refresh()).catch(() => {});
       return persisted.role;
     }
@@ -35011,60 +35097,170 @@ If a field cannot be determined from the message, return null for that field.`,
       console.log('[chat-ingest] RESTORED_FROM_SHADOW', { status: snap.status, age_ms: Date.now() - new Date(snap.updated_at || 0).getTime() });
     }
 
-    // ─── Inline action row (status-aware) ───────────────────────────────────
-    // Phase 4: replaces the sticky CTA bar. The action row is appended to the
-    // stream (under the final assistant turn) and re-renders itself in place
-    // across saving / saved / failed states. Order: Open (primary), Save
-    // (secondary), Discard (tertiary). Open implies Save under the hood.
+    // ─── Inline action row (v1.1 decision model) ────────────────────────────
+    // Chat-first Applicant Mode: the action row offers three primary decision
+    // actions, three secondary disabled-for-v1.1 actions, and a tertiary
+    // "Open full analysis" link. The row re-renders in place across
+    // ready / saving / saved / failed / skipped / applied states.
+    //
+    // Action contract:
+    //   Save role            -> persist with user_decision='save'
+    //   I'm going to apply   -> persist with user_decision='apply' + Applied stage event
+    //   Skip - not for me    -> open the inline skip-reason prompt; then persist
+    //                           with user_decision='skip', outcome_state='skipped'
+    //   Open full analysis   -> Open implies Save (uses 'save' decision if not yet persisted)
+    //   Discard              -> drop session, no DB writes (existing behaviour)
     function _chatIngestRenderCtaBar() {
       if (!_chatSession) return;
       const s = _chatSession;
       const stream = document.getElementById('rwc-stream');
       if (!stream) return;
 
-      // Re-use or create the inline action row at the end of the stream.
       let row = document.getElementById('rwc-action-row');
       if (!row) {
         row = document.createElement('div');
         row.id = 'rwc-action-row';
-        row.className = 'rwc-action-row';
+        row.className = 'rwc-action-row rwc-action-row--decisions';
         stream.appendChild(row);
       }
 
+      // Persistence-in-flight state.
+      if (s.status === 'saving') {
+        row.innerHTML = `<span class="rwc-action-status">Saving…</span>`;
+        row.onclick = null;
+        stream.scrollTop = stream.scrollHeight;
+        return;
+      }
+
+      // Persisted state — content varies by decision.
       if (s.status === 'saved') {
+        const decision = s.user_decision || 'save';
+        let statusLine = 'Saved · the role is in your Roles list.';
+        if (decision === 'apply') statusLine = "Marked as applying · the role is in your Applications.";
+        if (decision === 'skip')  statusLine = 'Skipped · the role is in your Roles list.';
         row.innerHTML = `
-          <span class="rwc-action-status">Saved · the role is in your Roles list.</span>
-          <button class="rwc-action is-primary" type="button" data-rwc-act="open">Open full analysis</button>
+          <span class="rwc-action-status">${esc(statusLine)}</span>
+          <a class="rwc-action-tertiary" href="#" data-rwc-act="open">Open full analysis →</a>
+          ${decision === 'skip' ? `<button class="rwc-action is-ghost" type="button" data-rwc-act="paste-another">Paste another role</button>` : ''}
         `;
-      } else if (s.status === 'failed') {
+        row.onclick = (e) => {
+          const btn = e.target.closest('[data-rwc-act]');
+          if (!btn) return;
+          e.preventDefault();
+          const act = btn.getAttribute('data-rwc-act');
+          if (act === 'open')          return _chatIngestOpen();
+          if (act === 'paste-another') return _chatIngestPasteAnother();
+        };
+        stream.scrollTop = stream.scrollHeight;
+        return;
+      }
+
+      // Persistence-failed state.
+      if (s.status === 'failed') {
         row.innerHTML = `
           <span class="rwc-action-status is-error">Save failed: ${esc(s.save_error || 'unknown error')}</span>
           <button class="rwc-action is-ghost" type="button" data-rwc-act="retry">Try again</button>
           <button class="rwc-action is-text"  type="button" data-rwc-act="discard">Discard</button>
         `;
-      } else if (s.status === 'saving') {
-        row.innerHTML = `<span class="rwc-action-status">Saving…</span>`;
-      } else {
-        // ready — Open primary, Save secondary, Discard tertiary
-        row.innerHTML = `
-          <button class="rwc-action is-primary" type="button" data-rwc-act="open">Open full analysis</button>
-          <button class="rwc-action is-ghost"   type="button" data-rwc-act="save">Save role</button>
-          <button class="rwc-action is-text"    type="button" data-rwc-act="discard">Discard</button>
-        `;
+        row.onclick = (e) => {
+          const btn = e.target.closest('[data-rwc-act]');
+          if (!btn) return;
+          const act = btn.getAttribute('data-rwc-act');
+          if (act === 'retry')   return _chatIngestSave({ decision: s.user_decision || 'save' }).then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar());
+          if (act === 'discard') return _chatIngestDiscard();
+        };
+        stream.scrollTop = stream.scrollHeight;
+        return;
       }
 
-      // Single delegated listener (replace each render to avoid stale state).
+      // ready — decision-shaped action set.
+      row.innerHTML = `
+        <div class="rwc-action-primary-row">
+          <button class="rwc-action is-ghost"   type="button" data-rwc-act="save">Save role</button>
+          <button class="rwc-action is-primary" type="button" data-rwc-act="apply">I'm going to apply</button>
+          <button class="rwc-action is-ghost"   type="button" data-rwc-act="skip">Skip - not for me</button>
+        </div>
+        <div class="rwc-action-secondary-row">
+          <button class="rwc-action is-text" type="button" disabled title="Coming soon">Draft cover letter</button>
+          <button class="rwc-action is-text" type="button" disabled title="Coming soon">Draft recruiter message</button>
+          <button class="rwc-action is-text" type="button" disabled title="Coming soon">Ask a question</button>
+          <span class="rwc-action-coming-soon">Coming soon</span>
+        </div>
+        <div class="rwc-action-tertiary-row">
+          <a class="rwc-action-tertiary" href="#" data-rwc-act="open">Open full analysis →</a>
+          <button class="rwc-action is-text rwc-action-discard" type="button" data-rwc-act="discard">Discard</button>
+        </div>
+      `;
       row.onclick = (e) => {
         const btn = e.target.closest('[data-rwc-act]');
         if (!btn) return;
+        e.preventDefault();
         const act = btn.getAttribute('data-rwc-act');
+        if (act === 'save')    return _chatIngestSave({ decision: 'save'  }).then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar());
+        if (act === 'apply')   return _chatIngestSave({ decision: 'apply' }).then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar());
+        if (act === 'skip')    return _chatIngestBeginSkip();
         if (act === 'open')    return _chatIngestOpen();
-        if (act === 'save')    return _chatIngestSave().then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar());
-        if (act === 'retry')   return _chatIngestSave().then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar());
         if (act === 'discard') return _chatIngestDiscard();
       };
 
       stream.scrollTop = stream.scrollHeight;
+    }
+
+    // ─── Skip flow ──────────────────────────────────────────────────────────
+    // Two-stage: clicking Skip swaps the action row for the inline reason
+    // chips + Skip button. The user can pick a reason or skip without one;
+    // both paths land in _chatIngestSave({ decision: 'skip', skip_reason }).
+    function _chatIngestBeginSkip() {
+      const row = document.getElementById('rwc-action-row');
+      if (!row) return;
+      row.innerHTML = `
+        <div class="rwc-skip-prompt">
+          <span class="rwc-skip-label">Why? <em>(optional)</em></span>
+          <div class="rwc-skip-chips" role="group">
+            <button class="rwc-skip-chip" type="button" data-rwc-skip="salary">salary</button>
+            <button class="rwc-skip-chip" type="button" data-rwc-skip="location">location</button>
+            <button class="rwc-skip-chip" type="button" data-rwc-skip="seniority_mismatch">seniority mismatch</button>
+            <button class="rwc-skip-chip" type="button" data-rwc-skip="coding_expectation">coding expectation</button>
+            <button class="rwc-skip-chip" type="button" data-rwc-skip="work_model">work model</button>
+            <button class="rwc-skip-chip" type="button" data-rwc-skip="other">other</button>
+          </div>
+          <input type="text" class="rwc-skip-other" placeholder="(optional reason)" maxlength="200" hidden>
+          <div class="rwc-skip-actions">
+            <button class="rwc-action is-text" type="button" data-rwc-skip-act="cancel">Cancel</button>
+            <button class="rwc-action is-primary" type="button" data-rwc-skip-act="commit">Skip</button>
+          </div>
+        </div>
+      `;
+      let selected = null;
+      const chips    = row.querySelectorAll('[data-rwc-skip]');
+      const otherEl  = row.querySelector('.rwc-skip-other');
+      chips.forEach(c => c.addEventListener('click', () => {
+        chips.forEach(x => x.classList.remove('is-selected'));
+        c.classList.add('is-selected');
+        selected = c.getAttribute('data-rwc-skip');
+        if (otherEl) {
+          if (selected === 'other') { otherEl.hidden = false; otherEl.focus(); }
+          else                       { otherEl.hidden = true; otherEl.value = ''; }
+        }
+      }));
+      row.querySelector('[data-rwc-skip-act="cancel"]')?.addEventListener('click', () => _chatIngestRenderCtaBar());
+      row.querySelector('[data-rwc-skip-act="commit"]')?.addEventListener('click', () => {
+        const skip_reason       = selected || null;
+        const skip_reason_other = (selected === 'other' && otherEl?.value) ? otherEl.value.trim() : null;
+        _chatIngestSave({ decision: 'skip', skip_reason, skip_reason_other })
+          .then(_chatIngestRenderCtaBar)
+          .catch(() => _chatIngestRenderCtaBar());
+      });
+    }
+
+    // ─── Paste another role ─────────────────────────────────────────────────
+    // Post-skip affordance: clear the chat surface and return to the empty
+    // hero so the user can immediately paste another JD. The previous skipped
+    // role is already in the DB; the in-memory session can be safely dropped.
+    function _chatIngestPasteAnother() {
+      _chatSessionShadowClear();
+      _chatSession = null;
+      renderChatIngestView();
     }
 
     // ─── Weekly Review v2 ─────────────────────────────────────────────────────
