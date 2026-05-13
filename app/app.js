@@ -27920,6 +27920,109 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
     }
 
+    // ─── Chat synthesis API call ───────────────────────────────────────────────
+    // Invokes the synthesise-chat-read edge function. Takes a canonical
+    // narrative + extraction + meta and returns an ordered list of chat turns
+    // for the conversational chat-ingest surface.
+    //
+    // This is PRESENTATION-ONLY. The returned chat_read is never persisted to
+    // jd_matches.output_json; the saved role page renders the canonical
+    // narrative structure independently.
+    //
+    // Returns { turns: [...] } on success; null on any failure (network,
+    // 5xx, parse error, validation reject). The caller falls back to the
+    // existing section renderers in that case.
+    //
+    // Feature-flag gated: CHAT_SYNTH_ENABLED below. Off by default in phase 2.
+    const CHAT_SYNTH_ENABLED = false; // flip in phase 5 after eval passes
+    async function callSynthesiseChatReadAPI(narrativeJson, extractionJson, meta, { providerOverride, verbosityMode } = {}) {
+      const _p  = providerOverride || 'openai';
+      const _vm = (verbosityMode === 'compact' || verbosityMode === 'deep') ? verbosityMode : 'standard';
+      const _t0 = performance.now();
+      try {
+        const _candidateCtx = _getCandidateContext();
+        const { data, error } = await db.functions.invoke('synthesise-chat-read', {
+          body: {
+            narrative:         narrativeJson,
+            extraction:        extractionJson || null,
+            meta:              meta || null,
+            candidate_context: _candidateCtx,
+            provider:          _p,
+            verbosity_mode:    _vm,
+          },
+        });
+        if (error) {
+          console.warn('[synthesise-chat-read invoke error]', error);
+          _logUsageEvent && _logUsageEvent({
+            event_type:   'ai_analysis',
+            feature_key:  'chat_synth',
+            provider:     _p,
+            route:        'synthesise-chat-read',
+            request_type: 'edge_function',
+            status:       'error',
+            latency_ms:   Math.round(performance.now() - _t0),
+            metadata:     { error_message: error.message || String(error) },
+          });
+          return null;
+        }
+        if (!data?.chat_read?.turns) {
+          console.warn('[synthesise-chat-read] no chat_read in response', data);
+          return null;
+        }
+
+        // Em-dash cleanup, just like the other passes. Belt-and-braces — the
+        // prompt forbids them but we strip on read too.
+        const turns = data.chat_read.turns;
+        for (const t of turns) {
+          if (t && typeof t.text === 'string')  t.text = t.text.replace(/—/g, ',').replace(/–/g, '-');
+          if (t && typeof t.lead === 'string')  t.lead = t.lead.replace(/—/g, ',').replace(/–/g, '-');
+          if (Array.isArray(t?.items)) {
+            for (let i = 0; i < t.items.length; i++) {
+              if (typeof t.items[i] === 'string') {
+                t.items[i] = t.items[i].replace(/—/g, ',').replace(/–/g, '-');
+              }
+            }
+          }
+        }
+
+        const _usage = data.usage || {};
+        _logUsageEvent && _logUsageEvent({
+          event_type:   'ai_analysis',
+          feature_key:  'chat_synth',
+          provider:     _p,
+          route:        'synthesise-chat-read',
+          request_type: 'edge_function',
+          status:       'success',
+          latency_ms:   Math.round(performance.now() - _t0),
+          metadata:     {
+            chat_synth_version: _usage.chat_synth_version || null,
+            model:              _usage.model || null,
+            turns:              turns.length,
+            verbosity:          _vm,
+          },
+        });
+        return {
+          turns,
+          _chat_synth_version:  _usage.chat_synth_version || null,
+          _chat_synth_model:    _usage.model || null,
+          _chat_synth_provider: _p,
+        };
+      } catch (err) {
+        console.warn('[synthesise-chat-read] threw', err);
+        _logUsageEvent && _logUsageEvent({
+          event_type:   'ai_analysis',
+          feature_key:  'chat_synth',
+          provider:     _p,
+          route:        'synthesise-chat-read',
+          request_type: 'edge_function',
+          status:       'error',
+          latency_ms:   Math.round(performance.now() - _t0),
+          metadata:     { error_message: err.message || String(err) },
+        });
+        return null;
+      }
+    }
+
     // ─── Workspace chat API call ───────────────────────────────────────────────
     // Invokes the workspace-chat edge function for plain conversational replies.
     // Returns { reply, chips } on success, or null on any failure.
@@ -34256,18 +34359,55 @@ If a field cannot be determined from the message, return null for that field.`,
         total_ms: analysis._pipeline.timings.total_ms,
       });
 
-      // 9. Render first-read paragraphs (fit_reality + decision)
-      _chatIngestReplacePending(_firstReadPending, _chatIngestRenderFirstReadBody(narrative));
+      // 9a. Optional conversational synthesis pass (chat-ingest only,
+      //     feature-flagged). When enabled and successful, replaces the
+      //     section-by-section rendering with an interpretation. If the
+      //     synth call fails for any reason we fall through to the
+      //     section renderers below — chat still works.
+      let _chatRead = null;
+      const _runChatSynth = (typeof CHAT_SYNTH_ENABLED !== 'undefined' && CHAT_SYNTH_ENABLED)
+                         || (typeof window !== 'undefined' && window.ROLEWISE_CHAT_SYNTH);
+      if (_runChatSynth && typeof callSynthesiseChatReadAPI === 'function') {
+        const _synthMeta = {
+          role_title:      _meta?.role_title    || null,
+          company_name:    _meta?.company_name  || null,
+          location:        _meta?.location      || null,
+          work_model:      _meta?.remote_model  || null,
+          engagement_type: _engType             || null,
+          salary:          _meta?.salary_annual || _dayRate || null,
+          ir35:            _ir35                || null,
+        };
+        try {
+          _chatRead = await callSynthesiseChatReadAPI(narrative, analysis, _synthMeta, {
+            providerOverride: 'openai',
+            verbosityMode:    _verbosityMode,
+          });
+        } catch (e) {
+          console.warn('[chat-ingest] synth threw; falling back to section rendering', e);
+          _chatRead = null;
+        }
+        if (_chatSession && _chatRead) {
+          _chatSession.chat_read = _chatRead;
+          _chatSessionTouch();
+        }
+      }
 
-      // 10. Conversational rhythm: 350ms gap before the check turn lands so
-      //     the user has a beat to start reading the first-read paragraphs.
-      await new Promise(r => setTimeout(r, 350));
-      _chatIngestAppendBot(_chatIngestRenderCheckBody(narrative));
+      // 9b. Render the read. Conversational synth wins when available;
+      //     otherwise the existing section renderers (first-read + check)
+      //     render in the same surface. The composer-hide / action-row /
+      //     close-line flow is shared across both paths.
+      if (_chatRead) {
+        await _chatIngestRenderConversational(_chatRead, _firstReadPending);
+      } else {
+        _chatIngestReplacePending(_firstReadPending, _chatIngestRenderFirstReadBody(narrative));
+        // Rhythm: 350ms gap before the check turn lands so the user has a
+        // beat to start reading the first-read paragraphs.
+        await new Promise(r => setTimeout(r, 350));
+        _chatIngestAppendBot(_chatIngestRenderCheckBody(narrative));
+      }
 
-      // 11. Final conversational close — small rhythm gap, then the action
-      //     row is appended inline under the close turn (phase 4 swaps the
-      //     sticky bar for inline). The legacy CTA bar render still runs as
-      //     a no-op via the conv-mode CSS hide.
+      // Final conversational close — small rhythm gap, then the action row
+      // is appended inline under the close turn.
       await new Promise(r => setTimeout(r, 250));
       _chatIngestAppendBot(`<p>Want to keep this role read?</p>`);
       // Hide composer once the read lands — the inline action row takes over.
