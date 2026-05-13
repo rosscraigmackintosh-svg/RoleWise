@@ -33872,7 +33872,7 @@ If a field cannot be determined from the message, return null for that field.`,
       const _shadow = _chatSessionShadowRead();
 
       el.innerHTML = `
-        <div class="rwc-page" id="rwc-page">
+        <div class="rwc-page rwc-mode-conv is-empty" id="rwc-page">
           <header class="rwc-header">
             <div class="rwc-header-left">
               <h1 class="rwc-title">Chat ingest</h1>
@@ -33880,34 +33880,37 @@ If a field cannot be determined from the message, return null for that field.`,
             </div>
             <button class="rwc-back" type="button" id="rwc-back">← Back</button>
           </header>
+          <div class="rwc-empty-hero" id="rwc-empty-hero">
+            <h2>What role are you looking at?</h2>
+            <p>Paste the job description and I'll give you a first read.</p>
+          </div>
           <div class="rwc-stream" id="rwc-stream" aria-live="polite"></div>
-          <div class="rwc-cta-bar" id="rwc-cta-bar" hidden></div>
           <div class="rwc-composer" id="rwc-composer">
-            <textarea
-              class="rwc-composer-textarea"
-              id="rwc-composer-textarea"
-              placeholder="Paste a job description here, then submit."
-              autocomplete="off"
-              spellcheck="false"
-            ></textarea>
+            <div class="rwc-composer-wrap">
+              <textarea
+                class="rwc-composer-textarea"
+                id="rwc-composer-textarea"
+                placeholder="Paste a job description…"
+                autocomplete="off"
+                spellcheck="false"
+                rows="2"
+              ></textarea>
+              <button class="rwc-composer-send" type="button" id="rwc-submit" aria-label="Submit job description">↑</button>
+            </div>
             <div class="rwc-composer-row">
               <span class="rwc-composer-hint">⌘+Enter to submit · uses Fast pipeline</span>
-              <div class="rwc-composer-actions">
-                <button class="rwc-btn rwc-btn--primary" type="button" id="rwc-submit">Submit</button>
-              </div>
+              <div class="rwc-composer-actions"></div>
             </div>
           </div>
         </div>
       `;
 
+      const _pageEl    = document.getElementById('rwc-page');
       const _streamEl  = document.getElementById('rwc-stream');
       const _ta        = document.getElementById('rwc-composer-textarea');
       const _submitBtn = document.getElementById('rwc-submit');
       const _composer  = document.getElementById('rwc-composer');
-      // CTA buttons are rendered dynamically by _chatIngestRenderCtaBar (Step 3+).
-
-      // Opening assistant bubble — short, conversational invitation.
-      _chatIngestAppendBot(`<p class="rwc-bubble-intro">Paste the role and I'll give you a first read.</p>`);
+      // Conv-mode: opener lives in the centred empty hero. No opening bubble.
 
       document.getElementById('rwc-back')?.addEventListener('click', () => {
         switchNav('applications');
@@ -33922,6 +33925,9 @@ If a field cannot be determined from the message, return null for that field.`,
           return;
         }
         _submitBtn.disabled = true;
+        // Leave empty-hero behind: stream becomes the surface, composer
+        // (still visible during in-flight analysis) docks to the bottom.
+        _pageEl?.classList.remove('is-empty');
         _composer.setAttribute('hidden', '');
         _chatIngestSubmit(_raw).catch(err => {
           console.error('[chat-ingest] submit threw', err);
@@ -34511,9 +34517,22 @@ If a field cannot be determined from the message, return null for that field.`,
     // was written. Does NOT re-run AI; the cached analysis is what we have.
     function _chatIngestRestoreFromShadow(snap) {
       _chatSession = snap;
-      // Hide composer (analysis already exists).
+      // Leave empty state behind and hide the composer (analysis exists).
+      const _pageEl = document.getElementById('rwc-page');
+      _pageEl?.classList.remove('is-empty');
       const _composer = document.getElementById('rwc-composer');
       if (_composer) _composer.setAttribute('hidden', '');
+
+      // Restore hint — fades after 4s.
+      const stream = document.getElementById('rwc-stream');
+      if (stream) {
+        const hint = document.createElement('p');
+        hint.className = 'rwc-restore-hint';
+        hint.textContent = 'Picking up where you left off.';
+        stream.appendChild(hint);
+        setTimeout(() => hint.classList.add('is-fading'), 4000);
+        setTimeout(() => hint.remove(), 4600);
+      }
 
       // Replay the bubble sequence.
       const _esc = esc;

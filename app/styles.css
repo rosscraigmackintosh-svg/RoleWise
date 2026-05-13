@@ -20268,8 +20268,13 @@ a.rw-rail-contact-name:hover {
 /* ═══ Chat ingest (experimental) ═══════════════════════════════════════════
    Conversational paste-and-read surface that runs the Fast pipeline.
    Lives alongside the standard Add Role overlay; does not replace it.
-   Centered chat column - the whole .rwc-page sits at max 820px and is
-   horizontally centred within the wider col-overview-cards surface. */
+
+   The page renders in "conversational mode" (.rwc-mode-conv) — a centred
+   chat column with almost no visible containers, inline action row, and
+   a composer that floats centred on the empty state then docks to the
+   column bottom once a paste exists. The legacy card-mode rules below
+   remain as a safety net during the migration phases but the conv-mode
+   overrides are intended to dominate. */
 .rwc-page {
   display: flex;
   flex-direction: column;
@@ -20279,6 +20284,10 @@ a.rw-rail-contact-name:hover {
   width: 100%;
   margin: 0 auto;
   padding: 24px 0 0;
+}
+.rwc-page.rwc-mode-conv {
+  max-width: 680px;
+  padding: 16px 0 0;
 }
 .rwc-header {
   display: flex;
@@ -20535,6 +20544,290 @@ a.rw-rail-contact-name:hover {
   color: var(--text-tertiary, #807e7a);
 }
 .rwc-composer-actions { display: flex; gap: 8px; }
+
+/* ─── Conversational mode (target redesign) ──────────────────────────────
+   These rules override the card-mode look. Mounted by adding the
+   `rwc-mode-conv` class on .rwc-page. The chat column reads as a single
+   flowing conversation: no bordered bot bubbles, no chips, no sticky CTA
+   footer. The user bubble keeps a subtle background — it's the only
+   visible container in the surface. */
+
+/* The header is unnecessary in conv mode (the nav already labels the page) */
+.rwc-mode-conv .rwc-header {
+  border-bottom: 0;
+  padding: 0 24px 0;
+  min-height: 0;
+}
+.rwc-mode-conv .rwc-header-left { display: none; }
+.rwc-mode-conv .rwc-back {
+  font-size: 12px;
+  color: var(--text-tertiary, #807e7a);
+}
+
+.rwc-mode-conv .rwc-stream {
+  padding: 24px 24px 24px;
+  gap: 20px;
+}
+
+/* Bot turns: no card chrome at all. The bubble div becomes a transparent
+   wrapper so HTML structure stays the same as legacy mode. */
+.rwc-mode-conv .rwc-msg-bot .rwc-bubble {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  max-width: 100%;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary, #1a1a18);
+}
+.rwc-mode-conv .rwc-msg-bot .rwc-bubble > p {
+  margin: 0 0 8px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.rwc-mode-conv .rwc-msg-bot .rwc-bubble > p:last-child { margin-bottom: 0; }
+
+/* Drop the heavy bubble-intro styling — most uses become plain prose. */
+.rwc-mode-conv .rwc-bubble-intro {
+  font-size: 15px;
+  color: var(--text-primary, #1a1a18);
+  margin: 0 0 8px;
+}
+
+/* User bubble keeps subtle container chrome — it anchors the conversation. */
+.rwc-mode-conv .rwc-msg-user .rwc-bubble {
+  background: var(--surface-alt, #f7f7f7);
+  border: 0;
+  border-radius: 14px;
+  padding: 10px 14px;
+  max-width: 440px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Facts line (replaces chip grid). Single muted prose line, middle-dot
+   separators. Missing values are simply omitted rather than rendered. */
+.rwc-mode-conv .rwc-facts-line {
+  color: var(--text-secondary, #4a4a48);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* Lightweight thinking state. No container, no bubble, no spinner. */
+.rwc-mode-conv .rwc-thinking {
+  color: var(--text-tertiary, #807e7a);
+  font-size: 14px;
+  line-height: 1.5;
+  font-style: normal;
+}
+.rwc-mode-conv .rwc-thinking::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  margin-left: 6px;
+  animation: rwc-think 1.2s steps(4, end) infinite;
+}
+@keyframes rwc-think {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
+}
+
+/* Soft list inside an assistant turn — no native bullets, just an en-dash
+   prefix in muted colour. Used for the watch-outs / questions list. */
+.rwc-mode-conv .rwc-msg-bot .rwc-bubble ul.rwc-soft {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.rwc-mode-conv .rwc-msg-bot .rwc-bubble ul.rwc-soft li {
+  position: relative;
+  padding-left: 18px;
+  margin-bottom: 6px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.rwc-mode-conv .rwc-msg-bot .rwc-bubble ul.rwc-soft li::before {
+  content: '–';
+  position: absolute;
+  left: 4px;
+  color: var(--text-tertiary, #807e7a);
+}
+.rwc-mode-conv .rwc-msg-bot .rwc-bubble ul.rwc-soft li:last-child { margin-bottom: 0; }
+
+/* Suppress the legacy bordered "Worth knowing:" / "Worth asking:" labels
+   even if older markup briefly renders them during transition. */
+.rwc-mode-conv .rwc-list-lead { display: none; }
+
+/* Sticky CTA bar is dead in conv mode. Replaced by an inline action row. */
+.rwc-mode-conv .rwc-cta-bar { display: none !important; }
+
+/* Inline action row (appears under the final assistant turn). */
+.rwc-mode-conv .rwc-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  align-items: center;
+}
+.rwc-mode-conv .rwc-action {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary, #1a1a18);
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.rwc-mode-conv .rwc-action.is-primary {
+  background: var(--text-primary, #1a1a18);
+  color: #fff;
+}
+.rwc-mode-conv .rwc-action.is-primary:hover { background: #000; }
+.rwc-mode-conv .rwc-action.is-ghost {
+  border-color: var(--border-strong, #d0d0cc);
+  background: var(--surface, #fff);
+}
+.rwc-mode-conv .rwc-action.is-ghost:hover { background: var(--surface-emph, #fafaf9); }
+.rwc-mode-conv .rwc-action.is-text {
+  color: var(--text-tertiary, #807e7a);
+}
+.rwc-mode-conv .rwc-action.is-text:hover { color: var(--text-primary, #1a1a18); }
+.rwc-mode-conv .rwc-action:disabled { opacity: 0.5; cursor: not-allowed; }
+.rwc-mode-conv .rwc-action-status {
+  font-size: 13px;
+  color: var(--text-tertiary, #807e7a);
+  margin-right: 6px;
+}
+.rwc-mode-conv .rwc-action-status.is-error { color: var(--red, #c0392b); }
+
+/* Empty state: composer floats centred at ~40% from the top. Once a paste
+   is submitted, .is-empty is removed and the composer docks bottom. */
+.rwc-mode-conv .rwc-empty-hero {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  margin: 18vh auto 12px;
+  max-width: 520px;
+}
+.rwc-mode-conv.is-empty .rwc-empty-hero { display: flex; }
+.rwc-mode-conv.is-empty .rwc-stream { display: none; }
+.rwc-mode-conv .rwc-empty-hero h2 {
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text-primary, #1a1a18);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.rwc-mode-conv .rwc-empty-hero p {
+  font-size: 14px;
+  color: var(--text-secondary, #4a4a48);
+  margin: 0;
+}
+
+/* Composer: in conv mode, the surface is almost invisible. No border-top
+   on the container, the textarea sits inside a soft rounded surface, and
+   the submit is a small icon-only button inside the textarea row. */
+.rwc-mode-conv .rwc-composer {
+  border-top: 0;
+  padding: 12px 24px 24px;
+  background: transparent;
+}
+.rwc-mode-conv.is-empty .rwc-composer {
+  padding: 8px 24px 24px;
+  max-width: 520px;
+  margin: 0 auto;
+  width: 100%;
+}
+.rwc-mode-conv .rwc-composer-textarea {
+  background: var(--surface-alt, #f7f7f7);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 12px 48px 12px 14px;
+  min-height: 56px;
+  font-size: 14px;
+  line-height: 1.5;
+  transition: border-color 120ms;
+}
+.rwc-mode-conv .rwc-composer-textarea:focus {
+  border-color: var(--border-strong, #d0d0cc);
+  background: var(--surface, #fff);
+}
+.rwc-mode-conv .rwc-composer-row { display: none; }
+
+/* Floating submit ↑ inside the textarea wrap. JS adds the wrap+button. */
+.rwc-mode-conv .rwc-composer-wrap { position: relative; }
+.rwc-mode-conv .rwc-composer-send {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--text-primary, #1a1a18);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.rwc-mode-conv .rwc-composer-send:hover { background: #000; }
+.rwc-mode-conv .rwc-composer-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* User bubble — collapsed JD preview with expand toggle. */
+.rwc-mode-conv .rwc-jd-collapsed {
+  font-size: 13px;
+  color: var(--text-primary, #1a1a18);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-height: none;
+  position: static;
+}
+.rwc-mode-conv .rwc-jd-collapsed.is-expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+.rwc-mode-conv .rwc-jd-toggle {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: 12px;
+  color: var(--text-tertiary, #807e7a);
+  cursor: pointer;
+}
+.rwc-mode-conv .rwc-jd-toggle:hover { color: var(--text-primary, #1a1a18); }
+.rwc-mode-conv .rwc-jd-meta { display: none; }
+
+/* Restore hint: brief muted line when reloading mid-session. */
+.rwc-mode-conv .rwc-restore-hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary, #807e7a);
+  margin: 0 0 4px;
+  opacity: 1;
+  transition: opacity 400ms;
+}
+.rwc-mode-conv .rwc-restore-hint.is-fading { opacity: 0; }
 
 /* Sibling "Add chat role" button on role-list / overview / applications headers */
 .rwo-btn.rwo-btn--chat {
