@@ -27969,25 +27969,33 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           });
           return null;
         }
-        if (!data?.chat_read?.turns) {
-          console.warn('[synthesise-chat-read] no chat_read in response', data);
+        if (!data?.applicant_briefing) {
+          console.warn('[synthesise-chat-read] no applicant_briefing in response', data);
           return null;
         }
 
-        // Em-dash cleanup, just like the other passes. Belt-and-braces — the
-        // prompt forbids them but we strip on read too.
-        const turns = data.chat_read.turns;
-        for (const t of turns) {
-          if (t && typeof t.text === 'string')  t.text = t.text.replace(/—/g, ',').replace(/–/g, '-');
-          if (t && typeof t.lead === 'string')  t.lead = t.lead.replace(/—/g, ',').replace(/–/g, '-');
-          if (Array.isArray(t?.items)) {
-            for (let i = 0; i < t.items.length; i++) {
-              if (typeof t.items[i] === 'string') {
-                t.items[i] = t.items[i].replace(/—/g, ',').replace(/–/g, '-');
-              }
-            }
-          }
+        // Em-dash cleanup across every string in the briefing. Belt-and-
+        // braces — the prompt forbids them but we strip on read too.
+        const briefing = data.applicant_briefing;
+        const _strip = (s) => typeof s === 'string' ? s.replace(/—/g, ',').replace(/–/g, '-') : s;
+        const _stripArr = (arr) => Array.isArray(arr) ? arr.map(_strip) : arr;
+        briefing.fit_reality_summary             = _stripArr(briefing.fit_reality_summary);
+        briefing.role_summary                    = _stripArr(briefing.role_summary);
+        briefing.what_you_would_actually_do      = _stripArr(briefing.what_you_would_actually_do);
+        briefing.what_they_are_really_looking_for = _stripArr(briefing.what_they_are_really_looking_for);
+        briefing.questions_worth_asking          = _stripArr(briefing.questions_worth_asking);
+        briefing.suggested_actions               = _stripArr(briefing.suggested_actions);
+        if (briefing.why_this_role_exists) {
+          briefing.why_this_role_exists.stated   = _stripArr(briefing.why_this_role_exists.stated);
+          briefing.why_this_role_exists.inferred = _stripArr(briefing.why_this_role_exists.inferred);
         }
+        if (briefing.risks_and_unknowns) {
+          briefing.risks_and_unknowns.stated              = _stripArr(briefing.risks_and_unknowns.stated);
+          briefing.risks_and_unknowns.inferred            = _stripArr(briefing.risks_and_unknowns.inferred);
+          briefing.risks_and_unknowns.verification_points = _stripArr(briefing.risks_and_unknowns.verification_points);
+        }
+        briefing.why_this_cv = _strip(briefing.why_this_cv);
+        briefing.final_note  = _strip(briefing.final_note);
 
         const _usage = data.usage || {};
         _logUsageEvent && _logUsageEvent({
@@ -28001,15 +28009,15 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           metadata:     {
             chat_synth_version: _usage.chat_synth_version || null,
             model:              _usage.model || null,
-            turns:              turns.length,
             verbosity:          _vm,
           },
         });
         return {
-          turns,
+          briefing,
           _chat_synth_version:  _usage.chat_synth_version || null,
           _chat_synth_model:    _usage.model || null,
           _chat_synth_provider: _p,
+          _briefing_generated_at: new Date().toISOString(),
         };
       } catch (err) {
         console.warn('[synthesise-chat-read] threw', err);
@@ -33942,10 +33950,12 @@ If a field cannot be determined from the message, return null for that field.`,
         // Analysis (built progressively; same shape persisted as output_json)
         analysis:   null,
         narrative:  null,
-        // Conversational synthesis output (presentation-only — NOT persisted
-        // to jd_matches.output_json; shadowed alongside the rest of the
-        // session so reload restore can replay the conversational turns).
-        chat_read:  null,
+        // Applicant Mode briefing (presentation-only — NOT persisted to
+        // jd_matches.output_json; shadowed alongside the rest of the
+        // session so reload restore can replay the briefing without
+        // re-running the synth call).
+        briefing:        null,
+        briefing_source: null, // 'synth' | 'canonical-fallback'
         timings:    { pass1_ms: 0, reason_and_narrate_ms: 0, total_ms: 0 },
         // Save-time
         saved_role:     null,
@@ -34395,12 +34405,14 @@ If a field cannot be determined from the message, return null for that field.`,
         total_ms: analysis._pipeline.timings.total_ms,
       });
 
-      // 9a. Optional conversational synthesis pass (chat-ingest only,
-      //     feature-flagged). When enabled and successful, replaces the
-      //     section-by-section rendering with an interpretation. If the
-      //     synth call fails for any reason we fall through to the
-      //     section renderers below — chat still works.
-      let _chatRead = null;
+      // 9a. Applicant Mode briefing synthesis (chat-ingest only, feature-
+      //     flagged). The structured 12-section briefing produced by
+      //     synthesise-chat-read replaces the old free-form turns shape.
+      //     If the synth call fails for any reason we deterministically map
+      //     the canonical narrative into a briefing-shaped object — chat
+      //     always lands a readable Applicant Mode read.
+      let _synthResult = null;
+      let _synthFallback = false;
       const _runChatSynth = (typeof CHAT_SYNTH_ENABLED !== 'undefined' && CHAT_SYNTH_ENABLED)
                          || (typeof window !== 'undefined' && window.ROLEWISE_CHAT_SYNTH);
       if (_runChatSynth && typeof callSynthesiseChatReadAPI === 'function') {
@@ -34414,32 +34426,36 @@ If a field cannot be determined from the message, return null for that field.`,
           ir35:            _ir35                || null,
         };
         try {
-          _chatRead = await callSynthesiseChatReadAPI(narrative, analysis, _synthMeta, {
+          _synthResult = await callSynthesiseChatReadAPI(narrative, analysis, _synthMeta, {
             providerOverride: 'openai',
             verbosityMode:    _verbosityMode,
           });
         } catch (e) {
-          console.warn('[chat-ingest] synth threw; falling back to section rendering', e);
-          _chatRead = null;
-        }
-        if (_chatSession && _chatRead) {
-          _chatSession.chat_read = _chatRead;
-          _chatSessionTouch();
+          console.warn('[chat-ingest] synth threw; using canonical-fallback briefing', e);
+          _synthResult = null;
         }
       }
 
-      // 9b. Render the read. Conversational synth wins when available;
-      //     otherwise the existing section renderers (first-read + check)
-      //     render in the same surface. The composer-hide / action-row /
-      //     close-line flow is shared across both paths.
-      if (_chatRead) {
-        await _chatIngestRenderConversational(_chatRead, _firstReadPending);
+      // Resolve the briefing object the renderer consumes — synth output
+      // when available, deterministic canonical-fallback otherwise. The
+      // renderer doesn't distinguish.
+      let _briefing = null;
+      if (_synthResult && _synthResult.briefing) {
+        _briefing = _synthResult.briefing;
       } else {
-        _chatIngestReplacePending(_firstReadPending, _chatIngestRenderFirstReadBody(narrative));
-        // Rhythm: 350ms gap before the check turn lands so the user has a
-        // beat to start reading the first-read paragraphs.
-        await new Promise(r => setTimeout(r, 350));
-        _chatIngestAppendBot(_chatIngestRenderCheckBody(narrative));
+        _synthFallback = true;
+        _briefing = _chatIngestNarrativeToBriefing(narrative, analysis);
+      }
+      if (_chatSession) {
+        _chatSession.briefing = _briefing;
+        _chatSession.briefing_source = _synthFallback ? 'canonical-fallback' : 'synth';
+        _chatSessionTouch();
+      }
+
+      // 9b. Render the Applicant Mode briefing into the chat surface.
+      _chatIngestRenderApplicantBriefing(_briefing, _firstReadPending);
+      if (_synthFallback) {
+        _chatIngestAppendBot(`<p class="rwc-brief-fallback-note">Working from the structured analysis.</p>`);
       }
 
       // Final conversational close — small rhythm gap, then the action row
@@ -34468,45 +34484,216 @@ If a field cannot be determined from the message, return null for that field.`,
       return `<p class="rwc-facts-line">${parts.join(' · ')}</p>`;
     }
 
-    // ─── Conversational renderer (synth-driven) ─────────────────────────────
-    // Walks chat_read.turns in order, lands the first turn in place of the
-    // pending bubble, then appends subsequent turns with a small jittered
-    // delay (~280-360ms) so the conversation has rhythm without faking
-    // typing. The bullets turn (max one per read) renders as a soft list.
-    async function _chatIngestRenderConversational(chatRead, firstReadPending) {
-      const turns = (chatRead && Array.isArray(chatRead.turns)) ? chatRead.turns : [];
-      if (!turns.length) {
-        if (firstReadPending) _chatIngestReplacePending(firstReadPending, `<p>I couldn't put together a read from this one.</p>`);
+    // ─── Applicant Mode briefing renderer ────────────────────────────────────
+    // Renders the 12-section briefing produced by synthesise-chat-read into
+    // the chat surface. Calm headings, hairline dividers, mixed bullets +
+    // prose. Distinct visually from the saved-role page (no cards, narrower
+    // column, inline action row, chat-stream layout).
+    //
+    // Replaces the firstReadPending bubble with the briefing header chip,
+    // then appends each section as its own bot message so the existing
+    // scroll/append machinery still works.
+    function _chatIngestRenderApplicantBriefing(briefing, firstReadPending) {
+      if (!briefing) {
+        if (firstReadPending) _chatIngestReplacePending(firstReadPending, `<p>I couldn't put together a briefing from this one.</p>`);
         return;
       }
-      for (let i = 0; i < turns.length; i++) {
-        const t = turns[i];
-        const html = _chatIngestRenderConvTurn(t);
-        if (i === 0 && firstReadPending) {
-          _chatIngestReplacePending(firstReadPending, html);
-        } else {
-          // Jittered pause between turns. Last turn lands without an
-          // artificial wait afterwards — the close line adds its own beat.
-          const _wait = 280 + Math.floor(Math.random() * 80);
-          await new Promise(r => setTimeout(r, _wait));
-          _chatIngestAppendBot(html);
-        }
+      const _esc = esc;
+      const _toText = (s) => _sanitizeUiText(typeof s === 'string' ? s : String(s));
+      const _arr = (x) => Array.isArray(x) ? x.filter(Boolean) : [];
+
+      // ── 1. Header chip — replaces the firstReadPending in place ───────────
+      const _now = new Date();
+      const _hh  = String(_now.getHours()).padStart(2, '0');
+      const _mm  = String(_now.getMinutes()).padStart(2, '0');
+      const headerHtml = `<div class="rwc-brief-chip"><span class="rwc-brief-chip-label">Applicant Mode briefing</span><span class="rwc-brief-chip-time"> · ${_hh}:${_mm}</span></div>`;
+      if (firstReadPending) {
+        _chatIngestReplacePending(firstReadPending, headerHtml);
+      } else {
+        _chatIngestAppendBot(headerHtml);
       }
+
+      // ── Section helpers ────────────────────────────────────────────────────
+      const heading = (label) => `<h3 class="rwc-brief-heading">${_esc(label)}</h3>`;
+      const divider = `<hr class="rwc-brief-divider" aria-hidden="true">`;
+      const ul      = (items) => items.length
+        ? `<ul class="rwc-soft rwc-brief-list">${items.map(s => `<li>${_esc(_toText(s))}</li>`).join('')}</ul>`
+        : '';
+      const ps      = (items) => items.length
+        ? items.map(p => `<p>${_esc(_toText(p))}</p>`).join('')
+        : '';
+      const subLabel = (label) => `<p class="rwc-brief-sublabel">${_esc(label)}</p>`;
+
+      const sectionBlock = (label, body) => `
+        ${divider}
+        <section class="rwc-brief-section">
+          ${heading(label)}
+          ${body}
+        </section>
+      `;
+
+      const append = (html) => _chatIngestAppendBot(html);
+
+      // ── 2. Fit Reality Summary ───────────────────────────────────────────
+      append(sectionBlock('Fit Reality Summary', ul(_arr(briefing.fit_reality_summary))));
+
+      // ── 3. Role Summary ──────────────────────────────────────────────────
+      const _roleSummary = _arr(briefing.role_summary);
+      if (_roleSummary.length) append(sectionBlock('Role Summary', ps(_roleSummary)));
+
+      // ── 4. Why This Role Exists ──────────────────────────────────────────
+      const wte = briefing.why_this_role_exists || {};
+      const wteS = _arr(wte.stated);
+      const wteI = _arr(wte.inferred);
+      if (wteS.length || wteI.length) {
+        const body = [
+          wteS.length ? subLabel('Stated') + ul(wteS) : '',
+          wteI.length ? subLabel('Inferred') + ul(wteI) : '',
+        ].join('');
+        append(sectionBlock('Why This Role Exists', body));
+      }
+
+      // ── 5. What You Would Actually Do ────────────────────────────────────
+      const _do = _arr(briefing.what_you_would_actually_do);
+      if (_do.length) append(sectionBlock('What You Would Actually Do', ul(_do)));
+
+      // ── 6. What They're Really Looking For ───────────────────────────────
+      const _wtr = _arr(briefing.what_they_are_really_looking_for);
+      if (_wtr.length) append(sectionBlock("What They're Really Looking For", ul(_wtr)));
+
+      // ── 7. Practical Details ─────────────────────────────────────────────
+      const pd = briefing.practical_details || {};
+      const PD_LABELS = [
+        ['location',           'Location'],
+        ['work_model',         'Work Model'],
+        ['employment_type',    'Employment Type'],
+        ['salary',             'Salary'],
+        ['monthly_equivalent', 'Monthly Equivalent'],
+        ['visa_sponsorship',   'Visa Sponsorship'],
+        ['reporting_line',     'Reporting Line'],
+        ['industry',           'Industry'],
+        ['company_stage',      'Company Stage'],
+      ];
+      const pdRows = PD_LABELS.map(([k, lab]) => {
+        const v = pd[k];
+        const missing = !(typeof v === 'string' && v.trim());
+        const value = missing ? 'Not stated' : v;
+        return `<div class="rwc-brief-pd-row${missing ? ' is-missing' : ''}"><span class="rwc-brief-pd-key">${_esc(lab)}</span><span class="rwc-brief-pd-val">${_esc(value)}</span></div>`;
+      }).join('');
+      append(sectionBlock('Practical Details', `<div class="rwc-brief-pd">${pdRows}</div>`));
+
+      // ── 8. Risks & Unknowns ──────────────────────────────────────────────
+      const ru = briefing.risks_and_unknowns || {};
+      const ruS = _arr(ru.stated);
+      const ruI = _arr(ru.inferred);
+      const ruV = _arr(ru.verification_points);
+      if (ruS.length || ruI.length || ruV.length) {
+        const body = [
+          ruS.length ? subLabel('Stated') + ul(ruS) : '',
+          ruI.length ? subLabel('Inferred') + ul(ruI) : '',
+          ruV.length ? subLabel('Verification Points') + ul(ruV) : '',
+        ].join('');
+        append(sectionBlock('Risks & Unknowns', body));
+      }
+
+      // ── 9. Questions Worth Asking ────────────────────────────────────────
+      const _qs = _arr(briefing.questions_worth_asking);
+      if (_qs.length) append(sectionBlock('Questions Worth Asking', ul(_qs)));
+
+      // ── 10. Suggested Actions ────────────────────────────────────────────
+      const _sa = _arr(briefing.suggested_actions);
+      if (_sa.length) append(sectionBlock('Suggested Actions', ps(_sa)));
+
+      // ── 11. Recommended CV Variant + Why ─────────────────────────────────
+      const cvId  = briefing.recommended_cv_variant || null;
+      const cvWhy = briefing.why_this_cv || '';
+      if (cvId) {
+        const cvLabel = _chatBriefingCvLabel(cvId);
+        const body = `<p class="rwc-brief-cv-name">${_esc(cvLabel)}</p>${cvWhy ? `<p class="rwc-brief-cv-why">${_esc(_toText(cvWhy))}</p>` : ''}`;
+        append(sectionBlock('Recommended CV Variant', body));
+      }
+
+      // ── 12. Final note (bare muted text, no heading) ─────────────────────
+      const _final = briefing.final_note || '';
+      if (_final) append(`${divider}<p class="rwc-brief-final">${_esc(_toText(_final))}</p>`);
     }
 
-    function _chatIngestRenderConvTurn(t) {
-      const _esc = esc;
-      if (!t || typeof t !== 'object') return '';
-      if (t.type === 'p') {
-        return `<p>${_esc(_sanitizeUiText(t.text || ''))}</p>`;
-      }
-      if (t.type === 'bullets') {
-        const lead = t.lead ? `<p>${_esc(_sanitizeUiText(t.lead))}</p>` : '';
-        const items = Array.isArray(t.items) ? t.items : [];
-        const lis = items.map(s => `<li>${_esc(_sanitizeUiText(typeof s === 'string' ? s : String(s)))}</li>`).join('');
-        return `${lead}<ul class="rwc-soft">${lis}</ul>`;
-      }
-      return '';
+    // Map canonical CV ids to display labels for the briefing card. Mirrors
+    // the labels used elsewhere in the app — keep this lookup local to the
+    // chat-ingest module so the briefing surface stays self-contained.
+    function _chatBriefingCvLabel(cvId) {
+      const map = {
+        'founding-product-designer':  'Founding Product Designer',
+        'principal-product-designer': 'Principal Product Designer',
+        'staff-product-designer':     'Staff Product Designer',
+        'lead-product-designer':      'Lead Product Designer',
+      };
+      return map[cvId] || cvId || 'Not specified';
+    }
+
+    // ─── Fallback: canonical → briefing mapper ───────────────────────────────
+    // Deterministic conversion used when the synth call fails. Produces a
+    // briefing-shaped object so the renderer doesn't care which path supplied
+    // the content. Quality is degraded vs the synth output (no derived
+    // Stated/Inferred sub-structure on Why This Role Exists, no rewriting
+    // for the chat surface) but the surface always lands a readable
+    // briefing. The user sees a small "Working from the structured
+    // analysis." note when this path runs.
+    function _chatIngestNarrativeToBriefing(narrative, extraction) {
+      const _str = (v) => (typeof v === 'string' && v.trim()) ? v.trim() : null;
+      const _arr = (v) => Array.isArray(v) ? v.filter(s => typeof s === 'string' && s.trim()) : [];
+      const n  = narrative || {};
+      const pd = (n.practical_details && typeof n.practical_details === 'object') ? n.practical_details : {};
+
+      // Derive simple fit-reality bullets by taking the first 4 sentences
+      // from fit_reality.paragraphs (split-on-period heuristic; safe-enough
+      // for fallback use).
+      const fitParas = _arr(n.fit_reality?.paragraphs);
+      const fitJoined = fitParas.join(' ');
+      const fitBullets = fitJoined
+        ? fitJoined.split(/(?<=[\.\!\?])\s+/).filter(s => s.trim().length > 8).slice(0, 5)
+        : [];
+
+      // what_you_would_actually_do may be either bullets[] or paragraphs[].
+      const wydBullets = _arr(n.what_you_would_actually_do?.bullets);
+      const wydParas   = _arr(n.what_you_would_actually_do?.paragraphs);
+      const wyd        = wydBullets.length ? wydBullets : wydParas;
+
+      const wtrBullets = _arr(n.what_they_really_need_from_you?.bullets);
+      const wtrParas   = _arr(n.what_they_really_need_from_you?.paragraphs);
+      const wtr        = wtrBullets.length ? wtrBullets : wtrParas;
+
+      return {
+        fit_reality_summary: fitBullets.length ? fitBullets : ['Briefing produced from the structured analysis (fallback path).'],
+        role_summary:        _arr(n.what_this_role_actually_is?.paragraphs),
+        why_this_role_exists: {
+          stated:   [],
+          inferred: _arr(n.what_this_role_actually_is?.paragraphs).slice(0, 2),
+        },
+        what_you_would_actually_do:        wyd,
+        what_they_are_really_looking_for:  wtr,
+        practical_details: {
+          location:           _str(pd.location)           || _str(extraction?.location)       || null,
+          work_model:         _str(pd.work_model)         || _str(extraction?.remote_model)   || null,
+          employment_type:    _str(pd.employment_type)    || _str(extraction?.engagement_type)|| null,
+          salary:             _str(pd.salary)             || _str(extraction?.salary_annual)  || null,
+          monthly_equivalent: _str(pd.monthly_equivalent) || null,
+          visa_sponsorship:   _str(pd.visa_sponsorship)   || null,
+          reporting_line:     _str(pd.reporting_line)     || null,
+          industry:           _str(pd.industry)           || null,
+          company_stage:      _str(pd.company_stage)      || null,
+        },
+        risks_and_unknowns: {
+          stated:              _arr(n.risks_and_unknowns?.stated),
+          inferred:            _arr(n.risks_and_unknowns?.inferred),
+          verification_points: _arr(n.risks_and_unknowns?.verification_points),
+        },
+        questions_worth_asking: _arr(n.questions_worth_asking),
+        suggested_actions:      _arr(n.decision?.paragraphs),
+        recommended_cv_variant: _str(n.recommended_cv),
+        why_this_cv:            _str(n.why_that_cv)    || '',
+        final_note:             _str(n.final_note)     || 'Use this as context, not a verdict.',
+      };
     }
 
     function _chatIngestRenderFirstReadBody(narr) {
@@ -34805,19 +34992,19 @@ If a field cannot be determined from the message, return null for that field.`,
         ir35:     snap.ir35_status         || null,
       }));
 
-      // Restore the conversational read if the snapshot has one cached;
-      // otherwise replay the section-by-section renderers from the
-      // canonical narrative. On restore we skip the inter-turn pacing
-      // delays — the read is already complete; no point pretending to
-      // think about it again.
-      if (snap.chat_read && Array.isArray(snap.chat_read.turns) && snap.chat_read.turns.length) {
-        for (const t of snap.chat_read.turns) {
-          const html = _chatIngestRenderConvTurn(t);
-          if (html) _chatIngestAppendBot(html);
+      // Restore the briefing if the snapshot has one cached; otherwise
+      // rebuild from the canonical narrative via the fallback mapper.
+      // No fake pacing delays on restore — the briefing is already
+      // complete.
+      let _restoreBriefing = snap.briefing || null;
+      if (!_restoreBriefing && snap.narrative) {
+        _restoreBriefing = _chatIngestNarrativeToBriefing(snap.narrative, snap.analysis || null);
+      }
+      if (_restoreBriefing) {
+        _chatIngestRenderApplicantBriefing(_restoreBriefing, null);
+        if (snap.briefing_source === 'canonical-fallback' && !snap.briefing) {
+          _chatIngestAppendBot(`<p class="rwc-brief-fallback-note">Working from the structured analysis.</p>`);
         }
-      } else if (snap.narrative) {
-        _chatIngestAppendBot(_chatIngestRenderFirstReadBody(snap.narrative));
-        _chatIngestAppendBot(_chatIngestRenderCheckBody(snap.narrative));
       }
       _chatIngestAppendBot(`<p>${snap.status === 'failed' ? 'Save failed earlier. Try again, open the role, or discard.' : (snap.status === 'saved' ? 'This role is saved. Open it or discard the chat.' : 'Want to keep this role read?')}</p>`);
       _chatIngestRenderCtaBar();
