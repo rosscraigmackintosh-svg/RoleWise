@@ -33953,11 +33953,22 @@ If a field cannot be determined from the message, return null for that field.`,
         savedRole = newRole;
         _chatIngestState.savedRoleId = newRole.id;
 
+        // Shape mirrors _runIngestionFlow's jd_matches insert (line ~14087).
+        // job_description_raw is NOT NULL in the schema; the other columns
+        // are aligned to keep chat-ingest rows queryable identically to
+        // overlay-ingested rows.
         const { data: newMatch, error: me } = await db.from('jd_matches').insert({
-          role_id:     newRole.id,
-          jd_text:     jd,
-          jd_text_raw: jd_raw,
-          output_json: { _analysis_mode: 'fast', _pipeline: { status: 'running', analysis_mode: 'fast', stages: { extract: 'complete', pass1: 'queued', reasoning: 'queued', narrative: 'queued', validation: 'queued' }, timings: {}, errors: [] } },
+          role_id:             newRole.id,
+          job_description_raw: jd_raw || jd,
+          jd_text_raw:         jd_raw || jd,
+          jd_text:             jd,
+          jd_text_clean:       jd_clean || null,
+          company_name:        newRole.company_name,
+          role_title:          newRole.role_title,
+          job_url:             newRole.job_url || null,
+          selected_cv_ids:     [],
+          cv_version_ids:      [],
+          output_json:         { _analysis_mode: 'fast', _pipeline: { status: 'running', analysis_mode: 'fast', stages: { extract: 'complete', pass1: 'queued', reasoning: 'queued', narrative: 'queued', validation: 'queued' }, timings: {}, errors: [] } },
         }).select().single();
         if (me || !newMatch) throw new Error(me?.message || 'jd_matches insert failed');
         _matchId = newMatch.id;
