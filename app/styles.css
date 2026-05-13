@@ -20728,6 +20728,17 @@ a.rw-rail-contact-name:hover {
 .rwc-mode-conv .rwc-composer-send:hover { background: #000; }
 .rwc-mode-conv .rwc-composer-send:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* User bubble — meta header above the collapsed preview. Built from local
+   extraction (title / company / location / work model) so noisy job-board
+   pastes don't surface "Search for jobs" as the first visible line. */
+.rwc-mode-conv .rwc-jd-header {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary, #1a1a18);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
 /* User bubble — collapsed JD preview with expand toggle. */
 .rwc-mode-conv .rwc-jd-collapsed {
   font-size: 13px;

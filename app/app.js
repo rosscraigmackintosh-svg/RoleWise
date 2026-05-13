@@ -25997,6 +25997,10 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         'positions', 'vacancies', 'opportunities', 'opening',
         'hiring', 'we are hiring', "we're hiring", 'now hiring',
         'sign in', 'log in', 'sign up', 'register', 'create account',
+        // Single-token nouns that occasionally float to the top of the
+        // frequency walk on technical JDs but are never company names.
+        'api', 'apis', 'sdk', 'cli', 'ui', 'ux', 'qa', 'ml', 'ai',
+        'devops', 'frontend', 'backend', 'full stack', 'fullstack',
       ]);
       const _companyLocWords  = ['remote', 'hybrid', 'united kingdom', 'london'];
       const _isValidCompany = c => {
@@ -34087,15 +34091,40 @@ If a field cannot be determined from the message, return null for that field.`,
       return wrap.querySelector('.rwc-bubble');
     }
 
-    function _chatIngestRenderUserBubble(rawText) {
+    function _chatIngestRenderUserBubble(rawText, header) {
       // 3-line collapsed preview with a "Show full JD" / "Show less" toggle.
       // The full text lives in the DOM under .rwc-jd-collapsed; the CSS
       // line-clamp does the truncation. Toggling .is-expanded reveals it.
+      //
+      // `header` is optional but strongly preferred for noisy pastes:
+      // when local extraction lands a usable title/company/location we
+      // surface those as the first visible line, so the bubble doesn't
+      // read as a job-board nav fragment ("Search for jobs...").
       const _esc = esc;
+      const hdr = header && typeof header === 'string' && header.trim()
+        ? `<div class="rwc-jd-header">${_esc(header)}</div>`
+        : '';
       return `
+        ${hdr}
         <div class="rwc-jd-collapsed" data-rwc-jd>${_esc(rawText)}</div>
         <button class="rwc-jd-toggle" type="button" data-rwc-jd-toggle>Show full JD</button>
       `;
+    }
+
+    // Build a one-line meta header from extracted JD signals. Used both by
+    // the in-flight render and the shadow-restore replay. Returns null when
+    // there's nothing usable — the user bubble then falls back to the raw
+    // preview alone.
+    function _chatIngestBuildUserHeader(meta, workModelDisplay) {
+      if (!meta || typeof meta !== 'object') return null;
+      const parts = [];
+      if (meta.role_title)   parts.push(String(meta.role_title));
+      if (meta.company_name) parts.push(String(meta.company_name));
+      if (meta.location)     parts.push(String(meta.location));
+      if (workModelDisplay)  parts.push(String(workModelDisplay));
+      // Don't render a header if the only signal is something low-value.
+      if (!parts.length) return null;
+      return parts.join(' · ');
     }
 
     // Stream-wide click handler is wired once in renderChatIngestView; toggles
@@ -34194,12 +34223,11 @@ If a field cannot be determined from the message, return null for that field.`,
       // Step 1: mark the new canonical session as analysing.
       if (_chatSession) { _chatSession.status = 'analysing'; _chatSessionTouch(); }
 
-      // 1. User bubble with collapsed JD preview (3-line clamp + toggle).
-      //    Full text is kept in the DOM (display:none in collapsed state)
-      //    so expand is instant and doesn't re-render.
-      _chatIngestAppendUser(_chatIngestRenderUserBubble(rawText));
-
-      // 2. Local extraction
+      // 1. Local extraction runs FIRST. This is synchronous (regex-based,
+      //    <50ms) so the user-bubble render below isn't visibly delayed,
+      //    and it lets us surface a clean Title · Company · Location header
+      //    instead of the raw first line (which on noisy job-board pastes
+      //    is often something like "Search for jobs").
       const jd_raw   = rawText;
       const jd_clean = (typeof cleanJobDescription === 'function') ? cleanJobDescription(jd_raw) : jd_raw;
       const jd       = jd_clean || jd_raw;
@@ -34214,6 +34242,10 @@ If a field cannot be determined from the message, return null for that field.`,
       const _location= _meta.location     || null;
       const _wmMap   = { remote: 'Remote', hybrid: 'Hybrid', 'on-site': 'On-site', onsite: 'On-site' };
       const _workModel = _meta.remote_model ? (_wmMap[_meta.remote_model.toLowerCase()] || _meta.remote_model) : null;
+
+      // 2. User bubble with meta header + collapsed JD preview.
+      const _userHeader = _chatIngestBuildUserHeader(_meta, _workModel);
+      _chatIngestAppendUser(_chatIngestRenderUserBubble(rawText, _userHeader));
       const _salary  = _meta.salary_annual || null;
       const _engType = (typeof _detectEngagementType === 'function') ? _detectEngagementType(jd_raw || jd) : null;
       const _ir35    = (typeof _detectIr35Status     === 'function') ? _detectIr35Status(jd_raw || jd, _engType) : null;
@@ -34752,9 +34784,13 @@ If a field cannot be determined from the message, return null for that field.`,
         setTimeout(() => hint.remove(), 4600);
       }
 
-      // Replay the bubble sequence.
+      // Replay the bubble sequence — restore the same Title · Company ·
+      // Location · Work-model header the in-flight render used.
       const rawText = snap.jd_raw || '';
-      _chatIngestAppendUser(_chatIngestRenderUserBubble(rawText));
+      const _wmMap2  = { remote: 'Remote', hybrid: 'Hybrid', 'on-site': 'On-site', onsite: 'On-site' };
+      const _wmDisp  = snap.meta?.remote_model ? (_wmMap2[snap.meta.remote_model.toLowerCase()] || snap.meta.remote_model) : null;
+      const _hdr     = _chatIngestBuildUserHeader(snap.meta || null, _wmDisp);
+      _chatIngestAppendUser(_chatIngestRenderUserBubble(rawText, _hdr));
 
       // Facts bubble (built from cached meta + signals).
       const _wmMap = { remote: 'Remote', hybrid: 'Hybrid', 'on-site': 'On-site', onsite: 'On-site' };
