@@ -34236,23 +34236,20 @@ If a field cannot be determined from the message, return null for that field.`,
     }
 
     function _chatIngestRenderFactsBody(f) {
-      // Compact chips for the basics — title, company, location, salary, work
-      // model, type. Missing values render as muted "Not stated" chips so the
-      // bubble stays balanced rather than collapsing.
-      const _chip = (v, missing) => `<span class="rwc-chip${missing ? ' is-missing' : ''}">${esc(v || 'Not stated')}</span>`;
+      // Inline muted prose line — no chips, no dl, no container. Missing
+      // values are simply omitted from the join; only the salary fallback
+      // renders an explicit "No salary listed" phrase because absent salary
+      // is decision-relevant.
       const _ir35Suffix = f.ir35 && f.ir35 !== 'Not applicable' ? ` (${f.ir35})` : '';
-      const _salaryDisplay = f.salary ? f.salary + _ir35Suffix : null;
-      return `
-        <p class="rwc-bubble-intro">I've found the basics.</p>
-        <div class="rwc-chips">
-          ${_chip(f.title, !f.title)}
-          ${_chip(f.company, !f.company)}
-          ${_chip(f.location, !f.location)}
-          ${_chip(f.workModel, !f.workModel)}
-          ${_chip(f.engagement, !f.engagement)}
-          ${_chip(_salaryDisplay, !_salaryDisplay)}
-        </div>
-      `;
+      const parts = [];
+      if (f.title)      parts.push(esc(f.title));
+      if (f.company)    parts.push(esc(f.company));
+      if (f.location)   parts.push(esc(f.location));
+      if (f.workModel)  parts.push(esc(f.workModel));
+      if (f.engagement) parts.push(esc(f.engagement));
+      if (f.salary)     parts.push(esc(f.salary + _ir35Suffix));
+      else              parts.push('No salary listed');
+      return `<p class="rwc-facts-line">${parts.join(' · ')}</p>`;
     }
 
     function _chatIngestRenderFirstReadBody(narr) {
