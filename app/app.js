@@ -33786,6 +33786,50 @@ If a field cannot be determined from the message, return null for that field.`,
     //                              duplicate detection, animator polling.
     let _chatIngestState = null;
 
+    // ─── Canonical chat-ingest session object (target for refactor) ──────────
+    // Replaces _chatIngestState across the six-step save-on-confirm migration.
+    // Status drives all UI gating:
+    //   idle      - composer visible, no chat bubbles yet
+    //   analysing - composer hidden, pending bubbles, CTAs hidden
+    //   ready     - all bubbles rendered, CTAs revealed
+    //   saving    - CTAs disabled, "Saving..." inline
+    //   saved     - CTAs collapse to Open; "Saved" inline
+    //   failed    - "Save failed" inline + retry button
+    //
+    // Step 1: populated in parallel with _chatIngestState. No readers yet.
+    let _chatSession = null;
+    function _chatSessionInit() {
+      return {
+        // Lifecycle
+        id:         (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('rwc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)),
+        status:     'idle',
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        // User input
+        jd_raw:     null,
+        jd_clean:   null,
+        jd:         null,
+        // Local-extraction fields
+        meta:       null,
+        ir35_status:    null,
+        day_rate_text:  null,
+        engagement_type:null,
+        contract_length:null,
+        // Analysis (built progressively; same shape persisted as output_json)
+        analysis:   null,
+        narrative:  null,
+        timings:    { pass1_ms: 0, reason_and_narrate_ms: 0, total_ms: 0 },
+        // Save-time
+        saved_role:     null,
+        saved_role_id:  null,
+        saved_match_id: null,
+        save_error:     null,
+      };
+    }
+    function _chatSessionTouch() {
+      if (_chatSession) _chatSession.updated_at = new Date().toISOString();
+    }
+
     function renderChatIngestView() {
       console.log('[chat-ingest] START');
       const el = document.getElementById('col-overview-cards');
@@ -33801,6 +33845,8 @@ If a field cannot be determined from the message, return null for that field.`,
         savedRoleId: null,
         savedMatchId: null,
       };
+      // Step 1: initialise the new canonical session in parallel.
+      _chatSession = _chatSessionInit();
 
       el.innerHTML = `
         <div class="rwc-page" id="rwc-page">
@@ -33914,6 +33960,9 @@ If a field cannot be determined from the message, return null for that field.`,
     async function _chatIngestSubmit(rawText) {
       const _esc = esc;
 
+      // Step 1: mark the new canonical session as analysing.
+      if (_chatSession) { _chatSession.status = 'analysing'; _chatSessionTouch(); }
+
       // 1. User bubble with collapsed JD preview
       const _preview = rawText.length > 600 ? rawText.slice(0, 600) + '…' : rawText;
       _chatIngestAppendUser(`<div class="rwc-jd-collapsed">${_esc(_preview)}</div><div class="rwc-jd-meta">${rawText.length.toLocaleString()} chars</div>`);
@@ -33938,6 +33987,19 @@ If a field cannot be determined from the message, return null for that field.`,
       const _ir35    = (typeof _detectIr35Status     === 'function') ? _detectIr35Status(jd_raw || jd, _engType) : null;
       const _dayRate = (typeof _detectDayRateText    === 'function') ? _detectDayRateText(jd_raw || jd) : null;
       const _contractLen = (typeof _detectContractLength === 'function') ? _detectContractLength(jd_raw || jd) : null;
+
+      // Step 1: populate the new canonical session with input + local extract.
+      if (_chatSession) {
+        _chatSession.jd_raw          = jd_raw;
+        _chatSession.jd_clean        = jd_clean;
+        _chatSession.jd              = jd;
+        _chatSession.meta            = _meta;
+        _chatSession.ir35_status     = _ir35;
+        _chatSession.day_rate_text   = _dayRate;
+        _chatSession.engagement_type = _engType;
+        _chatSession.contract_length = _contractLen;
+        _chatSessionTouch();
+      }
 
       // 3. "Reading the role..." placeholder
       const _readPending = _chatIngestPending("Reading the role…");
@@ -33965,6 +34027,7 @@ If a field cannot be determined from the message, return null for that field.`,
         if (re || !newRole) throw new Error(re?.message || 'role insert failed');
         savedRole = newRole;
         _chatIngestState.savedRoleId = newRole.id;
+        if (_chatSession) { _chatSession.saved_role = newRole; _chatSession.saved_role_id = newRole.id; _chatSessionTouch(); }
 
         // Shape mirrors _runIngestionFlow's jd_matches insert (line ~14087).
         // job_description_raw is NOT NULL in the schema; the other columns
@@ -33986,6 +34049,7 @@ If a field cannot be determined from the message, return null for that field.`,
         if (me || !newMatch) throw new Error(me?.message || 'jd_matches insert failed');
         _matchId = newMatch.id;
         _chatIngestState.savedMatchId = newMatch.id;
+        if (_chatSession) { _chatSession.saved_match_id = newMatch.id; _chatSessionTouch(); }
       } catch (e) {
         console.error('[chat-ingest] persist failed', e);
         _chatIngestReplacePending(_readPending, `<p class="rwc-bubble-intro">Couldn't save the role record. Try the standard Add Role flow.</p>`);
@@ -34111,6 +34175,14 @@ If a field cannot be determined from the message, return null for that field.`,
 
       _chatIngestState.analysis = analysis;
       _chatIngestState.savedRole = savedRole;
+      // Step 1: mirror into the canonical session.
+      if (_chatSession) {
+        _chatSession.analysis  = analysis;
+        _chatSession.narrative = narrative;
+        _chatSession.timings   = { pass1_ms: _pass1Ms, reason_and_narrate_ms: _fMs, total_ms: analysis._pipeline.timings.total_ms };
+        _chatSession.status    = 'ready';
+        _chatSessionTouch();
+      }
       console.log('[chat-ingest] FAST_ANALYSIS_COMPLETE', {
         pass1_ms: _pass1Ms, reason_and_narrate_ms: _fMs,
         total_ms: analysis._pipeline.timings.total_ms,
