@@ -11007,7 +11007,15 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       const _pipeline      = fo._pipeline   || null;
       const _hasProvenance = _prov && typeof _prov === 'object';
       const _pass1Ran      = _hasProvenance && !!_prov.analyse_jd_version;
-      const _reasoningMissing = _hasProvenance && !_prov.role_reasoning_version;
+      // Fast-path equivalence: reason-and-narrate satisfies "reasoning ran"
+      // even without a separate role_reasoning_version. (Legacy fallback
+      // only; the canonical check below reads _pipeline.status.)
+      const _reasoningSatisfied =
+        !!_prov?.role_reasoning_version ||
+        !!_prov?.reason_and_narrate_version ||
+        _prov?.pipeline_path === 'fast' ||
+        fo?._pipeline?.stages?.reasoning === 'merged';
+      const _reasoningMissing = _hasProvenance && !_reasoningSatisfied;
       const _narrativeMissing = !narr || !_prov?.narrative_version;
       const _isRunning     = _pipeline?.status === 'running';
       // If the new _pipeline object is present, its status is canonical.
@@ -14385,8 +14393,21 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
       const prov = a?._provenance || {};
       const provenance_missing = [];
+      // Fast-path equivalence: when reason-and-narrate runs as a combined
+      // call, role_reasoning_version is intentionally null (no separate
+      // reasoning step exists) and role_reasoning_version's "completeness"
+      // is signalled by either:
+      //   prov.reason_and_narrate_version   (the merged-pass version stamp)
+      //   prov.pipeline_path === 'fast'     (explicit routing record)
+      //   a._pipeline.stages.reasoning === 'merged'  (pipeline stage flag)
+      // Any one of these satisfies the reasoning-provenance requirement.
+      const _reasoningMerged =
+        !!prov.reason_and_narrate_version ||
+        prov.pipeline_path === 'fast' ||
+        a?._pipeline?.stages?.reasoning === 'merged';
+
       if (!prov.analyse_jd_version)     provenance_missing.push('analyse_jd_version');
-      if (!prov.role_reasoning_version) provenance_missing.push('role_reasoning_version');
+      if (!prov.role_reasoning_version && !_reasoningMerged) provenance_missing.push('role_reasoning_version');
       if (!prov.narrative_version)      provenance_missing.push('narrative_version');
       if (provenance_missing.length) reasons.push('provenance_missing');
       return {
