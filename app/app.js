@@ -33976,7 +33976,10 @@ If a field cannot be determined from the message, return null for that field.`,
     }
 
     function _chatIngestPending(text) {
-      const bubble = _chatIngestAppendBot(`<p class="rwc-bubble-intro">${esc(text)}</p>`);
+      // Lightweight thinking state — single muted line, no bubble container
+      // in conv mode (CSS strips the chrome). Returns the bubble element so
+      // _chatIngestReplacePending can swap its content when the work lands.
+      const bubble = _chatIngestAppendBot(`<span class="rwc-thinking">${esc(text)}</span>`);
       if (bubble) bubble.classList.add('is-pending');
       return bubble;
     }
@@ -34222,14 +34225,20 @@ If a field cannot be determined from the message, return null for that field.`,
         total_ms: analysis._pipeline.timings.total_ms,
       });
 
-      // 9. Render first-read bubble (fit_reality + decision)
+      // 9. Render first-read paragraphs (fit_reality + decision)
       _chatIngestReplacePending(_firstReadPending, _chatIngestRenderFirstReadBody(narrative));
 
-      // 10. Render things-to-check bubble (risks + questions)
+      // 10. Conversational rhythm: 350ms gap before the check turn lands so
+      //     the user has a beat to start reading the first-read paragraphs.
+      await new Promise(r => setTimeout(r, 350));
       _chatIngestAppendBot(_chatIngestRenderCheckBody(narrative));
 
-      // 11. Final conversational close + reveal CTA bar with status-driven content
-      _chatIngestAppendBot(`<p class="rwc-bubble-intro">Want to keep this role?</p>`);
+      // 11. Final conversational close — small rhythm gap, then the action
+      //     row is appended inline under the close turn (phase 4 swaps the
+      //     sticky bar for inline). The legacy CTA bar render still runs as
+      //     a no-op via the conv-mode CSS hide.
+      await new Promise(r => setTimeout(r, 250));
+      _chatIngestAppendBot(`<p>Want to keep this role read?</p>`);
       _chatIngestRenderCtaBar();
       const _ctaBar = document.getElementById('rwc-cta-bar');
       if (_ctaBar) _ctaBar.removeAttribute('hidden');
@@ -34253,40 +34262,35 @@ If a field cannot be determined from the message, return null for that field.`,
     }
 
     function _chatIngestRenderFirstReadBody(narr) {
-      // No card chrome here. Fit reality and decision read as flowing prose,
-      // led by a single conversational opener. Section labels are stripped so
-      // the chat doesn't feel like a JSON dump pasted into a bubble.
+      // Plain prose paragraphs. No "Here's the role read." opener — the
+      // analysis just starts speaking. The decision summary appears as its
+      // own paragraph at the end (the prompt already returns a clean
+      // sentence; we don't need a "Decision:" label).
       const _esc = esc;
       const _fitParas = Array.isArray(narr?.fit_reality?.paragraphs) ? narr.fit_reality.paragraphs.filter(Boolean) : [];
       const _decisionSummary = narr?.decision?.summary ? _sanitizeUiText(narr.decision.summary) : '';
       const _allParas = _fitParas.map(p => _sanitizeUiText(p));
       if (_decisionSummary) _allParas.push(_decisionSummary);
-      return `
-        <p class="rwc-bubble-intro">Here's the role read.</p>
-        ${_allParas.map(p => `<p>${_esc(p)}</p>`).join('')}
-      `;
+      if (!_allParas.length) return `<p>I couldn't put together a read from this one.</p>`;
+      return _allParas.map(p => `<p>${_esc(p)}</p>`).join('');
     }
 
     function _chatIngestRenderCheckBody(narr) {
-      // Watch-outs + worth-asking. Softer labels than the saved JSON ("Risks"
-      // becomes "Worth knowing"; "Questions worth asking" becomes "Worth
-      // asking"). The saved 11-section row is unchanged — this is chat
-      // presentation only.
+      // Watch-outs + worth-asking. Folded into a single soft list under one
+      // natural-language intro. The "Worth knowing:" / "Worth asking:"
+      // labels are dropped — items just appear inline. (The saved 11-section
+      // row keeps the structured shape; this is chat presentation only.)
       const _esc = esc;
       const _toText = (s) => _sanitizeUiText(typeof s === 'string' ? s : (s?.text || String(s)));
       const _inferred = Array.isArray(narr?.risks_and_unknowns?.inferred) ? narr.risks_and_unknowns.inferred.filter(Boolean) : [];
       const _qs       = Array.isArray(narr?.questions_worth_asking)       ? narr.questions_worth_asking.filter(Boolean)       : [];
-      if (!_inferred.length && !_qs.length) {
-        return `<p class="rwc-bubble-intro">Nothing major to flag from the JD itself.</p>`;
+      const _all = [..._inferred, ..._qs];
+      if (!_all.length) {
+        return `<p>Nothing major to flag from the JD itself.</p>`;
       }
       return `
-        <p class="rwc-bubble-intro">A few things I'd check before applying.</p>
-        ${_inferred.length ? `
-          <p class="rwc-list-lead">Worth knowing:</p>
-          <ul>${_inferred.map(s => `<li>${_esc(_toText(s))}</li>`).join('')}</ul>` : ''}
-        ${_qs.length ? `
-          <p class="rwc-list-lead">Worth asking:</p>
-          <ul>${_qs.map(s => `<li>${_esc(_toText(s))}</li>`).join('')}</ul>` : ''}
+        <p>A few things worth checking before you apply:</p>
+        <ul class="rwc-soft">${_all.map(s => `<li>${_esc(_toText(s))}</li>`).join('')}</ul>
       `;
     }
 
@@ -34555,7 +34559,7 @@ If a field cannot be determined from the message, return null for that field.`,
         _chatIngestAppendBot(_chatIngestRenderFirstReadBody(snap.narrative));
         _chatIngestAppendBot(_chatIngestRenderCheckBody(snap.narrative));
       }
-      _chatIngestAppendBot(`<p class="rwc-bubble-intro">${snap.status === 'failed' ? 'Save failed earlier. Try again, open the role, or discard.' : (snap.status === 'saved' ? 'This role is saved. Open it or discard the chat.' : 'Want to keep this role?')}</p>`);
+      _chatIngestAppendBot(`<p class="rwc-bubble-intro">${snap.status === 'failed' ? 'Save failed earlier. Try again, open the role, or discard.' : (snap.status === 'saved' ? 'This role is saved. Open it or discard the chat.' : 'Want to keep this role read?')}</p>`);
       _chatIngestRenderCtaBar();
       const _ctaBar = document.getElementById('rwc-cta-bar');
       if (_ctaBar) _ctaBar.removeAttribute('hidden');
