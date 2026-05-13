@@ -11336,13 +11336,15 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         ];
         const stagesHtml = stages.map(([label, status, ms]) => {
           const icon = status === 'complete' || status === 'success' ? '✓'
+                     : status === 'merged'   ? '✓'
                      : status === 'running'  ? '↻'
                      : status === 'queued'   || status === 'pending' ? '…'
                      : status === 'timeout'  ? '⌛'
                      : status === 'failed'   ? '✗'
                      : '?';
+          const displayLabel = status === 'merged' ? `${label} (combined with writing)` : label;
           const msStr = (typeof ms === 'number' && ms > 0) ? ` <span class="ra-pipeline-ms">${ms}ms</span>` : '';
-          return `<li class="ra-pipeline-stage ra-pipeline-${esc(status)}"><span class="ra-pipeline-icon">${icon}</span> ${esc(label)}: <strong>${esc(status)}</strong>${msStr}</li>`;
+          return `<li class="ra-pipeline-stage ra-pipeline-${esc(status)}"><span class="ra-pipeline-icon">${icon}</span> ${esc(displayLabel)}: <strong>${esc(status)}</strong>${msStr}</li>`;
         }).join('');
 
         // Error / missing / timing lines for the disclosure panel.
@@ -14511,63 +14513,121 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // Ingestion pipeline always forces OpenAI for Pass 1.5 + Pass 2.
       // Anthropic is deferred (known 422 truncation at maxTokens:3000 for verbose JDs).
       analysisRef._aiProvider = 'openai';
-      pl.stages.reasoning = 'running';
-      await persistOnce();
 
-      // ── Pass 1.5 (reasoning) ──────────────────────────────────────────
-      const rT0 = performance.now();
+      // ── FAST-MODE ROUTING DECISION ────────────────────────────────────
+      // Default OFF. Two ways to enable, in priority order:
+      //   1. Runtime override: window.ROLEWISE_FAST_MODE = true  (no redeploy)
+      //   2. Build flag:       FAST_MODE_ROUTING_ENABLED constant below
+      // Activation requires the user to have selected "Fast" in the
+      // ingestion overlay (analysisRef._analysis_mode === 'fast'). When the
+      // toggle is "deep" OR neither flag is on, the legacy 3-pass path runs
+      // exactly as before — no Fast-mode side effects.
+      const FAST_MODE_ROUTING_ENABLED = false; // flip after soft-launch eval
+      const _fastFlagActive = (typeof window !== 'undefined' && window.ROLEWISE_FAST_MODE === true)
+                              || FAST_MODE_ROUTING_ENABLED;
+      const _useFastPath = _fastFlagActive && analysisRef._analysis_mode === 'fast';
+
+      // Compute verbosity mode now (Fast path needs it for the combined call;
+      // Deep path uses it for the narrative call). Reasoning-derived signals
+      // for Fast mode are NOT available yet (reasoning hasn't run) — fall
+      // back to JD-length signal only. Deep mode keeps its richer heuristic
+      // since reasoning runs before narrative.
+      const _verbosityModeFast = _useFastPath
+        ? _computeVerbosityMode(jdText || jdRaw, null)
+        : null;
+
       let reasoning = null;
-      try {
-        if (typeof callRoleReasoningAPI === 'function') {
-          reasoning = await callRoleReasoningAPI(analysisRef, jdText || jdRaw, { providerOverride: 'openai' });
-        }
-      } catch (e) {
-        recordError('reasoning', 'REASONING_THROWN', e?.message || String(e));
-      }
-      pl.timings.reasoning_ms = Math.round(performance.now() - rT0);
-      if (reasoning) {
-        analysisRef._reasoning = reasoning;
-        analysisRef._role_reasoning_version = reasoning._role_reasoning_version || null;
-        pl.stages.reasoning = 'complete';
-      } else {
-        pl.stages.reasoning = 'failed';
-        recordError('reasoning', 'REASONING_NULL', 'reasoning returned no object (likely 422 truncation or upstream)');
-      }
-      pl.stages.narrative = 'running';
-      await persistOnce();
-
-      // ── Pass 2 (narrative) ────────────────────────────────────────────
-      // Compute verbosity mode from JD length + reasoning role_shape signals.
-      // Drives output length only; section structure unchanged.
-      const _verbosityMode = _computeVerbosityMode(jdText || jdRaw, reasoning);
-      analysisRef._verbosity_mode = _verbosityMode;
-      console.log('[bg-pipeline] verbosity_mode resolved', {
-        mode: _verbosityMode,
-        jd_len: (jdText || jdRaw || '').length,
-        ownership: reasoning?.role_shape?.ownership_level || null,
-        complexity: reasoning?.role_shape?.product_complexity || null,
-      });
-
-      const nT0 = performance.now();
       let narrative = null;
-      try {
-        if (typeof callNarrativeAPI === 'function') {
-          narrative = await callNarrativeAPI(analysisRef, reasoning, {
-            providerOverride: 'openai',
-            verbosityMode: _verbosityMode,
-          });
+
+      if (_useFastPath) {
+        // ── FAST PATH: combined reason-and-narrate (one round-trip) ─────
+        // pl.stages.reasoning gets the sentinel 'merged' so the ingestion
+        // overlay watcher (which treats merged === complete for gating)
+        // advances correctly. Narrative stage drives the user-visible
+        // progress through both phases of work.
+        pl.stages.reasoning = 'merged';
+        pl.stages.narrative = 'running';
+        await persistOnce();
+
+        analysisRef._verbosity_mode = _verbosityModeFast;
+        console.log('[bg-pipeline] FAST path  verbosity=' + _verbosityModeFast + '  jd_len=' + (jdText || jdRaw || '').length);
+
+        const fT0 = performance.now();
+        try {
+          if (typeof callReasonAndNarrateAPI === 'function') {
+            narrative = await callReasonAndNarrateAPI(analysisRef, jdText || jdRaw, {
+              providerOverride: 'openai',
+              verbosityMode:    _verbosityModeFast,
+            });
+          }
+        } catch (e) {
+          analysisRef._narrative_error = {
+            code:      e?.code      || 'NARRATIVE_UNCAUGHT',
+            message:   e?.message   || String(e),
+            reasons:   Array.isArray(e?.reasons) ? e.reasons : null,
+            provider:  e?.context?.provider || analysisRef?._aiProvider || null,
+            timestamp: nowIso(),
+          };
+          recordError('narrative', e?.code || 'NARRATIVE_UNCAUGHT', e?.message || String(e));
         }
-      } catch (e) {
-        analysisRef._narrative_error = {
-          code:      e?.code      || 'NARRATIVE_UNCAUGHT',
-          message:   e?.message   || String(e),
-          reasons:   Array.isArray(e?.reasons) ? e.reasons : null,
-          provider:  e?.context?.provider || analysisRef?._aiProvider || null,
-          timestamp: nowIso(),
-        };
-        recordError('narrative', e?.code || 'NARRATIVE_UNCAUGHT', e?.message || String(e));
+        // Fast call rolls reasoning + narrative into one round-trip; bill
+        // the full elapsed time to narrative_ms and zero reasoning_ms so the
+        // banner accurately reflects which calls were made.
+        pl.timings.reasoning_ms = 0;
+        pl.timings.narrative_ms = Math.round(performance.now() - fT0);
+      } else {
+        // ── DEEP PATH: existing 3-pass chain (unchanged) ────────────────
+        pl.stages.reasoning = 'running';
+        await persistOnce();
+
+        // Pass 1.5 (reasoning)
+        const rT0 = performance.now();
+        try {
+          if (typeof callRoleReasoningAPI === 'function') {
+            reasoning = await callRoleReasoningAPI(analysisRef, jdText || jdRaw, { providerOverride: 'openai' });
+          }
+        } catch (e) {
+          recordError('reasoning', 'REASONING_THROWN', e?.message || String(e));
+        }
+        pl.timings.reasoning_ms = Math.round(performance.now() - rT0);
+        if (reasoning) {
+          analysisRef._reasoning = reasoning;
+          analysisRef._role_reasoning_version = reasoning._role_reasoning_version || null;
+          pl.stages.reasoning = 'complete';
+        } else {
+          pl.stages.reasoning = 'failed';
+          recordError('reasoning', 'REASONING_NULL', 'reasoning returned no object (likely 422 truncation or upstream)');
+        }
+        pl.stages.narrative = 'running';
+        await persistOnce();
+
+        // Pass 2 (narrative) — verbosity heuristic uses the just-completed reasoning
+        const _verbosityMode = _computeVerbosityMode(jdText || jdRaw, reasoning);
+        analysisRef._verbosity_mode = _verbosityMode;
+        console.log('[bg-pipeline] DEEP path  verbosity=' + _verbosityMode + '  jd_len=' + (jdText || jdRaw || '').length + '  ownership=' + (reasoning?.role_shape?.ownership_level || 'null') + '  complexity=' + (reasoning?.role_shape?.product_complexity || 'null'));
+
+        const nT0 = performance.now();
+        try {
+          if (typeof callNarrativeAPI === 'function') {
+            narrative = await callNarrativeAPI(analysisRef, reasoning, {
+              providerOverride: 'openai',
+              verbosityMode:    _verbosityMode,
+            });
+          }
+        } catch (e) {
+          analysisRef._narrative_error = {
+            code:      e?.code      || 'NARRATIVE_UNCAUGHT',
+            message:   e?.message   || String(e),
+            reasons:   Array.isArray(e?.reasons) ? e.reasons : null,
+            provider:  e?.context?.provider || analysisRef?._aiProvider || null,
+            timestamp: nowIso(),
+          };
+          recordError('narrative', e?.code || 'NARRATIVE_UNCAUGHT', e?.message || String(e));
+        }
+        pl.timings.narrative_ms = Math.round(performance.now() - nT0);
       }
-      pl.timings.narrative_ms = Math.round(performance.now() - nT0);
+
+      // ── Common: record narrative outcome ─────────────────────────────
       if (narrative) {
         analysisRef._narrative = narrative;
         pl.stages.narrative = 'complete';
@@ -14583,9 +14643,13 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         provider:               analysisRef._aiProvider             || null,
         // analysis_mode: 'fast' | 'deep' — captured at the ingestion overlay
         // and threaded through _runIngestionFlow -> analysis._analysis_mode.
-        // For v1 both modes use the same pipeline; field is preserved for
-        // future Option C routing.
         analysis_mode:          analysisRef._analysis_mode          || null,
+        // pipeline_path: which routing branch actually ran. 'fast' when the
+        // combined reason-and-narrate was called; 'deep' when the legacy
+        // 3-pass chain ran. Independent of the user's toggle choice — a
+        // 'fast' selection still runs deep when FAST_MODE_ROUTING_ENABLED
+        // (or window.ROLEWISE_FAST_MODE) is false.
+        pipeline_path:          _useFastPath ? 'fast' : 'deep',
         analyse_jd_version:     analysisRef._analyse_jd_version     || null,
         analyse_jd_provider:    analysisRef._analyse_jd_provider    || null,
         analyse_jd_model:       analysisRef._analyse_jd_model       || null,
@@ -14595,6 +14659,10 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         narrative_version:      analysisRef._narrative?._narrative_version  || null,
         narrative_provider:     analysisRef._narrative?._narrative_provider || null,
         narrative_model:        analysisRef._narrative?._narrative_model    || null,
+        // Fast-path provenance (populated only when pipeline_path === 'fast')
+        reason_and_narrate_version:  analysisRef._narrative?._reason_and_narrate_version  || null,
+        reason_and_narrate_provider: analysisRef._narrative?._reason_and_narrate_provider || null,
+        reason_and_narrate_model:    analysisRef._narrative?._reason_and_narrate_model    || null,
       };
       const completion = _runCompletionCheck(analysisRef);
       analysisRef._completion_check = completion;
@@ -27603,6 +27671,194 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
           feature_key:    'narrative_generation',
           provider:       _p,
           route:          'generate-narrative',
+          request_type:   'edge_function',
+          status:         'error',
+          latency_ms:     Math.round(performance.now() - _t0),
+          metadata:       { error_message: err.message || String(err) },
+        });
+        return null;
+      }
+    }
+
+    // ─── Fast-mode combined call (Pass 1.5 + Pass 2 merged) ─────────────────
+    // Replaces generate-role-reasoning + generate-narrative with a single
+    // edge function call. The model performs the reasoning inline and emits
+    // the 11-section narrative. Output schema is byte-identical to
+    // callNarrativeAPI's output so the renderer / validator / patches all
+    // continue to work unchanged.
+    //
+    // Only invoked from _runBackgroundPipeline when:
+    //   FAST_MODE_ROUTING_ENABLED === true (or window.ROLEWISE_FAST_MODE),
+    //   AND analysisRef._analysis_mode === 'fast'
+    async function callReasonAndNarrateAPI(extractionJson, jdText, { providerOverride, verbosityMode } = {}) {
+      const _p  = providerOverride || _aiProvider;
+      const _vm = (verbosityMode === 'compact' || verbosityMode === 'deep') ? verbosityMode : 'standard';
+      const _t0 = performance.now();
+      try {
+        const _candidateCtx = _getCandidateContext();
+        const { data, error } = await db.functions.invoke('reason-and-narrate', {
+          body: {
+            extraction_json:   extractionJson,
+            candidate_context: _candidateCtx,
+            jd_text:           jdText || '',
+            provider:          _p,
+            verbosity_mode:    _vm,
+          },
+        });
+        if (error) {
+          console.error('[reason-and-narrate invoke error]', error);
+          _logUsageEvent({
+            event_type:     'ai_analysis',
+            feature_key:    'reason_and_narrate',
+            provider:       _p,
+            route:          'reason-and-narrate',
+            request_type:   'edge_function',
+            status:         'error',
+            latency_ms:     Math.round(performance.now() - _t0),
+            metadata:       { error_message: error.message || String(error) },
+          });
+          return null;
+        }
+        if (!data?.narrative) {
+          console.warn('[reason-and-narrate] no narrative in response', data);
+          return null;
+        }
+
+        const narrative = data.narrative;
+        const _usage    = data.usage || {};
+
+        // ── Em-dash cleanup (mirrors callNarrativeAPI) ───────────────────
+        (function _stripEmDashes(obj) {
+          if (!obj || typeof obj !== 'object') return;
+          const keys = Object.keys(obj);
+          for (let i = 0; i < keys.length; i++) {
+            const k = keys[i];
+            const v = obj[k];
+            if (typeof v === 'string') {
+              obj[k] = v.replace(/—/g, ',').replace(/–/g, '-');
+            } else if (Array.isArray(v)) {
+              for (let j = 0; j < v.length; j++) {
+                if (typeof v[j] === 'string') {
+                  v[j] = v[j].replace(/—/g, ',').replace(/–/g, '-');
+                } else if (v[j] && typeof v[j] === 'object') {
+                  _stripEmDashes(v[j]);
+                }
+              }
+            } else if (v && typeof v === 'object') {
+              _stripEmDashes(v);
+            }
+          }
+        })(narrative);
+
+        // ── CV-on-clear-skip cleanup (mirrors callNarrativeAPI) ──────────
+        (function _nullCvOnClearSkip() {
+          const dec = narrative.decision;
+          if (!dec || !dec.paragraphs || !Array.isArray(dec.paragraphs)) return;
+          const decText = dec.paragraphs.join(' ').toLowerCase();
+          const isClearSkip   = /\bskip this\b|\bnot a decision\b|\bhard blocker|\bautomatic skip|\bdisqualif|\bnot advised\b/.test(decText);
+          const isConditional = /\bif\b.{5,80}\bpursue\b|\bif\b.{5,80}\bworth exploring\b/.test(decText);
+          if (isClearSkip && !isConditional) {
+            narrative.recommended_cv = null;
+            narrative.why_that_cv = null;
+          }
+        })();
+
+        // ── Defensive section-framing patches (mirrors callNarrativeAPI) ─
+        // The merged prompt already requires these fields, but the same
+        // defensive net is kept here for parity with the Deep path.
+        const _isStr = (v) => typeof v === 'string' && v.trim().length > 0;
+        if (!_isStr(narrative.final_note)) {
+          narrative.final_note = 'Use this as context, not a verdict.';
+          console.log('[reason-and-narrate] patched missing final_note');
+        }
+        let _framingPatched = false;
+        const _w4 = narrative.what_you_would_actually_do;
+        if (_w4 && typeof _w4 === 'object' && !_isStr(_w4.framing)) {
+          _w4.framing = 'Most of the work appears to be hands-on delivery against the role requirements.';
+          _framingPatched = true;
+        }
+        const _r = narrative.risks_and_unknowns;
+        if (_r && typeof _r === 'object') {
+          if (!_isStr(_r.stated_intro)) {
+            const hasStated = Array.isArray(_r.stated) && _r.stated.length > 0;
+            _r.stated_intro = hasStated ? 'Stated:' : 'No major risks are explicitly stated.';
+            _framingPatched = true;
+          }
+          if (!Array.isArray(_r.stated))   _r.stated = [];
+          if (!Array.isArray(_r.inferred)) _r.inferred = [];
+        }
+        const _w5 = narrative.what_they_really_need_from_you;
+        if (_w5 && typeof _w5 === 'object') {
+          const hasParas   = Array.isArray(_w5.paragraphs) && _w5.paragraphs.length > 0;
+          const hasBullets = Array.isArray(_w5.bullets) && _w5.bullets.some(b => _isStr(b));
+          if (!hasParas && !hasBullets) {
+            _w5.bullets = ['Read the role requirements and confirm the practical details before progressing.'];
+            _framingPatched = true;
+          }
+        }
+        if (_framingPatched) console.log('[reason-and-narrate] patched missing section framing');
+
+        // ── Strict validation ────────────────────────────────────────────
+        const _valid = _validateNarrative(narrative);
+        if (!_valid.ok) {
+          console.warn('[reason-and-narrate] validation failed:', _valid.reasons);
+          const _err = new Error('NARRATIVE_VALIDATION_FAILED: ' + _valid.reasons.join('; '));
+          _err.code    = 'NARRATIVE_VALIDATION_FAILED';
+          _err.reasons = _valid.reasons;
+          _err.context = {
+            provider:           _p,
+            narrative_version:  _usage.reason_and_narrate_version || null,
+            reasoning_present:  false, // inline; never separately supplied
+            narrative_keys:     narrative && typeof narrative === 'object' ? Object.keys(narrative) : [],
+            path:               'fast',
+          };
+          throw _err;
+        }
+
+        // ── Provenance stamps on the narrative object ────────────────────
+        // The pipeline's _provenance build reads these.
+        narrative._narrative_version           = _usage.narrative_version              || _usage.reason_and_narrate_version || null;
+        narrative._reason_and_narrate_version  = _usage.reason_and_narrate_version     || null;
+        narrative._reason_and_narrate_provider = _usage.provider                       || _p;
+        narrative._reason_and_narrate_model    = _usage.model                          || null;
+        // Mirror narrative_provider/model so downstream consumers that only
+        // read _narrative_provider / _narrative_model still see something.
+        narrative._narrative_provider          = _usage.provider                       || _p;
+        narrative._narrative_model             = _usage.model                          || null;
+
+        console.log('[AI] reason-and-narrate → ' + (narrative._reason_and_narrate_provider || 'unknown') + ':' + (narrative._reason_and_narrate_model || 'unknown'));
+
+        _logUsageEvent({
+          event_type:     'ai_analysis',
+          feature_key:    'reason_and_narrate',
+          provider:       _usage.provider || _p,
+          route:          'reason-and-narrate',
+          request_type:   'edge_function',
+          status:         'success',
+          latency_ms:     Math.round(performance.now() - _t0),
+          model:          _usage.model || null,
+          input_tokens:   _usage.input_tokens || null,
+          output_tokens:  _usage.output_tokens || null,
+          metadata: {
+            schema_failures:           _usage.schema_failures || null,
+            reason_and_narrate_version: _usage.reason_and_narrate_version || null,
+            verbosity_mode:            _vm,
+            title_tier_detected:       _usage.title_tier_detected || null,
+            cv_capped:                 _usage.cv_capped || null,
+          },
+        });
+
+        return narrative;
+      } catch (err) {
+        // Re-throw typed validation errors so the pipeline's outer catch
+        // can capture structured _narrative_error. Other errors return null.
+        if (err && err.code === 'NARRATIVE_VALIDATION_FAILED') throw err;
+        console.warn('[reason-and-narrate] failed', err);
+        _logUsageEvent({
+          event_type:     'ai_analysis',
+          feature_key:    'reason_and_narrate',
+          provider:       _p,
+          route:          'reason-and-narrate',
           request_type:   'edge_function',
           status:         'error',
           latency_ms:     Math.round(performance.now() - _t0),
