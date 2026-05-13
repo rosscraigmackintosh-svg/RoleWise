@@ -20390,6 +20390,32 @@ a.rw-rail-contact-name:hover {
 .rwc-card li { margin-bottom: 4px; line-height: 1.5; }
 .rwc-card li:last-child { margin-bottom: 0; }
 
+/* Prose paragraphs inside a bot bubble — first-read prose flows here */
+.rwc-msg-bot .rwc-bubble > p {
+  margin: 0 0 10px;
+  line-height: 1.55;
+  font-size: 14px;
+}
+.rwc-msg-bot .rwc-bubble > p:last-child { margin-bottom: 0; }
+
+/* Soft list-lead label used for "Worth knowing:" / "Worth asking:" */
+.rwc-list-lead {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--text-secondary, #4a4a48);
+  margin: 12px 0 6px;
+}
+.rwc-list-lead:first-child { margin-top: 0; }
+
+.rwc-msg-bot .rwc-bubble > ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+.rwc-msg-bot .rwc-bubble > ul:last-child { margin-bottom: 0; }
+.rwc-msg-bot .rwc-bubble > ul li { margin-bottom: 4px; line-height: 1.5; }
+.rwc-msg-bot .rwc-bubble > ul li:last-child { margin-bottom: 0; }
+
 .rwc-facts {
   display: grid;
   grid-template-columns: max-content 1fr;

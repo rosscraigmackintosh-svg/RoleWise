@@ -25973,6 +25973,19 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         'overview', 'summary', 'description', 'duties', 'responsibilities',
         'qualifications', 'benefits', 'package', 'what we offer',
         'about the role', 'about the job', 'about the company', 'about us',
+        // Job-board navigation chrome — pasted from LinkedIn / Indeed /
+        // Welcome to the Jungle / Otta etc. These are nav labels, not
+        // companies. Adding them here suppresses values like "Search for
+        // jobs" being promoted to company_name on noisy pastes.
+        'search for jobs', 'search jobs', 'find jobs', 'browse jobs',
+        'back to jobs', 'back to search', 'back to results', 'back',
+        'apply now', 'easy apply', 'apply for this job', 'apply with linkedin',
+        'job details', 'job description', 'full job description',
+        'job overview', 'job summary', 'view job', 'see more',
+        'careers', 'career', 'all jobs', 'open roles', 'open positions',
+        'positions', 'vacancies', 'opportunities', 'opening',
+        'hiring', 'we are hiring', "we're hiring", 'now hiring',
+        'sign in', 'log in', 'sign up', 'register', 'create account',
       ]);
       const _companyLocWords  = ['remote', 'hybrid', 'united kingdom', 'london'];
       const _isValidCompany = c => {
@@ -34109,69 +34122,66 @@ If a field cannot be determined from the message, return null for that field.`,
       // 10. Render things-to-check bubble (risks + questions)
       _chatIngestAppendBot(_chatIngestRenderCheckBody(narrative));
 
-      // 11. Reveal CTA bar
+      // 11. Final conversational close + reveal CTA bar
+      _chatIngestAppendBot(`<p class="rwc-bubble-intro">Save this role?</p>`);
       const _ctaBar = document.getElementById('rwc-cta-bar');
       if (_ctaBar) _ctaBar.removeAttribute('hidden');
     }
 
     function _chatIngestRenderFactsBody(f) {
+      // Facts ARE tabular data — keeping the dl is appropriate. Only the
+      // intro and the wrapping bubble change to feel like a calm read-back.
       const _row = (k, v, missing) => `<dt>${esc(k)}</dt><dd${missing ? ' class="is-missing"' : ''}>${esc(v || 'Not stated')}</dd>`;
       const _ir35Suffix = f.ir35 && f.ir35 !== 'Not applicable' ? ` (${f.ir35})` : '';
       const _salaryDisplay = f.salary ? f.salary + _ir35Suffix : null;
       return `
         <p class="rwc-bubble-intro">I've found the basics.</p>
-        <div class="rwc-card">
-          <dl class="rwc-facts">
-            ${_row('Title', f.title, !f.title)}
-            ${_row('Company', f.company, !f.company)}
-            ${_row('Location', f.location, !f.location)}
-            ${_row('Work model', f.workModel, !f.workModel)}
-            ${_row('Type', f.engagement, !f.engagement)}
-            ${_row('Salary', _salaryDisplay, !_salaryDisplay)}
-          </dl>
-        </div>
+        <dl class="rwc-facts">
+          ${_row('Title', f.title, !f.title)}
+          ${_row('Company', f.company, !f.company)}
+          ${_row('Location', f.location, !f.location)}
+          ${_row('Work model', f.workModel, !f.workModel)}
+          ${_row('Type', f.engagement, !f.engagement)}
+          ${_row('Salary', _salaryDisplay, !_salaryDisplay)}
+        </dl>
       `;
     }
 
     function _chatIngestRenderFirstReadBody(narr) {
+      // No card chrome here. Fit reality and decision read as flowing prose,
+      // led by a single conversational opener. Section labels are stripped so
+      // the chat doesn't feel like a JSON dump pasted into a bubble.
       const _esc = esc;
-      const _para = (s) => `<p>${_esc(_sanitizeUiText(s))}</p>`;
       const _fitParas = Array.isArray(narr?.fit_reality?.paragraphs) ? narr.fit_reality.paragraphs.filter(Boolean) : [];
       const _decisionSummary = narr?.decision?.summary ? _sanitizeUiText(narr.decision.summary) : '';
+      const _allParas = _fitParas.map(p => _sanitizeUiText(p));
+      if (_decisionSummary) _allParas.push(_decisionSummary);
       return `
-        <p class="rwc-bubble-intro">Here's the first read.</p>
-        ${_fitParas.length ? `
-          <div class="rwc-card">
-            <h3 class="rwc-card-title">Fit reality</h3>
-            ${_fitParas.map(_para).join('')}
-          </div>` : ''}
-        ${_decisionSummary ? `
-          <div class="rwc-card">
-            <h3 class="rwc-card-title">Decision</h3>
-            <p>${_esc(_decisionSummary)}</p>
-          </div>` : ''}
+        <p class="rwc-bubble-intro">Here's the role read.</p>
+        ${_allParas.map(p => `<p>${_esc(p)}</p>`).join('')}
       `;
     }
 
     function _chatIngestRenderCheckBody(narr) {
+      // Watch-outs + worth-asking. Softer labels than the saved JSON ("Risks"
+      // becomes "Worth knowing"; "Questions worth asking" becomes "Worth
+      // asking"). The saved 11-section row is unchanged — this is chat
+      // presentation only.
       const _esc = esc;
+      const _toText = (s) => _sanitizeUiText(typeof s === 'string' ? s : (s?.text || String(s)));
       const _inferred = Array.isArray(narr?.risks_and_unknowns?.inferred) ? narr.risks_and_unknowns.inferred.filter(Boolean) : [];
       const _qs       = Array.isArray(narr?.questions_worth_asking)       ? narr.questions_worth_asking.filter(Boolean)       : [];
       if (!_inferred.length && !_qs.length) {
-        return `<p class="rwc-bubble-intro">No specific risks or questions surfaced from the JD.</p>`;
+        return `<p class="rwc-bubble-intro">Nothing major to flag from the JD itself.</p>`;
       }
       return `
         <p class="rwc-bubble-intro">A few things to check.</p>
         ${_inferred.length ? `
-          <div class="rwc-card">
-            <h3 class="rwc-card-title">Risks</h3>
-            <ul>${_inferred.map(s => `<li>${_esc(_sanitizeUiText(typeof s === 'string' ? s : (s?.text || String(s))))}</li>`).join('')}</ul>
-          </div>` : ''}
+          <p class="rwc-list-lead">Worth knowing:</p>
+          <ul>${_inferred.map(s => `<li>${_esc(_toText(s))}</li>`).join('')}</ul>` : ''}
         ${_qs.length ? `
-          <div class="rwc-card">
-            <h3 class="rwc-card-title">Questions worth asking</h3>
-            <ul>${_qs.map(s => `<li>${_esc(_sanitizeUiText(typeof s === 'string' ? s : (s?.text || String(s))))}</li>`).join('')}</ul>
-          </div>` : ''}
+          <p class="rwc-list-lead">Worth asking:</p>
+          <ul>${_qs.map(s => `<li>${_esc(_toText(s))}</li>`).join('')}</ul>` : ''}
       `;
     }
 
