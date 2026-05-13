@@ -33858,10 +33858,7 @@ If a field cannot be determined from the message, return null for that field.`,
             <button class="rwc-back" type="button" id="rwc-back">← Back</button>
           </header>
           <div class="rwc-stream" id="rwc-stream" aria-live="polite"></div>
-          <div class="rwc-cta-bar" id="rwc-cta-bar" hidden>
-            <button class="rwc-btn" type="button" id="rwc-cta-save">Save as role</button>
-            <button class="rwc-btn rwc-btn--primary" type="button" id="rwc-cta-open">Open full analysis</button>
-          </div>
+          <div class="rwc-cta-bar" id="rwc-cta-bar" hidden></div>
           <div class="rwc-composer" id="rwc-composer">
             <textarea
               class="rwc-composer-textarea"
@@ -33884,9 +33881,7 @@ If a field cannot be determined from the message, return null for that field.`,
       const _ta        = document.getElementById('rwc-composer-textarea');
       const _submitBtn = document.getElementById('rwc-submit');
       const _composer  = document.getElementById('rwc-composer');
-      const _ctaBar    = document.getElementById('rwc-cta-bar');
-      const _ctaSave   = document.getElementById('rwc-cta-save');
-      const _ctaOpen   = document.getElementById('rwc-cta-open');
+      // CTA buttons are rendered dynamically by _chatIngestRenderCtaBar (Step 3+).
 
       // Opening assistant bubble — keeps the surface from feeling empty.
       _chatIngestAppendBot(`<p class="rwc-bubble-intro">Paste a job description below. I'll read it, surface the basics, then give you a first read.</p>`);
@@ -33915,8 +33910,8 @@ If a field cannot be determined from the message, return null for that field.`,
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); _onSubmit(); }
       });
 
-      _ctaSave?.addEventListener('click', () => _chatIngestFinalize('save'));
-      _ctaOpen?.addEventListener('click', () => _chatIngestFinalize('open'));
+      // CTA listeners are wired by _chatIngestRenderCtaBar each time it
+      // re-renders the bar (per-state listeners avoid stale closures).
 
       setTimeout(() => _ta.focus(), 60);
     }
@@ -34063,33 +34058,14 @@ If a field cannot be determined from the message, return null for that field.`,
       // 3. "Reading the role..." placeholder
       const _readPending = _chatIngestPending("Reading the role…");
 
-      // 4. Insert the role + jd_match row via the shared persist helper.
-      //    Step 2: extracted from inline. Still called at submit time (same
-      //    behaviour as Step 1). Step 3 will defer this to the Save CTA.
-      let savedRole = null;
-      let _matchId  = null;
-      try {
-        const persisted = await _chatSessionPersist({
-          jd_raw, jd_clean, jd, meta: _meta,
-          ir35: _ir35, day_rate_text: _dayRate, engagement_type: _engType, contract_length: _contractLen,
-          // No analysis available yet — output_json starts with the running placeholder.
-          initialOutputJson: { _analysis_mode: 'fast', _pipeline: { status: 'running', analysis_mode: 'fast', stages: { extract: 'complete', pass1: 'queued', reasoning: 'queued', narrative: 'queued', validation: 'queued' }, timings: {}, errors: [] } },
-        });
-        savedRole = persisted.role;
-        _matchId  = persisted.match.id;
-        _chatIngestState.savedRoleId = savedRole.id;
-        _chatIngestState.savedMatchId = _matchId;
-        if (_chatSession) {
-          _chatSession.saved_role     = savedRole;
-          _chatSession.saved_role_id  = savedRole.id;
-          _chatSession.saved_match_id = _matchId;
-          _chatSessionTouch();
-        }
-      } catch (e) {
-        console.error('[chat-ingest] persist failed', e);
-        _chatIngestReplacePending(_readPending, `<p class="rwc-bubble-intro">Couldn't save the role record. Try the standard Add Role flow.</p>`);
-        return;
-      }
+      // Step 3: persistence DEFERRED to the Save CTA. The Fast pipeline now
+      // runs entirely in memory; rows only land in the database when the
+      // user explicitly chooses Save or Open. _chatSessionPersist is now
+      // called from _chatIngestSave (CTA handler) using analysis stored on
+      // _chatSession.
+      //
+      // Legacy _chatIngestState.savedRoleId / savedMatchId are kept on the
+      // state for compatibility but will be populated only AFTER save.
 
       // 5. Render facts card now we have local metadata
       _chatIngestReplacePending(_readPending, _chatIngestRenderFactsBody({
@@ -34199,17 +34175,12 @@ If a field cannot be determined from the message, return null for that field.`,
         retry_count:  0,
       };
 
-      try {
-        const _persist = Object.assign({}, analysis);
-        delete _persist._aiPromise;
-        delete _persist._narrativePromise;
-        await db.from('jd_matches').update({ output_json: _persist }).eq('id', _matchId);
-      } catch (e) {
-        console.warn('[chat-ingest] persist final analysis failed (non-fatal)', e);
-      }
+      // Step 3: analysis stays in memory. No DB writes here. Persistence is
+      // deferred to _chatIngestSave (Save CTA) so the user can read the
+      // analysis before deciding whether to keep it.
 
       _chatIngestState.analysis = analysis;
-      _chatIngestState.savedRole = savedRole;
+      _chatIngestState.savedRole = null; // not persisted yet at this point
       // Step 1: mirror into the canonical session.
       if (_chatSession) {
         _chatSession.analysis  = analysis;
@@ -34229,8 +34200,9 @@ If a field cannot be determined from the message, return null for that field.`,
       // 10. Render things-to-check bubble (risks + questions)
       _chatIngestAppendBot(_chatIngestRenderCheckBody(narrative));
 
-      // 11. Final conversational close + reveal CTA bar
+      // 11. Final conversational close + reveal CTA bar with status-driven content
       _chatIngestAppendBot(`<p class="rwc-bubble-intro">Save this role?</p>`);
+      _chatIngestRenderCtaBar();
       const _ctaBar = document.getElementById('rwc-cta-bar');
       if (_ctaBar) _ctaBar.removeAttribute('hidden');
     }
@@ -34292,38 +34264,151 @@ If a field cannot be determined from the message, return null for that field.`,
       `;
     }
 
-    function _chatIngestFinalize(action) {
-      const st = _chatIngestState;
-      if (!st || !st.savedRoleId) return;
-
-      if (action === 'save') {
-        console.log('[chat-ingest] SAVED_AS_ROLE', { role_id: st.savedRoleId });
-        // The role is already persisted. Just refresh the cache and stay put.
-        Promise.resolve(refresh && refresh()).catch(() => {});
-        // Inline feedback so the user knows the click landed.
-        const bar = document.getElementById('rwc-cta-bar');
-        if (bar) {
-          bar.innerHTML = `<span class="rwc-composer-hint">Saved · the role is in your Roles list.</span>`;
-        }
-        return;
+    // ─── Save: persist the in-memory analysis now ───────────────────────────
+    // Step 3: this is the new persistence point. Called when the user clicks
+    // the Save CTA (or implicitly via Open). Idempotent — if the session is
+    // already saved, returns the cached row without re-inserting.
+    //
+    // Returns the savedRole on success; throws on persistence failure.
+    async function _chatIngestSave() {
+      const s = _chatSession;
+      if (!s || s.status !== 'ready' && s.status !== 'failed') {
+        // Save called from the wrong state — ignore silently.
+        return s?.saved_role || null;
+      }
+      if (s.saved_role && s.saved_role_id) {
+        // Already persisted (e.g. user clicked Save then Open). Idempotent.
+        return s.saved_role;
       }
 
-      // action === 'open' — navigate to the role analysis page
-      console.log('[chat-ingest] OPEN_ROLE', { role_id: st.savedRoleId });
-      const _injected = Object.assign({}, st.savedRole, { latest_match_output: st.analysis });
+      s.status = 'saving';
+      _chatSessionTouch();
+
+      try {
+        const persisted = await _chatSessionPersist({
+          jd_raw:         s.jd_raw,
+          jd_clean:       s.jd_clean,
+          jd:             s.jd,
+          meta:           s.meta,
+          ir35:           s.ir35_status,
+          day_rate_text:  s.day_rate_text,
+          engagement_type: s.engagement_type,
+          contract_length: s.contract_length,
+          initialOutputJson: _chatSessionBuildOutputJson(s.analysis),
+        });
+        s.saved_role     = persisted.role;
+        s.saved_role_id  = persisted.role.id;
+        s.saved_match_id = persisted.match.id;
+        s.save_error     = null;
+        s.status         = 'saved';
+        _chatSessionTouch();
+
+        // Mirror onto the legacy state object (still read by some paths until
+        // Step 6 removes the legacy state entirely).
+        _chatIngestState.savedRoleId  = persisted.role.id;
+        _chatIngestState.savedMatchId = persisted.match.id;
+        _chatIngestState.savedRole    = persisted.role;
+
+        console.log('[chat-ingest] SAVED_AS_ROLE', { role_id: persisted.role.id });
+        Promise.resolve(refresh && refresh()).catch(() => {});
+        return persisted.role;
+      } catch (e) {
+        s.status     = 'failed';
+        s.save_error = e?.message || String(e);
+        _chatSessionTouch();
+        console.error('[chat-ingest] save failed', e);
+        throw e;
+      }
+    }
+
+    // ─── Build the output_json payload from the in-memory analysis ──────────
+    // The analysis object already carries _narrative, _pipeline, _provenance,
+    // _completion_check, etc. We strip transient Promise references that
+    // can't be JSON-serialised before returning the persistable shape.
+    function _chatSessionBuildOutputJson(analysis) {
+      if (!analysis) {
+        return { _analysis_mode: 'fast', _pipeline: { status: 'failed', analysis_mode: 'fast', stages: { extract: 'complete', pass1: 'failed', reasoning: 'failed', narrative: 'failed', validation: 'failed' }, timings: {}, errors: [{ stage: 'submit', code: 'NO_ANALYSIS' }] } };
+      }
+      const _persist = Object.assign({}, analysis);
+      delete _persist._aiPromise;
+      delete _persist._narrativePromise;
+      return _persist;
+    }
+
+    // ─── Open: navigate to the standard role analysis page ─────────────────
+    // Open implies Save. If the session isn't saved yet, save first; if save
+    // fails, surface the error and do NOT navigate.
+    async function _chatIngestOpen() {
+      const s = _chatSession;
+      if (!s) return;
+
+      // Save first if not yet saved. Open implies Save (per the plan).
+      if (!s.saved_role_id) {
+        try {
+          await _chatIngestSave();
+        } catch (_e) {
+          // Save failed; _chatIngestSave already surfaced the error state.
+          // Do not navigate.
+          _chatIngestRenderCtaBar();
+          return;
+        }
+      }
+
+      console.log('[chat-ingest] OPEN_ROLE', { role_id: s.saved_role_id });
+      const _injected = Object.assign({}, s.saved_role, { latest_match_output: s.analysis });
       try {
         if (typeof allRoles !== 'undefined' && Array.isArray(allRoles)) {
-          const _idx = allRoles.findIndex(r => r.id === st.savedRoleId);
+          const _idx = allRoles.findIndex(r => r.id === s.saved_role_id);
           if (_idx >= 0) allRoles[_idx] = _injected;
           else            allRoles.unshift(_injected);
         }
       } catch (_e) { /* non-fatal */ }
-      selectedRoleId = st.savedRoleId;
+      selectedRoleId = s.saved_role_id;
       if (typeof currentNav !== 'undefined') currentNav = 'applications';
       _setAppFilter && _setAppFilter('active');
       _syncNavActive && _syncNavActive();
       if (typeof renderAnalysisView === 'function') renderAnalysisView(_injected);
       Promise.resolve(refresh && refresh()).catch(() => {});
+    }
+
+    // ─── Discard: drop in-memory analysis, no DB writes ─────────────────────
+    // Step 3 stub. Inline confirmation + localStorage shadow clearing lands
+    // in Step 4. For now: clear the session and re-render the empty chat
+    // surface so the user can start a fresh paste.
+    function _chatIngestDiscard() {
+      console.log('[chat-ingest] DISCARDED', { had_analysis: !!_chatSession?.analysis });
+      _chatSession      = null;
+      _chatIngestState  = null;
+      // Re-render the view from scratch.
+      renderChatIngestView();
+    }
+
+    // ─── CTA bar renderer (status-aware) ────────────────────────────────────
+    // Step 3: minimal version. Step 5 adds Saving/Saved/Failed inline states.
+    function _chatIngestRenderCtaBar() {
+      const bar = document.getElementById('rwc-cta-bar');
+      if (!bar || !_chatSession) return;
+      const s = _chatSession;
+
+      if (s.status === 'saved') {
+        bar.innerHTML = `<span class="rwc-composer-hint">Saved · the role is in your Roles list.</span><button class="rwc-btn rwc-btn--primary" type="button" id="rwc-cta-open">Open full analysis</button>`;
+        bar.querySelector('#rwc-cta-open')?.addEventListener('click', () => _chatIngestOpen());
+      } else if (s.status === 'failed') {
+        bar.innerHTML = `<span class="rwc-composer-hint" style="color:var(--red,#c0392b);">Save failed: ${esc(s.save_error || 'unknown error')}</span><button class="rwc-btn" type="button" id="rwc-cta-retry">Retry save</button>`;
+        bar.querySelector('#rwc-cta-retry')?.addEventListener('click', () => _chatIngestSave().then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar()));
+      } else if (s.status === 'saving') {
+        bar.innerHTML = `<span class="rwc-composer-hint">Saving…</span>`;
+      } else {
+        // ready
+        bar.innerHTML = `
+          <button class="rwc-btn" type="button" id="rwc-cta-discard">Discard</button>
+          <button class="rwc-btn" type="button" id="rwc-cta-save">Save as role</button>
+          <button class="rwc-btn rwc-btn--primary" type="button" id="rwc-cta-open">Open full analysis</button>
+        `;
+        bar.querySelector('#rwc-cta-discard')?.addEventListener('click', () => _chatIngestDiscard());
+        bar.querySelector('#rwc-cta-save')?.addEventListener('click', () => _chatIngestSave().then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar()));
+        bar.querySelector('#rwc-cta-open')?.addEventListener('click', () => _chatIngestOpen());
+      }
     }
 
     // ─── Weekly Review v2 ─────────────────────────────────────────────────────
