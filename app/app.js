@@ -33024,6 +33024,7 @@ If a field cannot be determined from the message, return null for that field.`,
           </div>
           <div class="rwo-header-actions">
             <button class="rwo-btn" data-rwo-range disabled aria-label="Time range">This week</button>
+            <button class="rwo-btn rwo-btn--chat" data-rwo-chat-add type="button" aria-label="Add chat role">Add chat role</button>
             <button class="rwo-btn rwo-btn--primary" data-rwo-add aria-label="Add role"><span class="rwo-plus" aria-hidden="true"></span>Add role</button>
           </div>
         </header>`;
@@ -33068,6 +33069,10 @@ If a field cannot be determined from the message, return null for that field.`,
         btn.addEventListener('click', () => {
           if (typeof openIngestionOverlay === 'function') openIngestionOverlay({ context: 'add' });
         });
+      });
+      // Add chat role → switch to the experimental chat ingest view
+      el.querySelectorAll('[data-rwo-chat-add]').forEach(btn => {
+        btn.addEventListener('click', () => switchNav('chat-ingest'));
       });
 
       // Role row click → switch to Applications and open the role
@@ -33302,6 +33307,7 @@ If a field cannot be determined from the message, return null for that field.`,
                 <p class="rwr-sub">${_all.length} ${_all.length === 1 ? 'role' : 'roles'} in your pipeline</p>
               </div>
               <div class="rwr-header-actions">
+                <button class="rwo-btn rwo-btn--chat" data-rwr-chat-add type="button" aria-label="Add chat role">Add chat role</button>
                 <button class="rwo-btn rwo-btn--primary" data-rwr-add type="button"><span class="rwo-plus" aria-hidden="true"></span>Add role</button>
               </div>
             </header>
@@ -33332,6 +33338,9 @@ If a field cannot be determined from the message, return null for that field.`,
         btn.addEventListener('click', () => {
           if (typeof openIngestionOverlay === 'function') openIngestionOverlay({ context: 'add' });
         });
+      });
+      el.querySelectorAll('[data-rwr-chat-add]').forEach(btn => {
+        btn.addEventListener('click', () => switchNav('chat-ingest'));
       });
       // Card click → open role analysis as a focused reading surface.
       // No inbox panel is mounted: Roles v2 is the canonical archive, and
@@ -33690,6 +33699,7 @@ If a field cannot be determined from the message, return null for that field.`,
                 <p class="rwa-sub"><span class="rwa-num">${_activeCount}</span> active ${_activeCount === 1 ? 'application' : 'applications'}</p>
               </div>
               <div class="rwa-header-actions">
+                <button class="rwo-btn rwo-btn--chat" data-rwa-chat-add type="button" aria-label="Add chat role">Add chat role</button>
                 <button class="rwo-btn rwo-btn--primary" data-rwa-add type="button"><span class="rwo-plus" aria-hidden="true"></span>Add role</button>
               </div>
             </header>
@@ -33732,6 +33742,9 @@ If a field cannot be determined from the message, return null for that field.`,
           if (typeof openIngestionOverlay === 'function') openIngestionOverlay({ context: 'add' });
         });
       });
+      el.querySelectorAll('[data-rwa-chat-add]').forEach(btn => {
+        btn.addEventListener('click', () => switchNav('chat-ingest'));
+      });
       el.querySelectorAll('.rwa-card').forEach(card => {
         card.addEventListener('click', () => {
           const id = card.dataset.roleId;
@@ -33746,6 +33759,443 @@ If a field cannot be determined from the message, return null for that field.`,
           }
         });
       });
+    }
+
+    // ─── Chat ingest view (experimental) ──────────────────────────────────────
+    // Alternative paste surface that runs the existing Fast pipeline and
+    // renders results conversationally. The existing Add Role overlay flow
+    // is untouched. Save / Open hand off to the same role analysis page.
+    //
+    // Reuses: extractJDMetadata, cleanJobDescription, callAnalysisAPI,
+    //         callReasonAndNarrateAPI, _computeVerbosityMode,
+    //         _runCompletionCheck, normaliseLocation, renderAnalysisView.
+    // Skips for v1 (out of scope): recruiter detection, URL fetch,
+    //                              duplicate detection, animator polling.
+    let _chatIngestState = null;
+
+    function renderChatIngestView() {
+      console.log('[chat-ingest] START');
+      const el = document.getElementById('col-overview-cards');
+      if (!el) return;
+      el.classList.remove('col-ov--legacy-doc');
+      document.getElementById('col-chat')?.classList.remove('ws-active');
+      const stickyEl = document.getElementById('role-sticky-header');
+      if (stickyEl) { stickyEl.style.display = 'none'; stickyEl.innerHTML = ''; }
+
+      _chatIngestState = {
+        submitted: false,
+        analysis:  null,
+        savedRoleId: null,
+        savedMatchId: null,
+      };
+
+      el.innerHTML = `
+        <div class="rwc-page" id="rwc-page">
+          <header class="rwc-header">
+            <div class="rwc-header-left">
+              <h1 class="rwc-title">Chat ingest</h1>
+              <span class="rwc-tag">Experimental</span>
+            </div>
+            <button class="rwc-back" type="button" id="rwc-back">← Back</button>
+          </header>
+          <div class="rwc-stream" id="rwc-stream" aria-live="polite"></div>
+          <div class="rwc-cta-bar" id="rwc-cta-bar" hidden>
+            <button class="rwc-btn" type="button" id="rwc-cta-save">Save as role</button>
+            <button class="rwc-btn rwc-btn--primary" type="button" id="rwc-cta-open">Open full analysis</button>
+          </div>
+          <div class="rwc-composer" id="rwc-composer">
+            <textarea
+              class="rwc-composer-textarea"
+              id="rwc-composer-textarea"
+              placeholder="Paste a job description here, then submit."
+              autocomplete="off"
+              spellcheck="false"
+            ></textarea>
+            <div class="rwc-composer-row">
+              <span class="rwc-composer-hint">⌘+Enter to submit · uses Fast pipeline</span>
+              <div class="rwc-composer-actions">
+                <button class="rwc-btn rwc-btn--primary" type="button" id="rwc-submit">Submit</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const _streamEl  = document.getElementById('rwc-stream');
+      const _ta        = document.getElementById('rwc-composer-textarea');
+      const _submitBtn = document.getElementById('rwc-submit');
+      const _composer  = document.getElementById('rwc-composer');
+      const _ctaBar    = document.getElementById('rwc-cta-bar');
+      const _ctaSave   = document.getElementById('rwc-cta-save');
+      const _ctaOpen   = document.getElementById('rwc-cta-open');
+
+      // Opening assistant bubble — keeps the surface from feeling empty.
+      _chatIngestAppendBot(`<p class="rwc-bubble-intro">Paste a job description below. I'll read it, surface the basics, then give you a first read.</p>`);
+
+      document.getElementById('rwc-back')?.addEventListener('click', () => {
+        switchNav('applications');
+      });
+
+      const _onSubmit = () => {
+        if (_chatIngestState.submitted) return;
+        const _raw = _ta.value.trim();
+        if (!_raw || _raw.length < 40) {
+          _ta.focus();
+          return;
+        }
+        _chatIngestState.submitted = true;
+        _submitBtn.disabled = true;
+        _composer.setAttribute('hidden', '');
+        _chatIngestSubmit(_raw).catch(err => {
+          console.error('[chat-ingest] submit threw', err);
+          _chatIngestAppendBot(`<p class="rwc-bubble-intro">Something went wrong reading that role. Try the standard Add Role flow.</p>`);
+        });
+      };
+      _submitBtn.addEventListener('click', _onSubmit);
+      _ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); _onSubmit(); }
+      });
+
+      _ctaSave?.addEventListener('click', () => _chatIngestFinalize('save'));
+      _ctaOpen?.addEventListener('click', () => _chatIngestFinalize('open'));
+
+      setTimeout(() => _ta.focus(), 60);
+    }
+
+    function _chatIngestAppendBot(html) {
+      const stream = document.getElementById('rwc-stream');
+      if (!stream) return null;
+      const wrap = document.createElement('div');
+      wrap.className = 'rwc-msg rwc-msg-bot';
+      wrap.innerHTML = `<div class="rwc-bubble">${html}</div>`;
+      stream.appendChild(wrap);
+      stream.scrollTop = stream.scrollHeight;
+      return wrap.querySelector('.rwc-bubble');
+    }
+
+    function _chatIngestAppendUser(html) {
+      const stream = document.getElementById('rwc-stream');
+      if (!stream) return null;
+      const wrap = document.createElement('div');
+      wrap.className = 'rwc-msg rwc-msg-user';
+      wrap.innerHTML = `<div class="rwc-bubble">${html}</div>`;
+      stream.appendChild(wrap);
+      stream.scrollTop = stream.scrollHeight;
+      return wrap.querySelector('.rwc-bubble');
+    }
+
+    function _chatIngestPending(text) {
+      const bubble = _chatIngestAppendBot(`<p class="rwc-bubble-intro">${esc(text)}</p>`);
+      if (bubble) bubble.classList.add('is-pending');
+      return bubble;
+    }
+
+    function _chatIngestReplacePending(bubble, html) {
+      if (!bubble) return;
+      bubble.classList.remove('is-pending');
+      bubble.innerHTML = html;
+      const stream = document.getElementById('rwc-stream');
+      if (stream) stream.scrollTop = stream.scrollHeight;
+    }
+
+    async function _chatIngestSubmit(rawText) {
+      const _esc = esc;
+
+      // 1. User bubble with collapsed JD preview
+      const _preview = rawText.length > 600 ? rawText.slice(0, 600) + '…' : rawText;
+      _chatIngestAppendUser(`<div class="rwc-jd-collapsed">${_esc(_preview)}</div><div class="rwc-jd-meta">${rawText.length.toLocaleString()} chars</div>`);
+
+      // 2. Local extraction
+      const jd_raw   = rawText;
+      const jd_clean = (typeof cleanJobDescription === 'function') ? cleanJobDescription(jd_raw) : jd_raw;
+      const jd       = jd_clean || jd_raw;
+      const _meta    = (typeof extractJDMetadata === 'function') ? extractJDMetadata(jd_raw, jd_clean) : {};
+      console.log('[chat-ingest] LOCAL_EXTRACT_READY', {
+        title: _meta.role_title, company: _meta.company_name,
+        location: _meta.location, salary: _meta.salary_annual,
+      });
+
+      const _company = _meta.company_name || null;
+      const _title   = _meta.role_title   || null;
+      const _location= _meta.location     || null;
+      const _wmMap   = { remote: 'Remote', hybrid: 'Hybrid', 'on-site': 'On-site', onsite: 'On-site' };
+      const _workModel = _meta.remote_model ? (_wmMap[_meta.remote_model.toLowerCase()] || _meta.remote_model) : null;
+      const _salary  = _meta.salary_annual || null;
+      const _engType = (typeof _detectEngagementType === 'function') ? _detectEngagementType(jd_raw || jd) : null;
+      const _ir35    = (typeof _detectIr35Status     === 'function') ? _detectIr35Status(jd_raw || jd, _engType) : null;
+      const _dayRate = (typeof _detectDayRateText    === 'function') ? _detectDayRateText(jd_raw || jd) : null;
+      const _contractLen = (typeof _detectContractLength === 'function') ? _detectContractLength(jd_raw || jd) : null;
+
+      // 3. "Reading the role..." placeholder
+      const _readPending = _chatIngestPending("Reading the role…");
+
+      // 4. Insert the role + jd_match row up front so we always end with a real
+      //    Rolewise row. Same shape _runIngestionFlow uses.
+      let savedRole = null;
+      let _matchId  = null;
+      try {
+        const { data: newRole, error: re } = await db.from('roles').insert({
+          company_name:        _company,
+          role_title:          _title,
+          location_text:       _location,
+          job_url:             _meta.job_url || null,
+          job_description_raw: jd_raw,
+          status:              'active',
+          work_model:          _meta.remote_model ? (_meta.remote_model.toLowerCase() === 'on-site' ? 'onsite' : _meta.remote_model.toLowerCase()) : null,
+          salary_text_raw:     _salary,
+          engagement_type:     _engType,
+          ir35_status:         _ir35,
+          day_rate_text:       _dayRate,
+          contract_length:     _contractLen,
+          source:              'chat-ingest',
+        }).select().single();
+        if (re || !newRole) throw new Error(re?.message || 'role insert failed');
+        savedRole = newRole;
+        _chatIngestState.savedRoleId = newRole.id;
+
+        const { data: newMatch, error: me } = await db.from('jd_matches').insert({
+          role_id:     newRole.id,
+          jd_text:     jd,
+          jd_text_raw: jd_raw,
+          output_json: { _analysis_mode: 'fast', _pipeline: { status: 'running', analysis_mode: 'fast', stages: { extract: 'complete', pass1: 'queued', reasoning: 'queued', narrative: 'queued', validation: 'queued' }, timings: {}, errors: [] } },
+        }).select().single();
+        if (me || !newMatch) throw new Error(me?.message || 'jd_matches insert failed');
+        _matchId = newMatch.id;
+        _chatIngestState.savedMatchId = newMatch.id;
+      } catch (e) {
+        console.error('[chat-ingest] persist failed', e);
+        _chatIngestReplacePending(_readPending, `<p class="rwc-bubble-intro">Couldn't save the role record. Try the standard Add Role flow.</p>`);
+        return;
+      }
+
+      // 5. Render facts card now we have local metadata
+      _chatIngestReplacePending(_readPending, _chatIngestRenderFactsBody({
+        title: _title, company: _company, location: _location,
+        workModel: _workModel, salary: _salary, engagement: _engType, ir35: _ir35,
+      }));
+
+      // 6. Pass 1 (analyse-jd) — return immediately with local result, AI in background
+      console.log('[chat-ingest] FAST_ANALYSIS_STARTED');
+      let analysis;
+      try {
+        analysis = await callAnalysisAPI(jd, { skipNarrativeChain: true, providerOverride: 'openai' });
+      } catch (e) {
+        console.error('[chat-ingest] callAnalysisAPI threw', e);
+        _chatIngestAppendBot(`<p class="rwc-bubble-intro">Local extraction worked, but the AI analysis call failed. The basics above are still accurate.</p>`);
+        return;
+      }
+      if (!analysis) {
+        _chatIngestAppendBot(`<p class="rwc-bubble-intro">Local extraction worked, but the AI analysis returned no result.</p>`);
+        return;
+      }
+
+      // Wait for Pass 1 AI result
+      const _firstReadPending = _chatIngestPending("Building the first read…");
+      const _pipeT0 = performance.now();
+      let aiResult;
+      try {
+        aiResult = await Promise.race([
+          analysis._aiPromise,
+          new Promise((_, rej) => setTimeout(() => rej(new Error('pass1 timeout')), 60_000)),
+        ]);
+      } catch (e) {
+        console.error('[chat-ingest] pass1 await failed', e);
+        _chatIngestReplacePending(_firstReadPending, `<p class="rwc-bubble-intro">AI extraction failed: ${esc(e.message || String(e))}</p>`);
+        return;
+      }
+      if (!aiResult) {
+        _chatIngestReplacePending(_firstReadPending, `<p class="rwc-bubble-intro">AI extraction returned nothing.</p>`);
+        return;
+      }
+      Object.assign(analysis, aiResult, { _aiPromise: undefined });
+      analysis._aiProvider = 'openai';
+      const _pass1Ms = Math.round(performance.now() - _pipeT0);
+
+      // 7. Fast path: reason-and-narrate (combined call)
+      const _verbosityMode = (typeof _computeVerbosityMode === 'function')
+        ? _computeVerbosityMode(jd, null)
+        : 'standard';
+      analysis._analysis_mode = 'fast';
+      analysis._verbosity_mode = _verbosityMode;
+
+      const _fT0 = performance.now();
+      let narrative = null;
+      try {
+        if (typeof callReasonAndNarrateAPI === 'function') {
+          narrative = await callReasonAndNarrateAPI(analysis, jd, {
+            providerOverride: 'openai',
+            verbosityMode:    _verbosityMode,
+          });
+        }
+      } catch (e) {
+        console.error('[chat-ingest] reason-and-narrate threw', e);
+        _chatIngestReplacePending(_firstReadPending, `<p class="rwc-bubble-intro">The combined analysis call failed: ${esc(e.message || String(e))}</p>`);
+        return;
+      }
+      const _fMs = Math.round(performance.now() - _fT0);
+      if (!narrative) {
+        _chatIngestReplacePending(_firstReadPending, `<p class="rwc-bubble-intro">The combined analysis returned nothing.</p>`);
+        return;
+      }
+      analysis._narrative = narrative;
+
+      // 8. Build provenance + pipeline state and persist
+      analysis._provenance = {
+        provider:               'openai',
+        analysis_mode:          'fast',
+        pipeline_path:          'fast',
+        analyse_jd_version:     analysis._analyse_jd_version     || null,
+        analyse_jd_provider:    analysis._analyse_jd_provider    || null,
+        analyse_jd_model:       analysis._analyse_jd_model       || null,
+        role_reasoning_version: null,
+        reasoning_provider:     null,
+        reasoning_model:        null,
+        narrative_version:      narrative._narrative_version     || null,
+        narrative_provider:     narrative._narrative_provider    || null,
+        narrative_model:        narrative._narrative_model       || null,
+        reason_and_narrate_version:  narrative._reason_and_narrate_version  || null,
+        reason_and_narrate_provider: narrative._reason_and_narrate_provider || null,
+        reason_and_narrate_model:    narrative._reason_and_narrate_model    || null,
+      };
+      analysis._completion_check = _runCompletionCheck(analysis);
+      analysis._pipeline = {
+        status:        analysis._completion_check.passed ? 'complete' : 'partial',
+        analysis_mode: 'fast',
+        stages: {
+          extract:    'complete',
+          pass1:      'complete',
+          reasoning:  'merged',
+          narrative:  'complete',
+          validation: analysis._completion_check.passed ? 'complete' : 'failed',
+        },
+        timings:      { analyse_jd_ms: _pass1Ms, reasoning_ms: 0, narrative_ms: _fMs, total_ms: Math.round(performance.now() - _pipeT0) },
+        errors:       (analysis._completion_check.reasons || []).map(r => ({ stage: 'validation', code: r })),
+        started_at:   new Date().toISOString(),
+        updated_at:   new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        retry_count:  0,
+      };
+
+      try {
+        const _persist = Object.assign({}, analysis);
+        delete _persist._aiPromise;
+        delete _persist._narrativePromise;
+        await db.from('jd_matches').update({ output_json: _persist }).eq('id', _matchId);
+      } catch (e) {
+        console.warn('[chat-ingest] persist final analysis failed (non-fatal)', e);
+      }
+
+      _chatIngestState.analysis = analysis;
+      _chatIngestState.savedRole = savedRole;
+      console.log('[chat-ingest] FAST_ANALYSIS_COMPLETE', {
+        pass1_ms: _pass1Ms, reason_and_narrate_ms: _fMs,
+        total_ms: analysis._pipeline.timings.total_ms,
+      });
+
+      // 9. Render first-read bubble (fit_reality + decision)
+      _chatIngestReplacePending(_firstReadPending, _chatIngestRenderFirstReadBody(narrative));
+
+      // 10. Render things-to-check bubble (risks + questions)
+      _chatIngestAppendBot(_chatIngestRenderCheckBody(narrative));
+
+      // 11. Reveal CTA bar
+      const _ctaBar = document.getElementById('rwc-cta-bar');
+      if (_ctaBar) _ctaBar.removeAttribute('hidden');
+    }
+
+    function _chatIngestRenderFactsBody(f) {
+      const _row = (k, v, missing) => `<dt>${esc(k)}</dt><dd${missing ? ' class="is-missing"' : ''}>${esc(v || 'Not stated')}</dd>`;
+      const _ir35Suffix = f.ir35 && f.ir35 !== 'Not applicable' ? ` (${f.ir35})` : '';
+      const _salaryDisplay = f.salary ? f.salary + _ir35Suffix : null;
+      return `
+        <p class="rwc-bubble-intro">I've found the basics.</p>
+        <div class="rwc-card">
+          <dl class="rwc-facts">
+            ${_row('Title', f.title, !f.title)}
+            ${_row('Company', f.company, !f.company)}
+            ${_row('Location', f.location, !f.location)}
+            ${_row('Work model', f.workModel, !f.workModel)}
+            ${_row('Type', f.engagement, !f.engagement)}
+            ${_row('Salary', _salaryDisplay, !_salaryDisplay)}
+          </dl>
+        </div>
+      `;
+    }
+
+    function _chatIngestRenderFirstReadBody(narr) {
+      const _esc = esc;
+      const _para = (s) => `<p>${_esc(_sanitizeUiText(s))}</p>`;
+      const _fitParas = Array.isArray(narr?.fit_reality?.paragraphs) ? narr.fit_reality.paragraphs.filter(Boolean) : [];
+      const _decisionSummary = narr?.decision?.summary ? _sanitizeUiText(narr.decision.summary) : '';
+      return `
+        <p class="rwc-bubble-intro">Here's the first read.</p>
+        ${_fitParas.length ? `
+          <div class="rwc-card">
+            <h3 class="rwc-card-title">Fit reality</h3>
+            ${_fitParas.map(_para).join('')}
+          </div>` : ''}
+        ${_decisionSummary ? `
+          <div class="rwc-card">
+            <h3 class="rwc-card-title">Decision</h3>
+            <p>${_esc(_decisionSummary)}</p>
+          </div>` : ''}
+      `;
+    }
+
+    function _chatIngestRenderCheckBody(narr) {
+      const _esc = esc;
+      const _inferred = Array.isArray(narr?.risks_and_unknowns?.inferred) ? narr.risks_and_unknowns.inferred.filter(Boolean) : [];
+      const _qs       = Array.isArray(narr?.questions_worth_asking)       ? narr.questions_worth_asking.filter(Boolean)       : [];
+      if (!_inferred.length && !_qs.length) {
+        return `<p class="rwc-bubble-intro">No specific risks or questions surfaced from the JD.</p>`;
+      }
+      return `
+        <p class="rwc-bubble-intro">A few things to check.</p>
+        ${_inferred.length ? `
+          <div class="rwc-card">
+            <h3 class="rwc-card-title">Risks</h3>
+            <ul>${_inferred.map(s => `<li>${_esc(_sanitizeUiText(typeof s === 'string' ? s : (s?.text || String(s))))}</li>`).join('')}</ul>
+          </div>` : ''}
+        ${_qs.length ? `
+          <div class="rwc-card">
+            <h3 class="rwc-card-title">Questions worth asking</h3>
+            <ul>${_qs.map(s => `<li>${_esc(_sanitizeUiText(typeof s === 'string' ? s : (s?.text || String(s))))}</li>`).join('')}</ul>
+          </div>` : ''}
+      `;
+    }
+
+    function _chatIngestFinalize(action) {
+      const st = _chatIngestState;
+      if (!st || !st.savedRoleId) return;
+
+      if (action === 'save') {
+        console.log('[chat-ingest] SAVED_AS_ROLE', { role_id: st.savedRoleId });
+        // The role is already persisted. Just refresh the cache and stay put.
+        Promise.resolve(refresh && refresh()).catch(() => {});
+        // Inline feedback so the user knows the click landed.
+        const bar = document.getElementById('rwc-cta-bar');
+        if (bar) {
+          bar.innerHTML = `<span class="rwc-composer-hint">Saved · the role is in your Roles list.</span>`;
+        }
+        return;
+      }
+
+      // action === 'open' — navigate to the role analysis page
+      console.log('[chat-ingest] OPEN_ROLE', { role_id: st.savedRoleId });
+      const _injected = Object.assign({}, st.savedRole, { latest_match_output: st.analysis });
+      try {
+        if (typeof allRoles !== 'undefined' && Array.isArray(allRoles)) {
+          const _idx = allRoles.findIndex(r => r.id === st.savedRoleId);
+          if (_idx >= 0) allRoles[_idx] = _injected;
+          else            allRoles.unshift(_injected);
+        }
+      } catch (_e) { /* non-fatal */ }
+      selectedRoleId = st.savedRoleId;
+      if (typeof currentNav !== 'undefined') currentNav = 'applications';
+      _setAppFilter && _setAppFilter('active');
+      _syncNavActive && _syncNavActive();
+      if (typeof renderAnalysisView === 'function') renderAnalysisView(_injected);
+      Promise.resolve(refresh && refresh()).catch(() => {});
     }
 
     // ─── Weekly Review v2 ─────────────────────────────────────────────────────
@@ -36066,7 +36516,7 @@ If a field cannot be determined from the message, return null for that field.`,
       }
 
       // ── Full interactive views ─────────────────────────────────────────────────
-      const FULL_VIEWS = { 'profile': renderProfileView, 'review': renderReviewView, 'recruiters': renderRecruitersView, 'safeguards': renderSafeguardsView, 'admin': renderAdminView, 'applications_timeline': renderApplicationsView, 'decisions': renderDecisionsView, 'insights': renderInsightsView, 'patterns': renderPatternsView };
+      const FULL_VIEWS = { 'profile': renderProfileView, 'review': renderReviewView, 'recruiters': renderRecruitersView, 'safeguards': renderSafeguardsView, 'admin': renderAdminView, 'applications_timeline': renderApplicationsView, 'decisions': renderDecisionsView, 'insights': renderInsightsView, 'patterns': renderPatternsView, 'chat-ingest': renderChatIngestView };
       if (FULL_VIEWS[view]) {
         selectedRoleId = null;
         document.querySelectorAll('.inbox-role').forEach(r => r.classList.remove('active'));
