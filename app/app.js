@@ -10977,22 +10977,35 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }, 5000);
     }
 
-    function renderAnalysisView(role) {
-      _exitIntakeMode();
-      // Stop any in-flight poller from a previous role. A new poller is
-      // started below if this role's pipeline is still running.
-      _stopPipelinePolling();
+    function renderAnalysisView(role, options) {
+      // `options.embedded` — render the canonical Applicant Mode body into a
+      // caller-supplied container without any page-shell side effects. Used
+      // by chat-ingest to mount the SAME analysis artifact inline in the
+      // chat stream. Default (no options) keeps the existing saved-role
+      // page behaviour exactly.
+      const _opts        = options || {};
+      const _embedded    = !!_opts.embedded;
+      const _embedTarget = _opts.container || null;
 
-      const el = document.getElementById('col-overview-cards');
+      if (!_embedded) {
+        _exitIntakeMode();
+        // Stop any in-flight poller from a previous role. A new poller is
+        // started below if this role's pipeline is still running.
+        _stopPipelinePolling();
+      }
+
+      const el = _embedded ? _embedTarget : document.getElementById('col-overview-cards');
       if (!el) return;
 
-      // col-overview-cards stays overflow:hidden — .ra-page is the scroll container.
-      el.classList.remove('col-ov--legacy-doc');
-      document.getElementById('col-chat')?.classList.remove('ws-active');
+      if (!_embedded) {
+        // col-overview-cards stays overflow:hidden — .ra-page is the scroll container.
+        el.classList.remove('col-ov--legacy-doc');
+        document.getElementById('col-chat')?.classList.remove('ws-active');
 
-      // Suppress the legacy sticky header — title lives in the article header
-      const stickyEl = document.getElementById('role-sticky-header');
-      if (stickyEl) { stickyEl.style.display = 'none'; stickyEl.innerHTML = ''; }
+        // Suppress the legacy sticky header — title lives in the article header
+        const stickyEl = document.getElementById('role-sticky-header');
+        if (stickyEl) { stickyEl.style.display = 'none'; stickyEl.innerHTML = ''; }
+      }
 
       const fo    = role.latest_match_output || (role.analysis && role.analysis.full_output) || {};
       const pd    = fo.practical_details || {};
@@ -11549,22 +11562,30 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
         </div>`;
 
       // ── Populate Status & Stage block (Analysis v2: readout + action prompts) ─
-      _renderAnalysisStatusBlock(role);
-      // Hide the legacy col-rail-section
-      const _oldRailEl = document.getElementById('col-rail-section');
-      if (_oldRailEl) { _oldRailEl.style.display = 'none'; _oldRailEl.innerHTML = ''; }
+      // Embedded mode (chat-ingest): the chat surface owns its own decision
+      // controls (Save / Apply / Skip action row below the analysis). The
+      // in-page status block writes to a persisted role row; in chat the
+      // role hasn't been persisted yet, so suppress it.
+      if (!_embedded) {
+        _renderAnalysisStatusBlock(role);
+        // Hide the legacy col-rail-section
+        const _oldRailEl = document.getElementById('col-rail-section');
+        if (_oldRailEl) { _oldRailEl.style.display = 'none'; _oldRailEl.innerHTML = ''; }
+      }
 
-      // ── Wire back button ──────────────────────────────────────────────────────
-      el.querySelector('#ra-btn-back')?.addEventListener('click', () => {
-        selectedRoleId = null;
-        _setRailVisible(false);
-        renderRolesView();
-      });
+      // ── Wire back button (saved-role page only) ───────────────────────────
+      if (!_embedded) {
+        el.querySelector('#ra-btn-back')?.addEventListener('click', () => {
+          selectedRoleId = null;
+          _setRailVisible(false);
+          renderRolesView();
+        });
+      }
 
-      // ── Wire notes ────────────────────────────────────────────────────────────
-      const _editBtn    = el.querySelector('#ra-btn-edit-notes');
-      const _textarea   = el.querySelector('#ra-notes-textarea');
-      const _display    = el.querySelector('#ra-notes-display');
+      // ── Wire notes (saved-role page only — embedded chat has no role.id yet) ──
+      const _editBtn    = !_embedded ? el.querySelector('#ra-btn-edit-notes') : null;
+      const _textarea   = !_embedded ? el.querySelector('#ra-notes-textarea') : null;
+      const _display    = !_embedded ? el.querySelector('#ra-notes-display')  : null;
       if (_editBtn && _textarea && _display) {
         let _editing = false;
         _editBtn.addEventListener('click', () => {
@@ -11597,7 +11618,11 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       // completes; we poll the row every 5 s and re-render so the user
       // sees each stage flip from "queued" → "running" → "complete"
       // without leaving the page or hitting refresh.
-      if (_isRunning && role?.id) {
+      //
+      // Embedded mode: chat-ingest only renders complete analyses (the
+      // pipeline finished before the briefing was due), so polling never
+      // applies. Suppressed.
+      if (!_embedded && _isRunning && role?.id) {
         _startPipelinePolling(role.id);
       }
     }
