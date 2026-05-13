@@ -27949,117 +27949,6 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
       }
     }
 
-    // ─── Chat synthesis API call ───────────────────────────────────────────────
-    // Invokes the synthesise-chat-read edge function. Takes a canonical
-    // narrative + extraction + meta and returns an ordered list of chat turns
-    // for the conversational chat-ingest surface.
-    //
-    // This is PRESENTATION-ONLY. The returned chat_read is never persisted to
-    // jd_matches.output_json; the saved role page renders the canonical
-    // narrative structure independently.
-    //
-    // Returns { turns: [...] } on success; null on any failure (network,
-    // 5xx, parse error, validation reject). The caller falls back to the
-    // existing section renderers in that case.
-    //
-    // Feature-flag gated: CHAT_SYNTH_ENABLED below. Off by default in phase 2.
-    const CHAT_SYNTH_ENABLED = true; // production default — phase 4 eval passed (14/14 fixtures, clean flags except benign em-dash)
-    async function callSynthesiseChatReadAPI(narrativeJson, extractionJson, meta, { providerOverride, verbosityMode } = {}) {
-      const _p  = providerOverride || 'openai';
-      const _vm = (verbosityMode === 'compact' || verbosityMode === 'deep') ? verbosityMode : 'standard';
-      const _t0 = performance.now();
-      try {
-        const _candidateCtx = _getCandidateContext();
-        const { data, error } = await db.functions.invoke('synthesise-chat-read', {
-          body: {
-            narrative:         narrativeJson,
-            extraction:        extractionJson || null,
-            meta:              meta || null,
-            candidate_context: _candidateCtx,
-            provider:          _p,
-            verbosity_mode:    _vm,
-          },
-        });
-        if (error) {
-          console.warn('[synthesise-chat-read invoke error]', error);
-          _logUsageEvent && _logUsageEvent({
-            event_type:   'ai_analysis',
-            feature_key:  'chat_synth',
-            provider:     _p,
-            route:        'synthesise-chat-read',
-            request_type: 'edge_function',
-            status:       'error',
-            latency_ms:   Math.round(performance.now() - _t0),
-            metadata:     { error_message: error.message || String(error) },
-          });
-          return null;
-        }
-        if (!data?.applicant_briefing) {
-          console.warn('[synthesise-chat-read] no applicant_briefing in response', data);
-          return null;
-        }
-
-        // Em-dash cleanup across every string in the briefing. Belt-and-
-        // braces — the prompt forbids them but we strip on read too.
-        const briefing = data.applicant_briefing;
-        const _strip = (s) => typeof s === 'string' ? s.replace(/—/g, ',').replace(/–/g, '-') : s;
-        const _stripArr = (arr) => Array.isArray(arr) ? arr.map(_strip) : arr;
-        briefing.fit_reality_summary             = _stripArr(briefing.fit_reality_summary);
-        briefing.role_summary                    = _stripArr(briefing.role_summary);
-        briefing.what_you_would_actually_do      = _stripArr(briefing.what_you_would_actually_do);
-        briefing.what_they_are_really_looking_for = _stripArr(briefing.what_they_are_really_looking_for);
-        briefing.questions_worth_asking          = _stripArr(briefing.questions_worth_asking);
-        briefing.suggested_actions               = _stripArr(briefing.suggested_actions);
-        if (briefing.why_this_role_exists) {
-          briefing.why_this_role_exists.stated   = _stripArr(briefing.why_this_role_exists.stated);
-          briefing.why_this_role_exists.inferred = _stripArr(briefing.why_this_role_exists.inferred);
-        }
-        if (briefing.risks_and_unknowns) {
-          briefing.risks_and_unknowns.stated              = _stripArr(briefing.risks_and_unknowns.stated);
-          briefing.risks_and_unknowns.inferred            = _stripArr(briefing.risks_and_unknowns.inferred);
-          briefing.risks_and_unknowns.verification_points = _stripArr(briefing.risks_and_unknowns.verification_points);
-        }
-        briefing.why_this_cv = _strip(briefing.why_this_cv);
-        briefing.final_note  = _strip(briefing.final_note);
-
-        const _usage = data.usage || {};
-        _logUsageEvent && _logUsageEvent({
-          event_type:   'ai_analysis',
-          feature_key:  'chat_synth',
-          provider:     _p,
-          route:        'synthesise-chat-read',
-          request_type: 'edge_function',
-          status:       'success',
-          latency_ms:   Math.round(performance.now() - _t0),
-          metadata:     {
-            chat_synth_version: _usage.chat_synth_version || null,
-            model:              _usage.model || null,
-            verbosity:          _vm,
-          },
-        });
-        return {
-          briefing,
-          _chat_synth_version:  _usage.chat_synth_version || null,
-          _chat_synth_model:    _usage.model || null,
-          _chat_synth_provider: _p,
-          _briefing_generated_at: new Date().toISOString(),
-        };
-      } catch (err) {
-        console.warn('[synthesise-chat-read] threw', err);
-        _logUsageEvent && _logUsageEvent({
-          event_type:   'ai_analysis',
-          feature_key:  'chat_synth',
-          provider:     _p,
-          route:        'synthesise-chat-read',
-          request_type: 'edge_function',
-          status:       'error',
-          latency_ms:   Math.round(performance.now() - _t0),
-          metadata:     { error_message: err.message || String(err) },
-        });
-        return null;
-      }
-    }
-
     // ─── Workspace chat API call ───────────────────────────────────────────────
     // Invokes the workspace-chat edge function for plain conversational replies.
     // Returns { reply, chips } on success, or null on any failure.
@@ -33979,8 +33868,6 @@ If a field cannot be determined from the message, return null for that field.`,
         // jd_matches.output_json; shadowed alongside the rest of the
         // session so reload restore can replay the briefing without
         // re-running the synth call).
-        briefing:        null,
-        briefing_source: null, // 'synth' | 'canonical-fallback'
         // v1.1 — decision state
         user_decision:     null,  // 'save' | 'apply' | 'skip' once committed
         skip_reason:       null,
@@ -34491,61 +34378,15 @@ If a field cannot be determined from the message, return null for that field.`,
         total_ms: analysis._pipeline.timings.total_ms,
       });
 
-      // 9a. Applicant Mode briefing synthesis (chat-ingest only, feature-
-      //     flagged). The structured 12-section briefing produced by
-      //     synthesise-chat-read replaces the old free-form turns shape.
-      //     If the synth call fails for any reason we deterministically map
-      //     the canonical narrative into a briefing-shaped object — chat
-      //     always lands a readable Applicant Mode read.
-      let _synthResult = null;
-      let _synthFallback = false;
-      const _runChatSynth = (typeof CHAT_SYNTH_ENABLED !== 'undefined' && CHAT_SYNTH_ENABLED)
-                         || (typeof window !== 'undefined' && window.ROLEWISE_CHAT_SYNTH);
-      if (_runChatSynth && typeof callSynthesiseChatReadAPI === 'function') {
-        const _synthMeta = {
-          role_title:      _meta?.role_title    || null,
-          company_name:    _meta?.company_name  || null,
-          location:        _meta?.location      || null,
-          work_model:      _meta?.remote_model  || null,
-          engagement_type: _engType             || null,
-          salary:          _meta?.salary_annual || _dayRate || null,
-          ir35:            _ir35                || null,
-        };
-        try {
-          _synthResult = await callSynthesiseChatReadAPI(narrative, analysis, _synthMeta, {
-            providerOverride: 'openai',
-            verbosityMode:    _verbosityMode,
-          });
-        } catch (e) {
-          console.warn('[chat-ingest] synth threw; using canonical-fallback briefing', e);
-          _synthResult = null;
-        }
-      }
-
-      // Resolve the briefing object the renderer consumes — synth output
-      // when available, deterministic canonical-fallback otherwise. The
-      // renderer doesn't distinguish.
-      let _briefing = null;
-      if (_synthResult && _synthResult.briefing) {
-        _briefing = _synthResult.briefing;
-      } else {
-        _synthFallback = true;
-        _briefing = _chatIngestNarrativeToBriefing(narrative, analysis);
-      }
-      if (_chatSession) {
-        _chatSession.briefing = _briefing;
-        _chatSession.briefing_source = _synthFallback ? 'canonical-fallback' : 'synth';
-        _chatSessionTouch();
-      }
-
-      // 9b. Render the Applicant Mode briefing into the chat surface.
-      _chatIngestRenderApplicantBriefing(_briefing, _firstReadPending);
-      if (_synthFallback) {
-        _chatIngestAppendBot(`<p class="rwc-brief-fallback-note">Working from the structured analysis.</p>`);
-      }
+      // Render the canonical Applicant Mode analysis directly into the
+      // chat stream. Chat is the CONTAINER; Applicant Mode is the ARTIFACT.
+      // Same renderer, same DOM, same wording as the saved-role page —
+      // produced by renderAnalysisView(role, { embedded: true, container }).
+      _chatIngestReplacePending(_firstReadPending, ''); // remove thinking state
+      _chatIngestRenderCanonicalAnalysis(analysis);
 
       // Final conversational close — small rhythm gap, then the action row
-      // is appended inline under the close turn.
+      // is appended inline under the analysis.
       await new Promise(r => setTimeout(r, 250));
       _chatIngestAppendBot(`<p>Want to keep this role read?</p>`);
       // Hide composer once the read lands — the inline action row takes over.
@@ -34570,16 +34411,71 @@ If a field cannot be determined from the message, return null for that field.`,
       return `<p class="rwc-facts-line">${parts.join(' · ')}</p>`;
     }
 
-    // ─── Applicant Mode briefing renderer ────────────────────────────────────
-    // Renders the 12-section briefing produced by synthesise-chat-read into
-    // the chat surface. Calm headings, hairline dividers, mixed bullets +
-    // prose. Distinct visually from the saved-role page (no cards, narrower
-    // column, inline action row, chat-stream layout).
+    // ─── Render canonical Applicant Mode into the chat stream ──────────────
+    // Chat is the container; Applicant Mode is the artifact. The chat surface
+    // delegates the entire analysis render to renderAnalysisView({ embedded })
+    // so the markup matches the saved-role page exactly — same sections,
+    // same hierarchy, same wording, same "Use this as context, not a
+    // verdict." No reinterpretation, no synthesis, no alternate schema.
     //
-    // Replaces the firstReadPending bubble with the briefing header chip,
-    // then appends each section as its own bot message so the existing
-    // scroll/append machinery still works.
-    function _chatIngestRenderApplicantBriefing(briefing, firstReadPending) {
+    // Input: the in-memory `analysis` object built by the Fast pipeline
+    // (carries _narrative, _provenance, _pipeline, practical_details, etc.).
+    // Build a minimal role-like object out of _chatSession.meta so the
+    // renderer's header (title / company / location / salary / etc.) lights
+    // up; the heavy lifting (the 11 narrative sections) reads from
+    // role.latest_match_output which is the same analysis object.
+    function _chatIngestRenderCanonicalAnalysis(analysis) {
+      if (!analysis) return;
+      const s    = _chatSession || {};
+      const meta = s.meta || {};
+
+      // Map extraction's remote_model to the role.work_model normalisation
+      // renderAnalysisView expects ('remote' | 'hybrid' | 'onsite').
+      const _wmRaw = (meta.remote_model || '').toLowerCase();
+      const _wmMap = { remote: 'remote', hybrid: 'hybrid', 'on-site': 'onsite', onsite: 'onsite' };
+      const _workModel = _wmRaw ? (_wmMap[_wmRaw] || _wmRaw) : null;
+
+      const roleLike = {
+        id:                   null, // not yet persisted
+        company_name:         meta.company_name || null,
+        role_title:           meta.role_title   || null,
+        location_text:        meta.location     || null,
+        job_url:              meta.job_url      || null,
+        work_model:           _workModel,
+        salary_text_raw:      meta.salary_annual || null,
+        engagement_type:      s.engagement_type || null,
+        ir35_status:          s.ir35_status     || null,
+        day_rate_text:        s.day_rate_text   || null,
+        contract_length:      s.contract_length || null,
+        source:               'chat-ingest',
+        role_updates:         [],
+        latest_match_output:  analysis,
+      };
+
+      // Create an in-stream bot bubble and mount the canonical analysis
+      // directly into it via renderAnalysisView's embedded mode.
+      const stream = document.getElementById('rwc-stream');
+      if (!stream) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'rwc-msg rwc-msg-bot rwc-analysis-mount';
+      wrap.innerHTML = `<div class="rwc-bubble rwc-analysis-bubble"></div>`;
+      stream.appendChild(wrap);
+      const container = wrap.querySelector('.rwc-analysis-bubble');
+      try {
+        renderAnalysisView(roleLike, { embedded: true, container });
+      } catch (e) {
+        console.error('[chat-ingest] embedded render failed', e);
+        container.innerHTML = '<p>Analysis renderer failed. Open the full role page after saving.</p>';
+      }
+      stream.scrollTop = stream.scrollHeight;
+    }
+
+    // ─── (legacy, removed) Applicant Mode briefing renderer ─────────────────
+    // Synth + briefing direction abandoned. Canonical analysis renders
+    // directly via _chatIngestRenderCanonicalAnalysis above. Everything
+    // below was removed.
+    /* REMOVED-LEGACY-START
+    function _chatIngestRenderApplicantBriefing(_briefing, _firstReadPending) {
       if (!briefing) {
         if (firstReadPending) _chatIngestReplacePending(firstReadPending, `<p>I couldn't put together a briefing from this one.</p>`);
         return;
@@ -34821,6 +34717,7 @@ If a field cannot be determined from the message, return null for that field.`,
         <ul class="rwc-soft">${_all.map(s => `<li>${_esc(_toText(s))}</li>`).join('')}</ul>
       `;
     }
+    REMOVED-LEGACY-END */
 
     // ─── Save / Apply / Skip: decision-aware persistence ────────────────────
     // v1.1: a single persistence helper drives all three primary actions.
@@ -35103,19 +35000,11 @@ If a field cannot be determined from the message, return null for that field.`,
         ir35:     snap.ir35_status         || null,
       }));
 
-      // Restore the briefing if the snapshot has one cached; otherwise
-      // rebuild from the canonical narrative via the fallback mapper.
-      // No fake pacing delays on restore — the briefing is already
-      // complete.
-      let _restoreBriefing = snap.briefing || null;
-      if (!_restoreBriefing && snap.narrative) {
-        _restoreBriefing = _chatIngestNarrativeToBriefing(snap.narrative, snap.analysis || null);
-      }
-      if (_restoreBriefing) {
-        _chatIngestRenderApplicantBriefing(_restoreBriefing, null);
-        if (snap.briefing_source === 'canonical-fallback' && !snap.briefing) {
-          _chatIngestAppendBot(`<p class="rwc-brief-fallback-note">Working from the structured analysis.</p>`);
-        }
+      // Replay the canonical Applicant Mode analysis from the cached
+      // in-memory analysis object. Same renderer the live flow uses; no
+      // fake pacing — the analysis is already complete.
+      if (snap.analysis) {
+        _chatIngestRenderCanonicalAnalysis(snap.analysis);
       }
       _chatIngestAppendBot(`<p>${snap.status === 'failed' ? 'Save failed earlier. Try again, open the role, or discard.' : (snap.status === 'saved' ? 'This role is saved. Open it or discard the chat.' : 'Want to keep this role read?')}</p>`);
       _chatIngestRenderCtaBar();
