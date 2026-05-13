@@ -33957,6 +33957,65 @@ If a field cannot be determined from the message, return null for that field.`,
       if (stream) stream.scrollTop = stream.scrollHeight;
     }
 
+    // ─── Persist helper for chat-ingest ──────────────────────────────────────
+    // Single source of truth for the two-insert sequence (roles + jd_matches)
+    // that creates a chat-ingested row. Step 2 extracts this from inline so
+    // Step 3 can defer the call from submit-time to save-time without
+    // duplicating the schema-aligned payloads.
+    //
+    // Inputs: a flat object containing the JD text, meta, deterministic
+    //         signals, and the output_json payload to write.
+    // Returns: { role, match } on success.
+    // Throws on any DB error.
+    async function _chatSessionPersist(params) {
+      const { jd_raw, jd_clean, jd, meta, ir35, day_rate_text, engagement_type, contract_length, initialOutputJson } = params || {};
+
+      const _wmMap = { remote: 'remote', hybrid: 'hybrid', 'on-site': 'onsite', onsite: 'onsite' };
+      const _workModel = meta?.remote_model ? (_wmMap[meta.remote_model.toLowerCase()] || meta.remote_model.toLowerCase()) : null;
+
+      const { data: newRole, error: re } = await db.from('roles').insert({
+        company_name:        meta?.company_name || null,
+        role_title:          meta?.role_title   || null,
+        location_text:       meta?.location     || null,
+        job_url:             meta?.job_url      || null,
+        job_description_raw: jd_raw,
+        status:              'active',
+        work_model:          _workModel,
+        salary_text_raw:     meta?.salary_annual || null,
+        engagement_type:     engagement_type || null,
+        ir35_status:         ir35 || null,
+        day_rate_text:       day_rate_text || null,
+        contract_length:     contract_length || null,
+        source:              'chat-ingest',
+      }).select().single();
+      if (re || !newRole) throw new Error(re?.message || 'role insert failed');
+
+      // Shape mirrors _runIngestionFlow's jd_matches insert (line ~14087).
+      // job_description_raw is NOT NULL in the schema; the other columns are
+      // aligned to keep chat-ingest rows queryable identically to overlay
+      // rows.
+      const { data: newMatch, error: me } = await db.from('jd_matches').insert({
+        role_id:             newRole.id,
+        job_description_raw: jd_raw || jd,
+        jd_text_raw:         jd_raw || jd,
+        jd_text:             jd,
+        jd_text_clean:       jd_clean || null,
+        company_name:        newRole.company_name,
+        role_title:          newRole.role_title,
+        job_url:             newRole.job_url || null,
+        selected_cv_ids:     [],
+        cv_version_ids:      [],
+        output_json:         initialOutputJson || {},
+      }).select().single();
+      if (me || !newMatch) {
+        // Orphan rollback: delete the roles row so a failed jd_matches insert
+        // never leaves dangling rows in the database.
+        try { await db.from('roles').delete().eq('id', newRole.id); } catch (_e) { /* best effort */ }
+        throw new Error(me?.message || 'jd_matches insert failed');
+      }
+      return { role: newRole, match: newMatch };
+    }
+
     async function _chatIngestSubmit(rawText) {
       const _esc = esc;
 
@@ -34004,52 +34063,28 @@ If a field cannot be determined from the message, return null for that field.`,
       // 3. "Reading the role..." placeholder
       const _readPending = _chatIngestPending("Reading the role…");
 
-      // 4. Insert the role + jd_match row up front so we always end with a real
-      //    Rolewise row. Same shape _runIngestionFlow uses.
+      // 4. Insert the role + jd_match row via the shared persist helper.
+      //    Step 2: extracted from inline. Still called at submit time (same
+      //    behaviour as Step 1). Step 3 will defer this to the Save CTA.
       let savedRole = null;
       let _matchId  = null;
       try {
-        const { data: newRole, error: re } = await db.from('roles').insert({
-          company_name:        _company,
-          role_title:          _title,
-          location_text:       _location,
-          job_url:             _meta.job_url || null,
-          job_description_raw: jd_raw,
-          status:              'active',
-          work_model:          _meta.remote_model ? (_meta.remote_model.toLowerCase() === 'on-site' ? 'onsite' : _meta.remote_model.toLowerCase()) : null,
-          salary_text_raw:     _salary,
-          engagement_type:     _engType,
-          ir35_status:         _ir35,
-          day_rate_text:       _dayRate,
-          contract_length:     _contractLen,
-          source:              'chat-ingest',
-        }).select().single();
-        if (re || !newRole) throw new Error(re?.message || 'role insert failed');
-        savedRole = newRole;
-        _chatIngestState.savedRoleId = newRole.id;
-        if (_chatSession) { _chatSession.saved_role = newRole; _chatSession.saved_role_id = newRole.id; _chatSessionTouch(); }
-
-        // Shape mirrors _runIngestionFlow's jd_matches insert (line ~14087).
-        // job_description_raw is NOT NULL in the schema; the other columns
-        // are aligned to keep chat-ingest rows queryable identically to
-        // overlay-ingested rows.
-        const { data: newMatch, error: me } = await db.from('jd_matches').insert({
-          role_id:             newRole.id,
-          job_description_raw: jd_raw || jd,
-          jd_text_raw:         jd_raw || jd,
-          jd_text:             jd,
-          jd_text_clean:       jd_clean || null,
-          company_name:        newRole.company_name,
-          role_title:          newRole.role_title,
-          job_url:             newRole.job_url || null,
-          selected_cv_ids:     [],
-          cv_version_ids:      [],
-          output_json:         { _analysis_mode: 'fast', _pipeline: { status: 'running', analysis_mode: 'fast', stages: { extract: 'complete', pass1: 'queued', reasoning: 'queued', narrative: 'queued', validation: 'queued' }, timings: {}, errors: [] } },
-        }).select().single();
-        if (me || !newMatch) throw new Error(me?.message || 'jd_matches insert failed');
-        _matchId = newMatch.id;
-        _chatIngestState.savedMatchId = newMatch.id;
-        if (_chatSession) { _chatSession.saved_match_id = newMatch.id; _chatSessionTouch(); }
+        const persisted = await _chatSessionPersist({
+          jd_raw, jd_clean, jd, meta: _meta,
+          ir35: _ir35, day_rate_text: _dayRate, engagement_type: _engType, contract_length: _contractLen,
+          // No analysis available yet — output_json starts with the running placeholder.
+          initialOutputJson: { _analysis_mode: 'fast', _pipeline: { status: 'running', analysis_mode: 'fast', stages: { extract: 'complete', pass1: 'queued', reasoning: 'queued', narrative: 'queued', validation: 'queued' }, timings: {}, errors: [] } },
+        });
+        savedRole = persisted.role;
+        _matchId  = persisted.match.id;
+        _chatIngestState.savedRoleId = savedRole.id;
+        _chatIngestState.savedMatchId = _matchId;
+        if (_chatSession) {
+          _chatSession.saved_role     = savedRole;
+          _chatSession.saved_role_id  = savedRole.id;
+          _chatSession.saved_match_id = _matchId;
+          _chatSessionTouch();
+        }
       } catch (e) {
         console.error('[chat-ingest] persist failed', e);
         _chatIngestReplacePending(_readPending, `<p class="rwc-bubble-intro">Couldn't save the role record. Try the standard Add Role flow.</p>`);
