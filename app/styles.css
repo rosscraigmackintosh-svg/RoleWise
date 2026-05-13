@@ -20267,19 +20267,24 @@ a.rw-rail-contact-name:hover {
 
 /* ═══ Chat ingest (experimental) ═══════════════════════════════════════════
    Conversational paste-and-read surface that runs the Fast pipeline.
-   Lives alongside the standard Add Role overlay; does not replace it. */
+   Lives alongside the standard Add Role overlay; does not replace it.
+   Centered chat column - the whole .rwc-page sits at max 820px and is
+   horizontally centred within the wider col-overview-cards surface. */
 .rwc-page {
   display: flex;
   flex-direction: column;
   height: 100%;
   max-height: calc(100vh - 64px);
+  max-width: 820px;
+  width: 100%;
+  margin: 0 auto;
   padding: 24px 0 0;
 }
 .rwc-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 0 32px 16px;
+  padding: 0 24px 14px;
   border-bottom: 1px solid var(--border, #e3e3e0);
 }
 .rwc-header-left { display: flex; align-items: baseline; gap: 12px; }
@@ -20312,15 +20317,14 @@ a.rw-rail-contact-name:hover {
 .rwc-stream {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 32px;
+  padding: 24px 24px 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   scroll-behavior: smooth;
 }
 .rwc-msg {
   display: flex;
-  max-width: 720px;
   width: 100%;
 }
 .rwc-msg-user { align-self: flex-end; justify-content: flex-end; }
@@ -20332,8 +20336,9 @@ a.rw-rail-contact-name:hover {
   font-size: 14px;
   line-height: 1.55;
   color: var(--text-primary, #1a1a18);
-  max-width: 100%;
+  max-width: 680px;
 }
+.rwc-msg-user .rwc-bubble { max-width: 520px; }
 .rwc-msg-user .rwc-bubble {
   background: var(--surface-emph, #f0f0ee);
   border: 1px solid var(--border, #e3e3e0);
@@ -20435,12 +20440,41 @@ a.rw-rail-contact-name:hover {
   font-style: italic;
 }
 
+/* Compact pill chips for "I've found the basics" — replaces the dl layout.
+   Each chip is a small inline tag carrying one piece of metadata. Missing
+   values get a muted variant so the reader sees what wasn't found. */
+.rwc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.rwc-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12.5px;
+  line-height: 1.3;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #e3e3e0);
+  background: var(--surface-alt, #f7f7f7);
+  color: var(--text-primary, #1a1a18);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rwc-chip.is-missing {
+  color: var(--text-tertiary, #807e7a);
+  font-style: italic;
+}
+
 .rwc-cta-bar {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 32px;
+  gap: 10px;
+  padding: 14px 24px;
   border-top: 1px solid var(--border, #e3e3e0);
   background: var(--surface, #fff);
   flex-wrap: wrap;
@@ -20471,7 +20505,7 @@ a.rw-rail-contact-name:hover {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px 32px;
+  padding: 14px 24px 20px;
   border-top: 1px solid var(--border, #e3e3e0);
 }
 .rwc-composer[hidden] { display: none; }

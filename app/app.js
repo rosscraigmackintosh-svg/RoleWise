@@ -33888,8 +33888,8 @@ If a field cannot be determined from the message, return null for that field.`,
       const _composer  = document.getElementById('rwc-composer');
       // CTA buttons are rendered dynamically by _chatIngestRenderCtaBar (Step 3+).
 
-      // Opening assistant bubble — keeps the surface from feeling empty.
-      _chatIngestAppendBot(`<p class="rwc-bubble-intro">Paste a job description below. I'll read it, surface the basics, then give you a first read.</p>`);
+      // Opening assistant bubble — short, conversational invitation.
+      _chatIngestAppendBot(`<p class="rwc-bubble-intro">Paste the role and I'll give you a first read.</p>`);
 
       document.getElementById('rwc-back')?.addEventListener('click', () => {
         switchNav('applications');
@@ -34068,16 +34068,13 @@ If a field cannot be determined from the message, return null for that field.`,
         _chatSessionTouch();
       }
 
-      // 3. "Reading the role..." placeholder
-      const _readPending = _chatIngestPending("Reading the role…");
-
       // Persistence is DEFERRED to the Save CTA. The Fast pipeline runs
       // entirely in memory; rows only land in the database when the user
       // explicitly chooses Save or Open. _chatSessionPersist is called from
       // _chatIngestSave (CTA handler) using analysis stored on _chatSession.
 
-      // 5. Render facts card now we have local metadata
-      _chatIngestReplacePending(_readPending, _chatIngestRenderFactsBody({
+      // 5. Local extraction is synchronous — append the facts bubble directly.
+      _chatIngestAppendBot(_chatIngestRenderFactsBody({
         title: _title, company: _company, location: _location,
         workModel: _workModel, salary: _salary, engagement: _engType, ir35: _ir35,
       }));
@@ -34098,7 +34095,7 @@ If a field cannot be determined from the message, return null for that field.`,
       }
 
       // Wait for Pass 1 AI result
-      const _firstReadPending = _chatIngestPending("Building the first read…");
+      const _firstReadPending = _chatIngestPending("I'm reading the role shape now…");
       const _pipeT0 = performance.now();
       let aiResult;
       try {
@@ -34208,28 +34205,29 @@ If a field cannot be determined from the message, return null for that field.`,
       _chatIngestAppendBot(_chatIngestRenderCheckBody(narrative));
 
       // 11. Final conversational close + reveal CTA bar with status-driven content
-      _chatIngestAppendBot(`<p class="rwc-bubble-intro">Save this role?</p>`);
+      _chatIngestAppendBot(`<p class="rwc-bubble-intro">Want to keep this role?</p>`);
       _chatIngestRenderCtaBar();
       const _ctaBar = document.getElementById('rwc-cta-bar');
       if (_ctaBar) _ctaBar.removeAttribute('hidden');
     }
 
     function _chatIngestRenderFactsBody(f) {
-      // Facts ARE tabular data — keeping the dl is appropriate. Only the
-      // intro and the wrapping bubble change to feel like a calm read-back.
-      const _row = (k, v, missing) => `<dt>${esc(k)}</dt><dd${missing ? ' class="is-missing"' : ''}>${esc(v || 'Not stated')}</dd>`;
+      // Compact chips for the basics — title, company, location, salary, work
+      // model, type. Missing values render as muted "Not stated" chips so the
+      // bubble stays balanced rather than collapsing.
+      const _chip = (v, missing) => `<span class="rwc-chip${missing ? ' is-missing' : ''}">${esc(v || 'Not stated')}</span>`;
       const _ir35Suffix = f.ir35 && f.ir35 !== 'Not applicable' ? ` (${f.ir35})` : '';
       const _salaryDisplay = f.salary ? f.salary + _ir35Suffix : null;
       return `
         <p class="rwc-bubble-intro">I've found the basics.</p>
-        <dl class="rwc-facts">
-          ${_row('Title', f.title, !f.title)}
-          ${_row('Company', f.company, !f.company)}
-          ${_row('Location', f.location, !f.location)}
-          ${_row('Work model', f.workModel, !f.workModel)}
-          ${_row('Type', f.engagement, !f.engagement)}
-          ${_row('Salary', _salaryDisplay, !_salaryDisplay)}
-        </dl>
+        <div class="rwc-chips">
+          ${_chip(f.title, !f.title)}
+          ${_chip(f.company, !f.company)}
+          ${_chip(f.location, !f.location)}
+          ${_chip(f.workModel, !f.workModel)}
+          ${_chip(f.engagement, !f.engagement)}
+          ${_chip(_salaryDisplay, !_salaryDisplay)}
+        </div>
       `;
     }
 
@@ -34261,7 +34259,7 @@ If a field cannot be determined from the message, return null for that field.`,
         return `<p class="rwc-bubble-intro">Nothing major to flag from the JD itself.</p>`;
       }
       return `
-        <p class="rwc-bubble-intro">A few things to check.</p>
+        <p class="rwc-bubble-intro">A few things I'd check before applying.</p>
         ${_inferred.length ? `
           <p class="rwc-list-lead">Worth knowing:</p>
           <ul>${_inferred.map(s => `<li>${_esc(_toText(s))}</li>`).join('')}</ul>` : ''}
@@ -34523,7 +34521,7 @@ If a field cannot be determined from the message, return null for that field.`,
         _chatIngestAppendBot(_chatIngestRenderFirstReadBody(snap.narrative));
         _chatIngestAppendBot(_chatIngestRenderCheckBody(snap.narrative));
       }
-      _chatIngestAppendBot(`<p class="rwc-bubble-intro">${snap.status === 'failed' ? 'Save failed earlier. Try again, open the role, or discard.' : (snap.status === 'saved' ? 'This role is saved. Open it or discard the chat.' : 'Save this role?')}</p>`);
+      _chatIngestAppendBot(`<p class="rwc-bubble-intro">${snap.status === 'failed' ? 'Save failed earlier. Try again, open the role, or discard.' : (snap.status === 'saved' ? 'This role is saved. Open it or discard the chat.' : 'Want to keep this role?')}</p>`);
       _chatIngestRenderCtaBar();
       const _ctaBar = document.getElementById('rwc-cta-bar');
       if (_ctaBar) _ctaBar.removeAttribute('hidden');
