@@ -33784,11 +33784,9 @@ If a field cannot be determined from the message, return null for that field.`,
     //         _runCompletionCheck, normaliseLocation, renderAnalysisView.
     // Skips for v1 (out of scope): recruiter detection, URL fetch,
     //                              duplicate detection, animator polling.
-    let _chatIngestState = null;
-
-    // ─── Canonical chat-ingest session object (target for refactor) ──────────
-    // Replaces _chatIngestState across the six-step save-on-confirm migration.
-    // Status drives all UI gating:
+    // ─── Canonical chat-ingest session object ───────────────────────────────
+    // Single source of truth for the experimental chat-ingest path. The
+    // status field drives all UI gating:
     //   idle      - composer visible, no chat bubbles yet
     //   analysing - composer hidden, pending bubbles, CTAs hidden
     //   ready     - all bubbles rendered, CTAs revealed
@@ -33796,7 +33794,8 @@ If a field cannot be determined from the message, return null for that field.`,
     //   saved     - CTAs collapse to Open; "Saved" inline
     //   failed    - "Save failed" inline + retry button
     //
-    // Step 1: populated in parallel with _chatIngestState. No readers yet.
+    // Persistence is deferred to the Save / Open CTA - the session lives
+    // entirely in memory (plus localStorage shadow) until the user confirms.
     let _chatSession = null;
     function _chatSessionInit() {
       return {
@@ -33843,13 +33842,8 @@ If a field cannot be determined from the message, return null for that field.`,
       const stickyEl = document.getElementById('role-sticky-header');
       if (stickyEl) { stickyEl.style.display = 'none'; stickyEl.innerHTML = ''; }
 
-      _chatIngestState = {
-        submitted: false,
-        analysis:  null,
-        savedRoleId: null,
-        savedMatchId: null,
-      };
-      // Step 1: initialise the new canonical session in parallel.
+      // Step 6: legacy _chatIngestState is gone. _chatSession is the only
+      // state object.
       _chatSession = _chatSessionInit();
 
       // Step 4: localStorage shadow recovery. If a previous tab session left
@@ -33902,13 +33896,13 @@ If a field cannot be determined from the message, return null for that field.`,
       });
 
       const _onSubmit = () => {
-        if (_chatIngestState.submitted) return;
+        // 'analysing' / 'ready' / later states all mean a session is in flight.
+        if (_chatSession && _chatSession.status !== 'idle') return;
         const _raw = _ta.value.trim();
         if (!_raw || _raw.length < 40) {
           _ta.focus();
           return;
         }
-        _chatIngestState.submitted = true;
         _submitBtn.disabled = true;
         _composer.setAttribute('hidden', '');
         _chatIngestSubmit(_raw).catch(err => {
@@ -34077,14 +34071,10 @@ If a field cannot be determined from the message, return null for that field.`,
       // 3. "Reading the role..." placeholder
       const _readPending = _chatIngestPending("Reading the role…");
 
-      // Step 3: persistence DEFERRED to the Save CTA. The Fast pipeline now
-      // runs entirely in memory; rows only land in the database when the
-      // user explicitly chooses Save or Open. _chatSessionPersist is now
-      // called from _chatIngestSave (CTA handler) using analysis stored on
-      // _chatSession.
-      //
-      // Legacy _chatIngestState.savedRoleId / savedMatchId are kept on the
-      // state for compatibility but will be populated only AFTER save.
+      // Persistence is DEFERRED to the Save CTA. The Fast pipeline runs
+      // entirely in memory; rows only land in the database when the user
+      // explicitly chooses Save or Open. _chatSessionPersist is called from
+      // _chatIngestSave (CTA handler) using analysis stored on _chatSession.
 
       // 5. Render facts card now we have local metadata
       _chatIngestReplacePending(_readPending, _chatIngestRenderFactsBody({
@@ -34198,9 +34188,7 @@ If a field cannot be determined from the message, return null for that field.`,
       // deferred to _chatIngestSave (Save CTA) so the user can read the
       // analysis before deciding whether to keep it.
 
-      _chatIngestState.analysis = analysis;
-      _chatIngestState.savedRole = null; // not persisted yet at this point
-      // Step 1: mirror into the canonical session.
+      // Step 6: write the analysis onto the canonical session only.
       if (_chatSession) {
         _chatSession.analysis  = analysis;
         _chatSession.narrative = narrative;
@@ -34353,12 +34341,6 @@ If a field cannot be determined from the message, return null for that field.`,
       _chatSessionTouch();
       _chatSessionShadowClear();
 
-      // Mirror onto the legacy state object (still read by some paths until
-      // Step 6 removes the legacy state entirely).
-      _chatIngestState.savedRoleId  = persisted.role.id;
-      _chatIngestState.savedMatchId = persisted.match.id;
-      _chatIngestState.savedRole    = persisted.role;
-
       console.log('[chat-ingest] SAVED_AS_ROLE', { role_id: persisted.role.id });
       _chatIngestRenderCtaBar(); // surface "Saved" state
       Promise.resolve(refresh && refresh()).catch(() => {});
@@ -34439,8 +34421,7 @@ If a field cannot be determined from the message, return null for that field.`,
             console.log('[chat-ingest] DISCARDED', { had_analysis: !!_chatSession?.analysis });
             _chatIngestPendingDiscard = false;
             _chatSessionShadowClear();
-            _chatSession     = null;
-            _chatIngestState = null;
+            _chatSession = null;
             renderChatIngestView();
           });
         }
@@ -34514,13 +34495,6 @@ If a field cannot be determined from the message, return null for that field.`,
     // was written. Does NOT re-run AI; the cached analysis is what we have.
     function _chatIngestRestoreFromShadow(snap) {
       _chatSession = snap;
-      _chatIngestState = {
-        submitted: true,
-        analysis:  snap.analysis,
-        savedRoleId:  snap.saved_role_id  || null,
-        savedMatchId: snap.saved_match_id || null,
-        savedRole:    snap.saved_role     || null,
-      };
       // Hide composer (analysis already exists).
       const _composer = document.getElementById('rwc-composer');
       if (_composer) _composer.setAttribute('hidden', '');
