@@ -20437,13 +20437,17 @@ a.rw-rail-contact-name:hover {
 
 .rwc-cta-bar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 12px;
   padding: 16px 32px;
   border-top: 1px solid var(--border, #e3e3e0);
   background: var(--surface, #fff);
+  flex-wrap: wrap;
 }
 .rwc-cta-bar[hidden] { display: none; }
+/* The status hint sits to the LEFT of the buttons (margin-right:auto). */
+.rwc-cta-bar .rwc-composer-hint { margin-right: auto; }
 .rwc-btn {
   padding: 8px 14px;
   font-size: 13px;

@@ -34302,44 +34302,67 @@ If a field cannot be determined from the message, return null for that field.`,
 
       s.status = 'saving';
       _chatSessionTouch();
+      _chatIngestRenderCtaBar(); // surface "Saving..."
 
-      try {
-        const persisted = await _chatSessionPersist({
-          jd_raw:         s.jd_raw,
-          jd_clean:       s.jd_clean,
-          jd:             s.jd,
-          meta:           s.meta,
-          ir35:           s.ir35_status,
-          day_rate_text:  s.day_rate_text,
-          engagement_type: s.engagement_type,
-          contract_length: s.contract_length,
-          initialOutputJson: _chatSessionBuildOutputJson(s.analysis),
-        });
-        s.saved_role     = persisted.role;
-        s.saved_role_id  = persisted.role.id;
-        s.saved_match_id = persisted.match.id;
-        s.save_error     = null;
-        s.status         = 'saved';
-        _chatSessionTouch();
-        // Save success — clear the shadow. The role is now durably in the DB.
-        _chatSessionShadowClear();
-
-        // Mirror onto the legacy state object (still read by some paths until
-        // Step 6 removes the legacy state entirely).
-        _chatIngestState.savedRoleId  = persisted.role.id;
-        _chatIngestState.savedMatchId = persisted.match.id;
-        _chatIngestState.savedRole    = persisted.role;
-
-        console.log('[chat-ingest] SAVED_AS_ROLE', { role_id: persisted.role.id });
-        Promise.resolve(refresh && refresh()).catch(() => {});
-        return persisted.role;
-      } catch (e) {
-        s.status     = 'failed';
-        s.save_error = e?.message || String(e);
-        _chatSessionTouch();
-        console.error('[chat-ingest] save failed', e);
-        throw e;
+      // Per plan decision 3: 2 retries with 1s / 3s backoff before failing.
+      // Orphan rollback (delete role row if jd_matches fails) lives inside
+      // _chatSessionPersist already.
+      const _backoffsMs = [1000, 3000];
+      let _attempt = 0;
+      let _lastErr = null;
+      let persisted = null;
+      while (_attempt <= _backoffsMs.length) {
+        try {
+          persisted = await _chatSessionPersist({
+            jd_raw:         s.jd_raw,
+            jd_clean:       s.jd_clean,
+            jd:             s.jd,
+            meta:           s.meta,
+            ir35:           s.ir35_status,
+            day_rate_text:  s.day_rate_text,
+            engagement_type: s.engagement_type,
+            contract_length: s.contract_length,
+            initialOutputJson: _chatSessionBuildOutputJson(s.analysis),
+          });
+          break;
+        } catch (e) {
+          _lastErr = e;
+          if (_attempt >= _backoffsMs.length) break;
+          const _waitMs = _backoffsMs[_attempt];
+          console.warn(`[chat-ingest] save attempt ${_attempt + 1} failed; retrying in ${_waitMs}ms`, e?.message || e);
+          await new Promise(r => setTimeout(r, _waitMs));
+          _attempt++;
+        }
       }
+      if (!persisted) {
+        s.status     = 'failed';
+        s.save_error = _lastErr?.message || String(_lastErr);
+        _chatSessionTouch();
+        _chatIngestRenderCtaBar();
+        console.error('[chat-ingest] save failed after retries', _lastErr);
+        throw _lastErr;
+      }
+
+      // Persist succeeded after up to (1 + 2 retries) attempts. Mark saved,
+      // clear the shadow, and mirror onto legacy state for compatibility.
+      s.saved_role     = persisted.role;
+      s.saved_role_id  = persisted.role.id;
+      s.saved_match_id = persisted.match.id;
+      s.save_error     = null;
+      s.status         = 'saved';
+      _chatSessionTouch();
+      _chatSessionShadowClear();
+
+      // Mirror onto the legacy state object (still read by some paths until
+      // Step 6 removes the legacy state entirely).
+      _chatIngestState.savedRoleId  = persisted.role.id;
+      _chatIngestState.savedMatchId = persisted.match.id;
+      _chatIngestState.savedRole    = persisted.role;
+
+      console.log('[chat-ingest] SAVED_AS_ROLE', { role_id: persisted.role.id });
+      _chatIngestRenderCtaBar(); // surface "Saved" state
+      Promise.resolve(refresh && refresh()).catch(() => {});
+      return persisted.role;
     }
 
     // ─── Build the output_json payload from the in-memory analysis ──────────
