@@ -20606,23 +20606,68 @@ a.rw-rail-contact-name:hover {
    even if older markup briefly renders them during transition. */
 .rwc-mode-conv .rwc-list-lead { display: none; }
 
-/* The previous Applicant Mode briefing CSS lived here. The chat now
-   renders the canonical analysis via renderAnalysisView({ embedded }),
-   so the existing .ra-* / .ra-section / .ra-list CSS applies inside
-   the chat stream without any chat-specific overrides. Add styles to
-   the rwc-analysis-mount wrapper below only when the embedded render
-   needs slight reflow inside the narrower chat column. */
+/* ─── Embedded canonical analysis (chat-ingest) ──────────────────────────
+   When renderAnalysisView is called with { embedded: true } the page
+   shell (ra-topbar / ra-header / ra-layout grid / aside rail) is
+   suppressed by the renderer. These rules adapt the remaining canonical
+   article block to sit inside a narrower chat-stream bubble: no fixed
+   height, no max-width, no oversized vertical padding, no dashed
+   section dividers (the chat surface already has its own rhythm). */
 
-/* Embedded canonical analysis mount in the chat stream. The bubble
-   wrapper drops the standard rwc-bubble chrome so the .ra-page renders
-   without a competing container. Width / paddings inherit from the
-   chat column. */
+/* Chat-stream bubble carrying the embedded analysis. Drop the default
+   bubble chrome so the article body has nothing competing for the
+   container slot. */
 .rwc-mode-conv .rwc-msg.rwc-analysis-mount .rwc-bubble.rwc-analysis-bubble {
   background: transparent;
   border: 0;
   padding: 0;
   max-width: 100%;
   width: 100%;
+}
+
+/* Embedded page wrapper — strip scroll/height behaviour that only makes
+   sense for the standalone saved-role page. */
+.ra-page.ra-embedded {
+  height: auto;
+  overflow: visible;
+  width: 100%;
+}
+
+/* Embedded article body — no wide padding, no max-width constraint;
+   inherits the chat column width set by .rwc-page.rwc-mode-conv. */
+.ra-article-embedded {
+  width: 100%;
+  padding: 0;
+  margin: 0;
+}
+
+/* Slightly tighten section spacing in the embedded variant so 11
+   sections don't feel sparse inside the chat stream. */
+.ra-article-embedded .ra-section {
+  padding: 22px 0;
+}
+.ra-article-embedded .ra-section:first-of-type {
+  padding-top: 0;
+}
+
+/* The embedded variant drops the dashed dividers between sections and
+   uses softer breathing room instead — the chat surface already reads
+   as a flowing column. */
+.ra-article-embedded .ra-section + .ra-section {
+  border-top: 1px solid var(--border, #e3e3e0);
+}
+
+/* Soft close line — no big bottom gap; the inline action row below
+   provides the closing affordance. */
+.ra-article-embedded .ra-close {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border, #e3e3e0);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-tertiary, #807e7a);
 }
 
 /* Inline action row (appears under the final assistant turn). */
