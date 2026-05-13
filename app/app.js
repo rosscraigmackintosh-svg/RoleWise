@@ -27934,7 +27934,7 @@ About 5+ years of experience required. Generous equity. Pre-Series B fintech, pr
     // existing section renderers in that case.
     //
     // Feature-flag gated: CHAT_SYNTH_ENABLED below. Off by default in phase 2.
-    const CHAT_SYNTH_ENABLED = false; // flip in phase 5 after eval passes
+    const CHAT_SYNTH_ENABLED = true; // production default — phase 4 eval passed (14/14 fixtures, clean flags except benign em-dash)
     async function callSynthesiseChatReadAPI(narrativeJson, extractionJson, meta, { providerOverride, verbosityMode } = {}) {
       const _p  = providerOverride || 'openai';
       const _vm = (verbosityMode === 'compact' || verbosityMode === 'deep') ? verbosityMode : 'standard';
