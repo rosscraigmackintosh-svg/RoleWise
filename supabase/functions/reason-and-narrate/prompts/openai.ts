@@ -25,7 +25,7 @@
 // Deploy: supabase functions deploy reason-and-narrate
 // =============================================================================
 
-export const REASON_AND_NARRATE_VERSION = 'v1'
+export const REASON_AND_NARRATE_VERSION = 'v3'
 
 // High-signal phrase families. Mirrors v8 reasoning's HIGH_SIGNAL_FAMILIES so
 // the post-generation SIGNAL LOSS diagnostic can run identically.
@@ -321,7 +321,7 @@ Before producing the JSON output, perform the following structured editorial pas
 10. cv_recommendation
     - variant: closest CV variant from candidate.cv_variants.
     - reason: one sentence citing a specific role signal.
-    - Apply CV ROUTING TIEBREAK from the SECTION RULES below.
+    - Apply the CV ROUTING hard rule from the SECTION RULES below. PRINCIPAL has a hard gate: 5 explicit signals, one required. If no signal earns Principal, the default decision tree picks Senior / Staff / Lead / Founding based on JD scope — never Principal "because the product is complex".
 
 Quality bar: every internal field must be the kind of observation a senior product/design operator would say out loud, in plain English, after first read. If a field reads like consultancy prose or a strategy slide, re-do it plainer.
 
@@ -627,23 +627,73 @@ Overall fit + key blocker/enabler for this specific candidate. Avoid generic fil
 
 Express your internal strategic_read directly: name the intellectual draw, the realistic cost, and (when signals support it) the role's character in plain words. Compressed, opinionated, JD-grounded.
 
-CV ROUTING TIEBREAK (apply when picking recommended_cv)
+CV ROUTING (hard rule — apply in order)
 
-The variant choice is conservative by default. Bias toward Staff Product Designer for roles that are high-complexity but still hands-on IC. Reserve Principal for roles that explicitly require organisation-wide influence.
+The available CV variants (use the candidate's cv_variants list to confirm; these are the standard set):
+- Founding Product Designer
+- Principal Product Designer
+- Staff Product Designer
+- Lead Product Designer
+- Senior Product Designer
 
-Bias toward Staff Product Designer when ALL of these hold:
-- ownership_level (your internal thinking) is "individual contributor", "senior IC", or "tech lead"
-- the role is enterprise SaaS, systems-heavy IC, workflow/platform design, or has high product_complexity
-- no explicit JD language about org-wide leadership, cross-org strategy, or transformation authority across multiple teams
-- the JD title does NOT contain "Principal", "Staff+", "Lead Designer (manager track)", "Design Lead", "Head of", or "Director"
+STEP A — TITLE-LOCKED FLOOR (apply FIRST, before any signal check)
 
-Reserve Principal Product Designer for roles with at least one of:
-- explicit org-wide or cross-org influence
-- explicit principal/staff+ title language in the JD
-- transformation authority across multiple teams or product groups
-- explicit strategic/platform ownership at a level above squad
+Read the JD's role title literally. The title sets a HARD UPPER BOUND on which CV tier you may recommend. This applies BEFORE you evaluate any Principal-gate signals:
 
-When in doubt between Staff and Principal for an IC role, choose Staff. Principal is reserved for explicit signals, not inferred from complexity alone.
+- Title literally contains "Principal", "Staff+", "Distinguished Designer", "Senior Staff Designer", or "Design Director" (IC track)
+  -> Eligible for: Principal (still must clear STEP B), Staff, Lead, Senior
+- Title literally contains "Staff" (without Principal/Senior Staff)
+  -> Maximum tier: Staff Product Designer. Principal is IMPOSSIBLE.
+- Title literally contains "Lead Designer" or "Design Lead" (IC track)
+  -> Maximum tier: Lead Product Designer. Principal and Staff impossible.
+- Title literally contains "Founding" or the JD names "first designer", "first design hire", "founding designer"
+  -> Tier: Founding Product Designer (regardless of other signals).
+- Title literally contains "Senior" but NOT Principal/Staff/Lead/Founding (e.g. "Senior Product Designer", "Senior UX Designer", "Senior Mobile Interaction Designer", "Senior Interaction Designer", "Senior Service Designer")
+  -> Maximum tier: Staff Product Designer (only when JD scope is complex/enterprise/systems-heavy/platform-design). Otherwise Senior Product Designer. PRINCIPAL IS IMPOSSIBLE FOR SENIOR-TITLED ROLES regardless of how complex or strategic the JD sounds.
+- Title is "Product Designer" / "UX Designer" / "Interaction Designer" with no seniority modifier
+  -> Maximum tier: Senior Product Designer.
+
+Hard rule: a JD whose title literally begins with "Senior" can NEVER produce a Principal recommendation. The candidate's seniority does not override this. Product complexity does not override this. Cross-squad collaboration does not override this. The TITLE-LOCKED FLOOR is a hard constraint.
+
+STEP B — PRINCIPAL GATE (only reached when STEP A leaves Principal eligible)
+
+Recommend "Principal Product Designer" if AND ONLY IF STEP A allowed Principal AND the JD contains at least ONE explicit signal from this list:
+
+1. Title language already verified in STEP A.
+2. Org-wide strategy language: explicit phrases like "design strategy across the org", "shape the design practice across teams", "design direction across multiple product groups", "principal-level scope", "cross-organisation design leadership", "company-wide design influence".
+3. Multi-product-group ownership: the JD names ownership or influence across MULTIPLE distinct product groups, divisions, or business units (not multiple squads inside one product).
+4. Transformation authority: explicit authority over a design transformation programme spanning multiple teams (not just contributing to one).
+5. Practice ownership beyond a product area: explicit responsibility for design hiring across the company, design quality bar setting at the org level, or design system ownership at the company (not product-group) tier.
+
+Senior IC roles, complex IC roles, systems-heavy IC roles, enterprise SaaS IC roles, platform-design IC roles, and "high product complexity" alone do NOT qualify for Principal. Complexity is not Principal. Stakeholder breadth is not Principal. Cross-squad influence within one product is not Principal. Working with PMs/EMs is not Principal. "Platform-wide patterns" inside one product is not Principal.
+
+If STEP A locked out Principal, or STEP B's signals are not present, you may NOT pick Principal.
+
+DEFAULT DECISION TREE (apply when Principal is not earned):
+
+a. Founding/zero-to-one signals (first designer, pre-PMF, defining surfaces from scratch, "founding" in title):
+   -> Founding Product Designer
+
+b. Explicit "Lead" in the JD title or explicit single-team design-leadership scope (set direction for ONE product team, mentor a small group of designers, own design quality for ONE product area):
+   -> Lead Product Designer
+
+c. Senior IC role inside a complex / enterprise / systems-heavy / platform-design / workflow-orchestration product, OR roles with significant cross-squad influence within ONE product, OR transformation work scoped to ONE product area:
+   -> Staff Product Designer
+
+d. Standard senior IC role inside a typical product context (single product, single team, normal stakeholder load, no explicit elevated scope):
+   -> Senior Product Designer
+
+WHEN IN DOUBT between adjacent tiers:
+- Doubt between Senior and Staff -> choose Staff if the product is genuinely complex/enterprise/systems-heavy; otherwise Senior.
+- Doubt between Staff and Lead -> choose Staff if the role is IC; Lead only when JD names team leadership.
+- Doubt between Staff and Principal -> choose STAFF. Principal requires explicit signals from the hard gate above.
+- Doubt between Lead and Principal -> choose LEAD. Principal requires the hard gate signals.
+
+Never pick Principal as a default for senior IC roles. Never pick Principal because the product is complex. Never pick Principal because the candidate's seniority would warrant it — match the role's scope, not the candidate's career stage.
+
+Output:
+- recommended_cv: one of the variant IDs above (exact string match to the candidate.cv_variants[].id format, e.g. "staff-product-designer"). Empty string when the decision is a clear skip with no CV applicable.
+- why_that_cv: one sentence citing the specific role signal that triggered this tier (or, for Principal, naming the explicit gate signal that earned it).
 
 recommended_cv: CV variant ID from candidate context. Empty string if no CV variants apply (e.g. clear-skip decision).
 why_that_cv: one sentence citing a specific role signal. Empty string if recommended_cv is empty.

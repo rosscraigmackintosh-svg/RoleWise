@@ -158,6 +158,109 @@ const REQUIRED_KEYS = [
   'questions_worth_asking', 'decision', 'recommended_cv', 'why_that_cv', 'final_note',
 ]
 
+// ─── CV tier cap (deterministic post-process) ────────────────────────────────
+// The model's CV recommendation is unreliable when the candidate's CV `best_for`
+// description contains scope language that conflicts with the role's title tier
+// (e.g. Principal best_for says "Enterprise IC roles inside complex operational
+// SaaS" — the model then picks Principal for any complex enterprise IC role,
+// regardless of whether the title is "Senior Product Designer" or "Lead").
+//
+// This post-process enforces the title-locked floor deterministically:
+//   - "Principal" / "Staff+" / "Distinguished" / "Director" / "Head of Design"
+//     in the title -> Principal allowed
+//   - "Staff" in the title (alone) -> max Staff
+//   - "Lead Designer" / "Design Lead" -> max Lead
+//   - "Founding" / "first designer" -> exactly Founding
+//   - "Senior" in the title -> max Staff (Principal is impossible)
+//   - No modifier -> max Staff (a plain "Product Designer" title shouldn't
+//     pick Principal even when role is complex)
+
+type CvTier = 'founding' | 'principal' | 'staff' | 'lead' | 'senior' | 'unknown'
+
+// Tier ordering (ascending). 'founding' is treated as its own track; if title
+// indicates founding, exact match wins. Otherwise tiers compared via index.
+const TIER_ORDER: Record<string, number> = {
+  'senior-product-designer':    1,
+  'lead-product-designer':      2,
+  'staff-product-designer':     3,
+  'principal-product-designer': 4,
+}
+
+function detectTitleTier(jdText: string): CvTier {
+  // Look at the head of the JD; titles are almost always in the first line or
+  // two. Limit to 300 chars to avoid false matches deep in the body.
+  const head = (jdText || '').slice(0, 300)
+  const lower = head.toLowerCase()
+
+  // Founding / first-designer is exact-match, not a tier.
+  if (/\bfounding\b/i.test(head) || /\bfirst\s+(designer|design\s+hire)\b/i.test(lower)) {
+    return 'founding'
+  }
+  // Principal-track signals — note "Head of Design" is treated as Principal-tier.
+  if (/\bprincipal\b/i.test(head)
+      || /\bstaff\s*\+/i.test(head)
+      || /\bdistinguished\s+designer\b/i.test(lower)
+      || /\bhead\s+of\s+design\b/i.test(lower)
+      || /\bdesign\s+director\b/i.test(lower)) {
+    return 'principal'
+  }
+  // Staff in title (but not Senior Staff which counts as Principal-eligible).
+  if (/\bstaff\s+(product\s+)?designer\b/i.test(lower)
+      && !/\bsenior\s+staff/i.test(lower)) {
+    return 'staff'
+  }
+  // Lead Designer / Design Lead (IC track).
+  if (/\b(lead\s+(product\s+|ux\s+|interaction\s+)?designer|design\s+lead)\b/i.test(lower)) {
+    return 'lead'
+  }
+  // Senior in title.
+  if (/\bsenior\b/i.test(head)) {
+    return 'senior'
+  }
+  return 'unknown'
+}
+
+function capCvByTitle(modelCv: string | null | undefined, tier: CvTier): {
+  cv: string;
+  downgraded: boolean;
+  reason: string | null;
+} {
+  const cv = typeof modelCv === 'string' ? modelCv.trim() : ''
+  if (!cv) return { cv: '', downgraded: false, reason: null }
+
+  // Founding track: exact match required when title is founding.
+  if (tier === 'founding') {
+    if (cv === 'founding-product-designer') return { cv, downgraded: false, reason: null }
+    return { cv: 'founding-product-designer', downgraded: true, reason: 'Title indicates a founding / first-designer role.' }
+  }
+
+  // Map tier -> max allowed CV variant id.
+  let maxId: string | null
+  switch (tier) {
+    case 'principal': maxId = null; break // no cap; model may pick any tier
+    case 'staff':     maxId = 'staff-product-designer'; break
+    case 'lead':      maxId = 'lead-product-designer'; break
+    case 'senior':    maxId = 'staff-product-designer'; break // Senior titles cap at Staff
+    case 'unknown':   maxId = 'staff-product-designer'; break // no modifier caps at Staff
+    default: return { cv, downgraded: false, reason: null }
+  }
+  if (!maxId) return { cv, downgraded: false, reason: null }
+
+  const modelRank = TIER_ORDER[cv]
+  const maxRank   = TIER_ORDER[maxId]
+  if (modelRank == null || maxRank == null) {
+    // Unknown CV id (e.g. founding while title is not founding). Leave model's pick alone.
+    return { cv, downgraded: false, reason: null }
+  }
+  if (modelRank <= maxRank) return { cv, downgraded: false, reason: null }
+
+  return {
+    cv: maxId,
+    downgraded: true,
+    reason: `JD title is ${tier}-tier; capped CV recommendation from ${cv} to ${maxId}.`,
+  }
+}
+
 // ─── Request handler ─────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
@@ -276,11 +379,30 @@ serve(async (req: Request) => {
       usage.schema_failures = missing
     }
 
+    // ── CV tier cap (deterministic post-process) ──────────────────────────
+    // The model's recommended_cv is unreliable when the candidate's CV
+    // best_for descriptions semantically overlap with the JD's complexity.
+    // We deterministically cap the model's pick by the JD's title tier.
+    const titleTier = detectTitleTier(jdExcerpt)
+    const cvCap = capCvByTitle(narrative.recommended_cv as string | null | undefined, titleTier)
+    if (cvCap.downgraded) {
+      console.log(`[reason-and-narrate] cv-cap downgrade  title_tier=${titleTier}  from=${narrative.recommended_cv}  to=${cvCap.cv}`)
+      narrative._cv_capped_from = narrative.recommended_cv
+      narrative.recommended_cv  = cvCap.cv
+      // Append the cap reason to why_that_cv so the audit trail is preserved.
+      const why = typeof narrative.why_that_cv === 'string' ? narrative.why_that_cv.trim() : ''
+      narrative.why_that_cv = why
+        ? `${why} (CV tier capped by JD title: ${titleTier}.)`
+        : `CV tier capped by JD title: ${titleTier}.`
+    }
+
     // Stamp provenance fields that the client persists onto _provenance.
     // Mirrors the legacy generate-narrative output but adds a Fast-mode marker.
     usage.narrative_version = REASON_AND_NARRATE_VERSION
     usage.reason_and_narrate_version = REASON_AND_NARRATE_VERSION
     usage.analysis_mode = 'fast'
+    usage.title_tier_detected = titleTier
+    if (cvCap.downgraded) usage.cv_capped = { from: narrative._cv_capped_from, to: cvCap.cv, reason: cvCap.reason }
 
     console.log(`[reason-and-narrate] OK provider=${provider} model=${model} version=${REASON_AND_NARRATE_VERSION} verbosity=${verbosityMode} latency_ms=${latencyMs} missing=${missing.length}`)
 
