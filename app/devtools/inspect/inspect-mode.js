@@ -629,20 +629,38 @@
     isActive: function () { return _active; },
   };
 
-  // ── Create persistent toggle button at boot ───────────────────────────
-  // Runs once, stays in the DOM for the page lifetime regardless of mode state.
-  // Wrapped in DOMContentLoaded in case the script loads before <body> exists.
-  if (document.body) {
-    _toggleBtnEl = _createToggleButton();
-  } else {
-    document.addEventListener('DOMContentLoaded', function () {
+  // ── Toggle button (hidden by default in normal product UI) ─────────────
+  // The persistent bottom-right "Inspect" button is dev-only. It used to
+  // appear in every page render which leaked dev tooling into the normal
+  // product UI. Default behaviour: do NOT create the button. The keyboard
+  // shortcut (Alt+Shift+I) remains wired independently and still toggles
+  // inspect mode, so the dev tooling is intact for anyone who needs it.
+  //
+  // Opt-in: set window.RW_INSPECT_SHOW_BUTTON = true BEFORE this script
+  // loads (or in the browser console then call window.RW_INSPECT._showButton())
+  // to restore the floating button.
+  function _maybeMountToggleButton() {
+    if (!window.RW_INSPECT_SHOW_BUTTON) return;
+    if (_toggleBtnEl) return; // idempotent
+    if (document.body) {
       _toggleBtnEl = _createToggleButton();
-    });
+    } else {
+      document.addEventListener('DOMContentLoaded', function () {
+        _toggleBtnEl = _createToggleButton();
+      });
+    }
   }
+  _maybeMountToggleButton();
+  // Expose a runtime opt-in so the button can be summoned from the console
+  // without a reload: `window.RW_INSPECT._showButton()` then refresh state.
+  window.RW_INSPECT._showButton = function () {
+    window.RW_INSPECT_SHOW_BUTTON = true;
+    _maybeMountToggleButton();
+  };
 
   // Boot message
   console.log(
-    '%c[RW Inspect] Dev inspect mode loaded%c — press Alt+Shift+I to toggle.',
+    '%c[RW Inspect] Dev inspect mode loaded%c — press Alt+Shift+I to toggle (UI button hidden by default).',
     'color:#7c3aed;font-style:italic;font-family:monospace;',
     'color:#6b7280;font-family:monospace;'
   );
