@@ -20449,37 +20449,10 @@ a.rw-rail-contact-name:hover {
   font-style: italic;
 }
 
-.rwc-cta-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 14px 24px;
-  border-top: 1px solid var(--border, #e3e3e0);
-  background: var(--surface, #fff);
-  flex-wrap: wrap;
-}
-.rwc-cta-bar[hidden] { display: none; }
-/* The status hint sits to the LEFT of the buttons (margin-right:auto). */
-.rwc-cta-bar .rwc-composer-hint { margin-right: auto; }
-.rwc-btn {
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: 6px;
-  border: 1px solid var(--border-strong, #d0d0cc);
-  background: var(--surface, #fff);
-  color: var(--text-primary, #1a1a18);
-  cursor: pointer;
-}
-.rwc-btn:hover { background: var(--surface-emph, #fafaf9); }
-.rwc-btn--primary {
-  background: var(--text-primary, #1a1a18);
-  color: #fff;
-  border-color: var(--text-primary, #1a1a18);
-}
-.rwc-btn--primary:hover { background: #000; }
-.rwc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Sticky CTA bar removed in phase 4 — inline action row replaces it.
+   The .rwc-action / .rwc-action-row classes live in the conv-mode block
+   below. The .rwc-btn / .rwc-btn--primary classes are no longer used by
+   chat-ingest (kept only via the .rwc-mode-conv .rwc-action overrides). */
 
 .rwc-composer {
   display: flex;
@@ -20632,9 +20605,6 @@ a.rw-rail-contact-name:hover {
 /* Suppress the legacy bordered "Worth knowing:" / "Worth asking:" labels
    even if older markup briefly renders them during transition. */
 .rwc-mode-conv .rwc-list-lead { display: none; }
-
-/* Sticky CTA bar is dead in conv mode. Replaced by an inline action row. */
-.rwc-mode-conv .rwc-cta-bar { display: none !important; }
 
 /* Inline action row (appears under the final assistant turn). */
 .rwc-mode-conv .rwc-action-row {

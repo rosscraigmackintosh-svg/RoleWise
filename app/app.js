@@ -33939,6 +33939,11 @@ If a field cannot be determined from the message, return null for that field.`,
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); _onSubmit(); }
       });
 
+      // Delegated click handler for user-bubble "Show full JD" toggle.
+      _streamEl?.addEventListener('click', (e) => {
+        if (_chatIngestHandleJdToggle(e.target)) return;
+      });
+
       // CTA listeners are wired by _chatIngestRenderCtaBar each time it
       // re-renders the bar (per-state listeners avoid stale closures).
 
@@ -33973,6 +33978,31 @@ If a field cannot be determined from the message, return null for that field.`,
       stream.appendChild(wrap);
       stream.scrollTop = stream.scrollHeight;
       return wrap.querySelector('.rwc-bubble');
+    }
+
+    function _chatIngestRenderUserBubble(rawText) {
+      // 3-line collapsed preview with a "Show full JD" / "Show less" toggle.
+      // The full text lives in the DOM under .rwc-jd-collapsed; the CSS
+      // line-clamp does the truncation. Toggling .is-expanded reveals it.
+      const _esc = esc;
+      return `
+        <div class="rwc-jd-collapsed" data-rwc-jd>${_esc(rawText)}</div>
+        <button class="rwc-jd-toggle" type="button" data-rwc-jd-toggle>Show full JD</button>
+      `;
+    }
+
+    // Stream-wide click handler is wired once in renderChatIngestView; toggles
+    // any rwc-jd-toggle clicked. Kept here so the helper lives next to its
+    // markup builder.
+    function _chatIngestHandleJdToggle(target) {
+      const btn = target.closest('[data-rwc-jd-toggle]');
+      if (!btn) return false;
+      const bubble = btn.closest('.rwc-bubble');
+      const jd     = bubble && bubble.querySelector('[data-rwc-jd]');
+      if (!jd) return true;
+      const expanded = jd.classList.toggle('is-expanded');
+      btn.textContent = expanded ? 'Show less' : 'Show full JD';
+      return true;
     }
 
     function _chatIngestPending(text) {
@@ -34057,9 +34087,10 @@ If a field cannot be determined from the message, return null for that field.`,
       // Step 1: mark the new canonical session as analysing.
       if (_chatSession) { _chatSession.status = 'analysing'; _chatSessionTouch(); }
 
-      // 1. User bubble with collapsed JD preview
-      const _preview = rawText.length > 600 ? rawText.slice(0, 600) + '…' : rawText;
-      _chatIngestAppendUser(`<div class="rwc-jd-collapsed">${_esc(_preview)}</div><div class="rwc-jd-meta">${rawText.length.toLocaleString()} chars</div>`);
+      // 1. User bubble with collapsed JD preview (3-line clamp + toggle).
+      //    Full text is kept in the DOM (display:none in collapsed state)
+      //    so expand is instant and doesn't re-render.
+      _chatIngestAppendUser(_chatIngestRenderUserBubble(rawText));
 
       // 2. Local extraction
       const jd_raw   = rawText;
@@ -34239,9 +34270,9 @@ If a field cannot be determined from the message, return null for that field.`,
       //     a no-op via the conv-mode CSS hide.
       await new Promise(r => setTimeout(r, 250));
       _chatIngestAppendBot(`<p>Want to keep this role read?</p>`);
+      // Hide composer once the read lands — the inline action row takes over.
+      document.getElementById('rwc-composer')?.setAttribute('hidden', '');
       _chatIngestRenderCtaBar();
-      const _ctaBar = document.getElementById('rwc-cta-bar');
-      if (_ctaBar) _ctaBar.removeAttribute('hidden');
     }
 
     function _chatIngestRenderFactsBody(f) {
@@ -34427,29 +34458,30 @@ If a field cannot be determined from the message, return null for that field.`,
     // Cancel returns to the ready CTA bar.
     let _chatIngestPendingDiscard = false;
     function _chatIngestDiscard() {
-      if (!_chatIngestPendingDiscard) {
-        _chatIngestPendingDiscard = true;
-        const bar = document.getElementById('rwc-cta-bar');
-        if (bar) {
-          bar.innerHTML = `
-            <span class="rwc-composer-hint">Discard this read?</span>
-            <button class="rwc-btn" type="button" id="rwc-cta-discard-cancel">Cancel</button>
-            <button class="rwc-btn rwc-btn--primary" type="button" id="rwc-cta-discard-yes">Discard</button>
-          `;
-          bar.querySelector('#rwc-cta-discard-cancel')?.addEventListener('click', () => {
-            _chatIngestPendingDiscard = false;
-            _chatIngestRenderCtaBar();
-          });
-          bar.querySelector('#rwc-cta-discard-yes')?.addEventListener('click', () => {
-            console.log('[chat-ingest] DISCARDED', { had_analysis: !!_chatSession?.analysis });
-            _chatIngestPendingDiscard = false;
-            _chatSessionShadowClear();
-            _chatSession = null;
-            renderChatIngestView();
-          });
+      if (_chatIngestPendingDiscard) return;
+      _chatIngestPendingDiscard = true;
+      const row = document.getElementById('rwc-action-row');
+      if (!row) return;
+      row.innerHTML = `
+        <span class="rwc-action-status">Discard this read?</span>
+        <button class="rwc-action is-ghost" type="button" data-rwc-act="discard-cancel">Cancel</button>
+        <button class="rwc-action is-primary" type="button" data-rwc-act="discard-yes">Discard</button>
+      `;
+      row.onclick = (e) => {
+        const btn = e.target.closest('[data-rwc-act]');
+        if (!btn) return;
+        const act = btn.getAttribute('data-rwc-act');
+        if (act === 'discard-cancel') {
+          _chatIngestPendingDiscard = false;
+          _chatIngestRenderCtaBar();
+        } else if (act === 'discard-yes') {
+          console.log('[chat-ingest] DISCARDED', { had_analysis: !!_chatSession?.analysis });
+          _chatIngestPendingDiscard = false;
+          _chatSessionShadowClear();
+          _chatSession = null;
+          renderChatIngestView();
         }
-        return;
-      }
+      };
     }
 
     // ─── localStorage shadow ────────────────────────────────────────────────
@@ -34536,10 +34568,8 @@ If a field cannot be determined from the message, return null for that field.`,
       }
 
       // Replay the bubble sequence.
-      const _esc = esc;
       const rawText = snap.jd_raw || '';
-      const _preview = rawText.length > 600 ? rawText.slice(0, 600) + '…' : rawText;
-      _chatIngestAppendUser(`<div class="rwc-jd-collapsed">${_esc(_preview)}</div><div class="rwc-jd-meta">${rawText.length.toLocaleString()} chars</div>`);
+      _chatIngestAppendUser(_chatIngestRenderUserBubble(rawText));
 
       // Facts bubble (built from cached meta + signals).
       const _wmMap = { remote: 'Remote', hybrid: 'Hybrid', 'on-site': 'On-site', onsite: 'On-site' };
@@ -34559,39 +34589,65 @@ If a field cannot be determined from the message, return null for that field.`,
         _chatIngestAppendBot(_chatIngestRenderFirstReadBody(snap.narrative));
         _chatIngestAppendBot(_chatIngestRenderCheckBody(snap.narrative));
       }
-      _chatIngestAppendBot(`<p class="rwc-bubble-intro">${snap.status === 'failed' ? 'Save failed earlier. Try again, open the role, or discard.' : (snap.status === 'saved' ? 'This role is saved. Open it or discard the chat.' : 'Want to keep this role read?')}</p>`);
+      _chatIngestAppendBot(`<p>${snap.status === 'failed' ? 'Save failed earlier. Try again, open the role, or discard.' : (snap.status === 'saved' ? 'This role is saved. Open it or discard the chat.' : 'Want to keep this role read?')}</p>`);
       _chatIngestRenderCtaBar();
-      const _ctaBar = document.getElementById('rwc-cta-bar');
-      if (_ctaBar) _ctaBar.removeAttribute('hidden');
       console.log('[chat-ingest] RESTORED_FROM_SHADOW', { status: snap.status, age_ms: Date.now() - new Date(snap.updated_at || 0).getTime() });
     }
 
-    // ─── CTA bar renderer (status-aware) ────────────────────────────────────
-    // Step 3: minimal version. Step 5 adds Saving/Saved/Failed inline states.
+    // ─── Inline action row (status-aware) ───────────────────────────────────
+    // Phase 4: replaces the sticky CTA bar. The action row is appended to the
+    // stream (under the final assistant turn) and re-renders itself in place
+    // across saving / saved / failed states. Order: Open (primary), Save
+    // (secondary), Discard (tertiary). Open implies Save under the hood.
     function _chatIngestRenderCtaBar() {
-      const bar = document.getElementById('rwc-cta-bar');
-      if (!bar || !_chatSession) return;
+      if (!_chatSession) return;
       const s = _chatSession;
+      const stream = document.getElementById('rwc-stream');
+      if (!stream) return;
+
+      // Re-use or create the inline action row at the end of the stream.
+      let row = document.getElementById('rwc-action-row');
+      if (!row) {
+        row = document.createElement('div');
+        row.id = 'rwc-action-row';
+        row.className = 'rwc-action-row';
+        stream.appendChild(row);
+      }
 
       if (s.status === 'saved') {
-        bar.innerHTML = `<span class="rwc-composer-hint">Saved · the role is in your Roles list.</span><button class="rwc-btn rwc-btn--primary" type="button" id="rwc-cta-open">Open full analysis</button>`;
-        bar.querySelector('#rwc-cta-open')?.addEventListener('click', () => _chatIngestOpen());
-      } else if (s.status === 'failed') {
-        bar.innerHTML = `<span class="rwc-composer-hint" style="color:var(--red,#c0392b);">Save failed: ${esc(s.save_error || 'unknown error')}</span><button class="rwc-btn" type="button" id="rwc-cta-retry">Retry save</button>`;
-        bar.querySelector('#rwc-cta-retry')?.addEventListener('click', () => _chatIngestSave().then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar()));
-      } else if (s.status === 'saving') {
-        bar.innerHTML = `<span class="rwc-composer-hint">Saving…</span>`;
-      } else {
-        // ready
-        bar.innerHTML = `
-          <button class="rwc-btn" type="button" id="rwc-cta-discard">Discard</button>
-          <button class="rwc-btn" type="button" id="rwc-cta-save">Save as role</button>
-          <button class="rwc-btn rwc-btn--primary" type="button" id="rwc-cta-open">Open full analysis</button>
+        row.innerHTML = `
+          <span class="rwc-action-status">Saved · the role is in your Roles list.</span>
+          <button class="rwc-action is-primary" type="button" data-rwc-act="open">Open full analysis</button>
         `;
-        bar.querySelector('#rwc-cta-discard')?.addEventListener('click', () => _chatIngestDiscard());
-        bar.querySelector('#rwc-cta-save')?.addEventListener('click', () => _chatIngestSave().then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar()));
-        bar.querySelector('#rwc-cta-open')?.addEventListener('click', () => _chatIngestOpen());
+      } else if (s.status === 'failed') {
+        row.innerHTML = `
+          <span class="rwc-action-status is-error">Save failed: ${esc(s.save_error || 'unknown error')}</span>
+          <button class="rwc-action is-ghost" type="button" data-rwc-act="retry">Try again</button>
+          <button class="rwc-action is-text"  type="button" data-rwc-act="discard">Discard</button>
+        `;
+      } else if (s.status === 'saving') {
+        row.innerHTML = `<span class="rwc-action-status">Saving…</span>`;
+      } else {
+        // ready — Open primary, Save secondary, Discard tertiary
+        row.innerHTML = `
+          <button class="rwc-action is-primary" type="button" data-rwc-act="open">Open full analysis</button>
+          <button class="rwc-action is-ghost"   type="button" data-rwc-act="save">Save role</button>
+          <button class="rwc-action is-text"    type="button" data-rwc-act="discard">Discard</button>
+        `;
       }
+
+      // Single delegated listener (replace each render to avoid stale state).
+      row.onclick = (e) => {
+        const btn = e.target.closest('[data-rwc-act]');
+        if (!btn) return;
+        const act = btn.getAttribute('data-rwc-act');
+        if (act === 'open')    return _chatIngestOpen();
+        if (act === 'save')    return _chatIngestSave().then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar());
+        if (act === 'retry')   return _chatIngestSave().then(_chatIngestRenderCtaBar).catch(() => _chatIngestRenderCtaBar());
+        if (act === 'discard') return _chatIngestDiscard();
+      };
+
+      stream.scrollTop = stream.scrollHeight;
     }
 
     // ─── Weekly Review v2 ─────────────────────────────────────────────────────
